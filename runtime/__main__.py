@@ -32,7 +32,11 @@ def cmd_check(a) -> int:
 
         cs = inc_mode.checks(_inc_options(a))
     else:
-        cs = run_checks(PipelineConfig(asr_backend=a.asr_backend))
+        cs = run_checks(PipelineConfig(
+            asr_backend=a.asr_backend,
+            mt_engine=_mt_engine(a),
+            qwen_model_dir=getattr(a, "qwen_dir", None),
+        ))
     for c in cs:
         print(("OK    " if c.ok else "FALTA "), c.name, "-", c.detail)
     return 0 if all(c.ok for c in cs) else 1
@@ -211,12 +215,21 @@ def _add_engine_args(sp) -> None:
                     help="motor de reconocimiento (por defecto parakeet; moonshine-* es experimental)")
 
 
+def _add_mt_args(sp):
+    """T-51: run y check eligen el mismo traductor (el preflight verifica el que se va a usar)."""
+    sp.add_argument("--mt-engine", choices=("marian", "qwen"), default=None,
+                    help="traductor (T-51). Sin el flag: OPENTRADUCTOR_MT_ENGINE; si no, marian")
+    sp.add_argument("--qwen-dir", default=None,
+                    help="carpeta del Qwen MLX. Sin el flag: OPENTRADUCTOR_QWEN_DIR")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="python -m runtime")
     sub = p.add_subparsers(dest="cmd", required=True)
     ck = sub.add_parser("check")
     _add_engine_args(ck)
     _add_mode_args(ck)
+    _add_mt_args(ck)
     ck.set_defaults(fn=cmd_check)
     sub.add_parser("devices").set_defaults(fn=cmd_devices)
     r = sub.add_parser("run")
@@ -232,10 +245,7 @@ def build_parser():
     r.add_argument("--tts-trim-tail", choices=("on", "off"), default=None,
                    help="recorta el silencio final de cada fragmento TTS (-60 dBFS, conserva 80 ms). "
                         "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1 lo activa; si no, off")
-    r.add_argument("--mt-engine", choices=("marian", "qwen"), default=None,
-                   help="traductor (T-51). Sin el flag: OPENTRADUCTOR_MT_ENGINE; si no, marian")
-    r.add_argument("--qwen-dir", default=None,
-                   help="carpeta del Qwen MLX. Sin el flag: OPENTRADUCTOR_QWEN_DIR")
+    _add_mt_args(r)
     r.add_argument("--mt-normalize", choices=("on", "off"), default=None,
                    help="antes de Marian: '120 mil' -> '120.000' y traduce oración por oración. "
                         "Sin el flag: OPENTRADUCTOR_MT_NORMALIZE=1 lo activa; si no, off")

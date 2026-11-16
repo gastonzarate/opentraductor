@@ -199,3 +199,28 @@ def test_mt_engine_defaults_to_marian_and_env_or_flag_selects_qwen(tmp_path, mon
     monkeypatch.setenv("OPENTRADUCTOR_MT_ENGINE", "gpt")
     with pytest.raises(SystemExit):
         cli.build_service(_args(db=tmp_path / "d.sqlite3"))
+
+
+def test_check_verifies_the_selected_mt_engine(monkeypatch, capsys):
+    """T-51: `check` arma el PipelineConfig con mt_engine; si no, el preflight de la .app con Qwen verificaba Marian."""
+    import runtime.preflight as pf
+
+    seen = []
+
+    def fake_run_checks(cfg):
+        seen.append((cfg.mt_engine, cfg.qwen_model_dir, cfg.asr_backend))
+        return []
+
+    monkeypatch.setattr(pf, "run_checks", fake_run_checks)
+    monkeypatch.delenv("OPENTRADUCTOR_MT_ENGINE", raising=False)
+    p = cli.build_parser()
+    a = p.parse_args(["check", "--asr-backend", "moonshine-tiny"])
+    assert a.fn(a) == 0
+    monkeypatch.setenv("OPENTRADUCTOR_MT_ENGINE", "qwen")
+    a = p.parse_args(["check", "--asr-backend", "moonshine-tiny"])
+    assert a.fn(a) == 0
+    a = p.parse_args(["check", "--mt-engine", "marian", "--qwen-dir", "/q"])
+    assert a.fn(a) == 0
+    assert seen[0][:2] == ("marian", None)
+    assert seen[1] == ("qwen", None, "moonshine-tiny")
+    assert seen[2][:2] == ("marian", "/q")
