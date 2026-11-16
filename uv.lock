@@ -820,6 +820,24 @@ wheels = [
 ]
 
 [[package]]
+name = "mlx-lm"
+version = "0.32.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "mlx", marker = "sys_platform == 'darwin'" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "pyyaml" },
+    { name = "sentencepiece" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/46/eff1c17019b82912020d4d716527e6fcf4ac392b55cddef03eeb60566ab4/mlx_lm-0.32.2.tar.gz", hash = "sha256:1af8a92f6a141c3e2bf5b0369ac4464203a8e2189c47b9e40d3e921e5b3a1fe9", size = 449827, upload-time = "2026-10-16T02:49:34.781Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/4f/000eefdeb41388782b47e7f39904cf2d9e7e49a60df5e172097c358dba8e/mlx_lm-0.32.2-py3-none-any.whl", hash = "sha256:5c0991248cfff5872503d74f466d2532dd8cb7fb3670cb9be7a06d7305dadc04", size = 546040, upload-time = "2026-10-16T02:49:33.32Z" },
+]
+
+[[package]]
 name = "mlx-metal"
 version = "0.32.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1160,6 +1178,7 @@ runtime = [
     { name = "misaki" },
     { name = "mlx" },
     { name = "mlx-audio" },
+    { name = "mlx-lm" },
     { name = "num2words" },
     { name = "onnxruntime" },
     { name = "parakeet-mlx" },
@@ -1186,6 +1205,7 @@ requires-dist = [
     { name = "misaki", marker = "extra == 'runtime'", specifier = "==0.9.4" },
     { name = "mlx", marker = "extra == 'runtime'", specifier = "==0.32.4" },
     { name = "mlx-audio", marker = "extra == 'runtime'", specifier = "==0.6.5" },
+    { name = "mlx-lm", marker = "extra == 'runtime'", specifier = "==0.32.2" },
     { name = "moonshine-voice", marker = "extra == 'moonshine'", specifier = "==0.1.6" },
     { name = "num2words", marker = "extra == 'runtime'", specifier = "==0.5.14" },
     { name = "numpy", specifier = ">=2,<3" },

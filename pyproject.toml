@@ -23,6 +23,7 @@ runtime = [
     "spacy==3.8.18",
     "mlx==0.32.4",
     "mlx-audio==0.6.5",
+    "mlx-lm==0.32.2",
     "onnxruntime==1.32.0",
     "parakeet-mlx==0.7.0",
     "sentencepiece==0.2.3",
