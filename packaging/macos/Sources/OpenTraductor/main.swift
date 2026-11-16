@@ -46,6 +46,8 @@ final class RuntimeProcess {
             env["OPENTRADUCTOR_MARIAN_CT2"] = marian.path
         }
         if isStoreEdition { env["OPENTRADUCTOR_EDITION"] = "store" }
+        // BUG-7 (22e7f7a, validado por @qa en texto): normaliza cifras y traduce oración por oración.
+        env["OPENTRADUCTOR_MT_NORMALIZE"] = "1"
         return env
     }
 
