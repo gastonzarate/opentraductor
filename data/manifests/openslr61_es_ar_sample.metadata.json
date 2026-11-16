@@ -1,0 +1,939 @@
+{
+  "generated_utc": "2026-11-14T12:57:01.868144+00:00",
+  "source": "https://openslr.org/61/",
+  "license": "CC-BY-SA-4.0",
+  "license_text_sha256": "bae5ccc863235f984a52c07d011e48a86c0c12f923be2dedd8624c7abdc22c6c",
+  "index_sha256": {
+    "female": "b1ecaea981f29623b9f07a35cb6b90b1dc97fc655d9a17a3cb39e825b37dc9e2",
+    "male": "cd3e47467638e14c6173e8eb82058e97f512b231e116e364d9f3967c2f839826"
+  },
+  "zip_urls": {
+    "female": "https://openslr.org/resources/61/es_ar_female.zip",
+    "male": "https://openslr.org/resources/61/es_ar_male.zip"
+  },
+  "seed": 20260514,
+  "per_speaker": 3,
+  "min_utts": 10,
+  "eligible_speakers": 44,
+  "chosen_speakers": {
+    "development": [
+      "female:02121",
+      "female:08421",
+      "male:02484",
+      "male:07049"
+    ],
+    "test": [
+      "female:00295",
+      "female:09334",
+      "male:04310",
+      "male:09334"
+    ]
+  },
+  "split_policy": "speakers disjoint between development and test",
+  "resampling": "48 kHz -> 16 kHz, FIR sinc 129 taps, hamming, corte 7 kHz, numpy",
+  "boundary": "sin límites; boundary_method=unknown (se estima después)",
+  "shareAlike_note": "CC-BY-SA-4.0: derivados (manifest, extractos) bajo el mismo tipo de licencia. Mantener separado de la licencia de la app.",
+  "boundaries": {
+    "estimator": "scripts/datasets/estimate_boundaries.py",
+    "method": "estimated",
+    "estimator_version": 2,
+    "uncertainty_s_each_edge": 0.3,
+    "uncertainty_status": "0.3 s es tolerancia SUPUESTA, no cota validada ni intervalo de confianza",
+    "late_onset_threshold_s": 3.0,
+    "cps_range": [
+      6.0,
+      28.0
+    ],
+    "note": "No son límites humanos ni alineación revisada. Sin ground truth: solo plausibilidad y diagnóstico.",
+    "items": [
+      {
+        "noise_floor_dbfs": -71.95,
+        "speech_level_dbfs": -17.85,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.97,
+        "end_s": 3.53,
+        "speech_span_s": 2.56,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.97,
+          "end_s": 3.53,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.12,
+        "chars_per_s_speech": 19.14,
+        "item_id": "openslr61-arf_02121_02074400931",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.28,
+          "utterance_end_s": 5.02,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.97,
+          "utterance_end_s": 3.53,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -71.48,
+        "speech_level_dbfs": -17.0,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 1.12,
+        "end_s": 2.99,
+        "speech_span_s": 1.87,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 1.12,
+          "end_s": 2.99,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.096,
+        "chars_per_s_speech": 20.32,
+        "item_id": "openslr61-arf_02121_01122665566",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.15,
+          "utterance_end_s": 4.09,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 1.12,
+          "utterance_end_s": 2.99,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -72.87,
+        "speech_level_dbfs": -16.49,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.82,
+        "end_s": 3.43,
+        "speech_span_s": 2.61,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.82,
+          "end_s": 3.5,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.376,
+        "chars_per_s_speech": 22.22,
+        "item_id": "openslr61-arf_02121_01225250090",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.7,
+          "utterance_end_s": 5.37,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.82,
+          "utterance_end_s": 3.43,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -70.21,
+        "speech_level_dbfs": -22.97,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.83,
+        "end_s": 2.43,
+        "speech_span_s": 1.6,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.81,
+          "end_s": 2.3,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.096,
+        "chars_per_s_speech": 18.12,
+        "item_id": "openslr61-arf_08421_01534399366",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.0,
+          "utterance_end_s": 3.86,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.83,
+          "utterance_end_s": 2.43,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -69.33,
+        "speech_level_dbfs": -22.43,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.91,
+        "end_s": 2.32,
+        "speech_span_s": 1.41,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.91,
+          "end_s": 2.32,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 3.499,
+        "chars_per_s_speech": 23.4,
+        "item_id": "openslr61-arf_08421_00590079186",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.34,
+          "utterance_end_s": 3.47,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.91,
+          "utterance_end_s": 2.32,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -70.63,
+        "speech_level_dbfs": -21.76,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.77,
+        "end_s": 2.27,
+        "speech_span_s": 1.5,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.78,
+          "end_s": 2.27,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.096,
+        "chars_per_s_speech": 18.67,
+        "item_id": "openslr61-arf_08421_01735233203",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.23,
+          "utterance_end_s": 4.05,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.77,
+          "utterance_end_s": 2.27,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -72.65,
+        "speech_level_dbfs": -20.33,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.66,
+        "end_s": 5.46,
+        "speech_span_s": 4.8,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.66,
+          "end_s": 5.45,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 7.339,
+        "chars_per_s_speech": 19.58,
+        "item_id": "openslr61-arm_02484_01249298980",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.64,
+          "utterance_end_s": 5.54,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.66,
+          "utterance_end_s": 5.46,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -72.76,
+        "speech_level_dbfs": -21.72,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.92,
+        "end_s": 4.89,
+        "speech_span_s": 3.97,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.92,
+          "end_s": 4.89,
+          "threshold_dbfs": -49.31,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 6.229,
+        "chars_per_s_speech": 19.4,
+        "item_id": "openslr61-arm_02484_01813972301",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.92,
+          "utterance_end_s": 4.93,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.92,
+          "utterance_end_s": 4.89,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -74.47,
+        "speech_level_dbfs": -18.12,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.97,
+        "end_s": 3.83,
+        "speech_span_s": 2.86,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.87,
+          "end_s": 3.66,
+          "threshold_dbfs": -43.49,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.547,
+        "chars_per_s_speech": 17.13,
+        "item_id": "openslr61-arm_02484_00361154892",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.97,
+          "utterance_end_s": 3.91,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.97,
+          "utterance_end_s": 3.83,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -67.28,
+        "speech_level_dbfs": -16.97,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.69,
+        "end_s": 3.68,
+        "speech_span_s": 2.99,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.66,
+          "end_s": 3.66,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.267,
+        "chars_per_s_speech": 23.75,
+        "item_id": "openslr61-arm_07049_01264801258",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": null,
+          "utterance_end_s": null,
+          "boundary_method": "unknown",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.69,
+          "utterance_end_s": 3.68,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -70.25,
+        "speech_level_dbfs": -17.17,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.72,
+        "end_s": 2.09,
+        "speech_span_s": 1.37,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.73,
+          "end_s": 1.98,
+          "threshold_dbfs": -45.72,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 3.157,
+        "chars_per_s_speech": 21.17,
+        "item_id": "openslr61-arm_07049_00114299233",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.71,
+          "utterance_end_s": 2.3,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.72,
+          "utterance_end_s": 2.09,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -68.37,
+        "speech_level_dbfs": -17.04,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.64,
+        "end_s": 2.6,
+        "speech_span_s": 1.96,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.61,
+          "end_s": 2.57,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 3.328,
+        "chars_per_s_speech": 25.0,
+        "item_id": "openslr61-arm_07049_00110507997",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.64,
+          "utterance_end_s": 3.14,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.64,
+          "utterance_end_s": 2.6,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -68.85,
+        "speech_level_dbfs": -17.09,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.88,
+        "end_s": 3.79,
+        "speech_span_s": 2.91,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.73,
+          "end_s": 3.81,
+          "threshold_dbfs": -47.53,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 6.315,
+        "chars_per_s_speech": 21.31,
+        "item_id": "openslr61-arf_00295_00890184807",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.27,
+          "utterance_end_s": 5.94,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.88,
+          "utterance_end_s": 3.79,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -68.85,
+        "speech_level_dbfs": -16.58,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 1.44,
+        "end_s": 2.38,
+        "speech_span_s": 0.94,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 1.42,
+          "end_s": 2.37,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.437,
+        "chars_per_s_speech": 17.02,
+        "item_id": "openslr61-arf_00295_01441660547",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": null,
+          "utterance_end_s": null,
+          "boundary_method": "unknown",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 1.44,
+          "utterance_end_s": 2.38,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -69.4,
+        "speech_level_dbfs": -17.42,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.85,
+        "end_s": 2.78,
+        "speech_span_s": 1.93,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.84,
+          "end_s": 2.77,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.864,
+        "chars_per_s_speech": 20.21,
+        "item_id": "openslr61-arf_00295_00144389596",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.24,
+          "utterance_end_s": 3.99,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.85,
+          "utterance_end_s": 2.78,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -71.18,
+        "speech_level_dbfs": -20.05,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.89,
+        "end_s": 2.79,
+        "speech_span_s": 1.9,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.82,
+          "end_s": 2.78,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.12,
+        "chars_per_s_speech": 18.95,
+        "item_id": "openslr61-arf_09334_02124795941",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.15,
+          "utterance_end_s": 4.75,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.89,
+          "utterance_end_s": 2.79,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -69.61,
+        "speech_level_dbfs": -19.05,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.69,
+        "end_s": 3.59,
+        "speech_span_s": 2.9,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.69,
+          "end_s": 3.46,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.717,
+        "chars_per_s_speech": 17.24,
+        "item_id": "openslr61-arf_09334_00361349806",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.17,
+          "utterance_end_s": 3.78,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.69,
+          "utterance_end_s": 3.59,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -69.46,
+        "speech_level_dbfs": -19.69,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.89,
+        "end_s": 4.22,
+        "speech_span_s": 3.33,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.89,
+          "end_s": 4.19,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 6.571,
+        "chars_per_s_speech": 22.22,
+        "item_id": "openslr61-arf_09334_01972555989",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.36,
+          "utterance_end_s": 6.39,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.89,
+          "utterance_end_s": 4.22,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -74.49,
+        "speech_level_dbfs": -22.09,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.88,
+        "end_s": 4.3,
+        "speech_span_s": 3.42,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.88,
+          "end_s": 4.29,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.291,
+        "chars_per_s_speech": 21.05,
+        "item_id": "openslr61-arm_04310_00027560592",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.07,
+          "utterance_end_s": 4.5,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.88,
+          "utterance_end_s": 4.3,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -73.18,
+        "speech_level_dbfs": -20.65,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.76,
+        "end_s": 2.91,
+        "speech_span_s": 2.15,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.77,
+          "end_s": 2.84,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.437,
+        "chars_per_s_speech": 20.0,
+        "item_id": "openslr61-arm_04310_01373377983",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.02,
+          "utterance_end_s": 3.67,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.76,
+          "utterance_end_s": 2.91,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -75.66,
+        "speech_level_dbfs": -22.13,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.89,
+        "end_s": 2.28,
+        "speech_span_s": 1.39,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.89,
+          "end_s": 2.24,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 3.243,
+        "chars_per_s_speech": 16.55,
+        "item_id": "openslr61-arm_04310_00492851139",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.02,
+          "utterance_end_s": 3.0,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.89,
+          "utterance_end_s": 2.28,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -70.8,
+        "speech_level_dbfs": -14.68,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.64,
+        "end_s": 2.62,
+        "speech_span_s": 1.98,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.51,
+          "end_s": 2.6,
+          "threshold_dbfs": -44.65,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 3.755,
+        "chars_per_s_speech": 21.72,
+        "item_id": "openslr61-arm_09334_01094661045",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.05,
+          "utterance_end_s": 3.14,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.64,
+          "utterance_end_s": 2.62,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -64.99,
+        "speech_level_dbfs": -12.38,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.67,
+        "end_s": 4.68,
+        "speech_span_s": 4.01,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.65,
+          "end_s": 4.66,
+          "threshold_dbfs": -49.84,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 5.461,
+        "chars_per_s_speech": 22.19,
+        "item_id": "openslr61-arm_09334_01808261383",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": null,
+          "utterance_end_s": null,
+          "boundary_method": "unknown",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.67,
+          "utterance_end_s": 4.68,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      },
+      {
+        "noise_floor_dbfs": -68.94,
+        "speech_level_dbfs": -16.28,
+        "threshold_dbfs": -50.0,
+        "threshold_from": "piso_absoluto",
+        "frame_s": 0.01,
+        "status": "ok",
+        "start_s": 0.65,
+        "end_s": 2.57,
+        "speech_span_s": 1.92,
+        "n_sustained_runs": 1,
+        "touches_end_of_file": false,
+        "band_check": {
+          "status": "ok",
+          "start_s": 0.65,
+          "end_s": 2.6,
+          "threshold_dbfs": -50.0,
+          "edge_runs_discarded": null
+        },
+        "duration_s": 4.096,
+        "chars_per_s_speech": 21.88,
+        "item_id": "openslr61-arm_09334_01183254097",
+        "late_onset_flag": false,
+        "implausible_rate_flag": false,
+        "before": {
+          "utterance_start_s": 0.02,
+          "utterance_end_s": 3.01,
+          "boundary_method": "estimated",
+          "estimator_version": 1
+        },
+        "after": {
+          "utterance_start_s": 0.65,
+          "utterance_end_s": 2.57,
+          "boundary_method": "estimated",
+          "estimator_version": 2
+        }
+      }
+    ]
+  }
+}

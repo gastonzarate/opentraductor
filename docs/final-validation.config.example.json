@@ -1,0 +1,12 @@
+{
+  "_example": true,
+  "_nota": "EJEMPLO: reemplazar por la config del candidato final que se congele; con _example=true el congelado se rechaza.",
+  "adapter": "runtime.adapters.baseline:BaselineAdapter",
+  "adapter_config": {"asr_backend": "moonshine-tiny", "tts_trim_lead_margin_ms": 30, "asr_skip_silent_tail": true,
+                     "tts_first_chunk_max_words": 8, "asr_normalize_text": true, "endpoint_silence_ms": 96, "tts_bind_conjunctions": false},
+  "manifest": "data/manifests/openslr61_es_ar_sample.jsonl",
+  "audio_root": "data/audio",
+  "repetitions": 3,
+  "warmup": 2,
+  "deadline_s": 5.0
+}

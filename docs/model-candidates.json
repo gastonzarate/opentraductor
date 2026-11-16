@@ -1,0 +1,342 @@
+{
+  "schema_version": 1,
+  "generated_by": "Kestrel-7 (Inferencia y audio de macOS)",
+  "status": "research-only; ninguna cifra de latencia fue medida en este equipo todavia",
+  "hardware_target": "MacBook Pro Apple M5 Pro, 15 CPU / 16 GPU, 48 GB RAM",
+  "conventions": {
+    "announced_latency": "Cifra publicada por los autores. NO es medicion local ni incluye endpoint.",
+    "measured_here": "Siempre null hasta que el benchmark validado exista y se corra con hardware exclusivo.",
+    "verified": "true = el campo de licencia y las afirmaciones del candidato fueron leidos en la fuente primaria citada; false = algun dato clave proviene de un tercero o esta pendiente. Un campo con 'pending' nunca va con verified=true."
+  },
+  "pipelines": [
+    {
+      "id": "P1-cascade-baseline",
+      "kind": "cascada ASR streaming + MT + TTS streaming",
+      "role": "baseline recomendada (componentes con licencias permisivas)",
+      "components": [
+        "asr.parakeet-tdt-0.6b-v3 | asr.qwen3-asr-0.6b",
+        "mt.opus-mt-es-en | mt.llm-small-mlx",
+        "tts.pocket-tts | tts.kokoro-82m | tts.qwen3-tts-0.6b"
+      ],
+      "expected_bottleneck": "endpoint + estabilidad del ASR parcial + traduccion incremental; TTS ya es rapido",
+      "prosody_voice_transfer": "limitada; depende del TTS elegido"
+    },
+    {
+      "id": "P2-s2st-hibiki-zero",
+      "kind": "speech-to-speech simultaneo extremo a extremo",
+      "role": "alternativa de mayor potencial en fluidez y transferencia de voz; bloqueada por licencia y soporte Mac sin confirmar",
+      "components": [
+        "s2st.hibiki-zero-3b"
+      ],
+      "expected_bottleneck": "3B parametros en tiempo real en Metal sin puerto MLX confirmado; politica de acumulacion de contexto fija del modelo",
+      "prosody_voice_transfer": "si (voice transfer nativo)"
+    },
+    {
+      "id": "P3-s2st-seamless-streaming",
+      "kind": "speech-to-speech simultaneo (Meta)",
+      "role": "referencia comparativa solamente",
+      "components": [
+        "s2st.seamless-streaming"
+      ],
+      "expected_bottleneck": "PyTorch, licencia no comercial, latencia de politica EMMA",
+      "prosody_voice_transfer": "no en SeamlessStreaming; SeamlessExpressive es otro modelo"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "s2st.hibiki-zero-3b",
+      "stage": "s2st",
+      "name": "Kyutai Hibiki-Zero 3B",
+      "languages": "es, fr, pt, de -> en (es de entrada: si; dialecto argentino: no documentado)",
+      "streaming": true,
+      "voice_cloning_prosody": "voice transfer zero-shot de la voz de origen",
+      "weights_license": "CC BY-NC-SA 4.0 (NO comercial, share-alike)",
+      "license_constraint": "Proyecto abierto no comercial es viable; obliga a distribuir derivados con la misma licencia. Documentar en README. Incompatible con uso comercial.",
+      "params": "3B, 12.5 Hz, bitrate 2.2 kbps",
+      "apple_silicon_path": "No confirmado. El README oficial indica requerir GPU NVIDIA (8-12 GB VRAM). Existe MLX/Rust-Metal solo para el Hibiki original (FR->EN, 1B/2B, CC-BY 4.0), no verificado para Hibiki-Zero.",
+      "announced_latency": "No se extrajo una cifra citable de la tarjeta del modelo; revisar paper seccion de latencia (arXiv 2602.11072).",
+      "measured_here": null,
+      "memory_estimate": "no medida; 3B en bf16 ~6 GB solo pesos (estimacion aritmetica, no medicion)",
+      "sources": [
+        "https://github.com/kyutai-labs/hibiki-zero",
+        "https://huggingface.co/kyutai/hibiki-zero-3b-pytorch-bf16",
+        "https://arxiv.org/abs/2602.11072"
+      ],
+      "verified": true,
+      "open_questions": [
+        "Hay puerto MLX/Metal de Hibiki-Zero? Si no, evaluar portarlo (moshi_mlx ya soporta arquitectura Moshi) o correr PyTorch MPS.",
+        "Rendimiento con espanol rioplatense (acento, voseo, sheismo) sin evidencia publica."
+      ]
+    },
+    {
+      "id": "s2st.hibiki-1b-mlx",
+      "stage": "s2st",
+      "name": "Kyutai Hibiki 1B (MLX)",
+      "languages": "fr -> en solamente",
+      "streaming": true,
+      "weights_license": "CC-BY 4.0; codigo MIT/Apache-2.0",
+      "apple_silicon_path": "MLX oficial (moshi_mlx, python -m moshi_mlx.local_web) y Rust --features metal",
+      "role": "no sirve para es->en. Util solo para validar la ruta de ejecucion MLX streaming y medir overhead de plataforma.",
+      "announced_latency": null,
+      "measured_here": null,
+      "sources": [
+        "https://github.com/kyutai-labs/hibiki"
+      ],
+      "verified": true
+    },
+    {
+      "id": "s2st.seamless-streaming",
+      "stage": "s2st",
+      "name": "Meta SeamlessStreaming",
+      "languages": "101 idiomas de entrada de voz",
+      "streaming": true,
+      "weights_license": "CC-BY-NC 4.0 (tarjeta HF)",
+      "apple_silicon_path": "No validada. Depende de fairseq2/seamless_communication; PyTorch en CPU/MPS no equivale a compatibilidad comprobada con ese stack.",
+      "announced_latency": "ver paper arXiv 2312.05187; no medido aqui",
+      "measured_here": null,
+      "sources": [
+        "https://huggingface.co/facebook/seamless-streaming",
+        "https://arxiv.org/abs/2312.05187"
+      ],
+      "verified": true,
+      "role": "solo referencia de comparacion"
+    },
+    {
+      "id": "asr.parakeet-tdt-0.6b-v3",
+      "stage": "asr",
+      "name": "NVIDIA parakeet-tdt-0.6b-v3",
+      "languages": "25 idiomas europeos incluido es; deteccion automatica; dialecto argentino no documentado",
+      "streaming": "El modelo es de transcripcion offline por segmento. Streaming se logra por ventanas/cache en implementaciones MLX (parakeet-mlx); a validar.",
+      "weights_license": "CC-BY 4.0",
+      "apple_silicon_path": "MLX (parakeet-mlx, comunidad; no verificado aqui). CoreML/ANE: no verificado.",
+      "params": "600M",
+      "announced_latency": null,
+      "measured_here": null,
+      "sources": [
+        "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+        "https://github.com/EliFuzz/parakeet-mlx"
+      ],
+      "verified": true,
+      "pinned_revision": "mlx-community/parakeet-tdt-0.6b-v3@ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15 (CC-BY 4.0); original nvidia/parakeet-tdt-0.6b-v3@541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+      "download_status": "descargado en cache HF (2.3 GB), sin inferencia"
+    },
+    {
+      "id": "asr.qwen3-asr-0.6b",
+      "stage": "asr",
+      "name": "Qwen3-ASR 0.6B / 1.7B",
+      "languages": "52 idiomas/dialectos incluido es",
+      "streaming": "Oficial solo con backend vLLM (README oficial: sin timestamps ni batch). Puerto MLX comunitario sin streaming verificado.",
+      "weights_license": "Apache-2.0 (metadata de la tarjeta HF de Qwen3-ASR-0.6B)",
+      "apple_silicon_path": "MLX comunitario",
+      "announced_latency": null,
+      "measured_here": null,
+      "sources": [
+        "https://github.com/QwenLM/Qwen3-ASR",
+        "https://github.com/moona3k/mlx-qwen3-asr",
+        "https://huggingface.co/Qwen/Qwen3-ASR-0.6B"
+      ],
+      "verified": false,
+      "verification_note": "licencia verificada; soporte streaming en Mac pendiente"
+    },
+    {
+      "id": "asr.kyutai-stt",
+      "stage": "asr",
+      "name": "Kyutai STT 1B en_fr / 2.6B en",
+      "languages": "en, fr solamente",
+      "streaming": true,
+      "weights_license": "CC-BY 4.0",
+      "role": "NO apto para espanol. Util como referencia de diseno (delay 0.5 s del 1B, VAD semantico).",
+      "announced_latency": "delay de arquitectura 0.5 s (1B) y 2.5 s (2.6B); no es latencia al primer token",
+      "measured_here": null,
+      "sources": [
+        "https://huggingface.co/kyutai/stt-2.6b-en"
+      ],
+      "verified": true
+    },
+    {
+      "id": "asr.whisper-streaming-mlx",
+      "stage": "asr",
+      "name": "Whisper (large-v3-turbo / small) via MLX con ventana local",
+      "languages": "es incluido entre los idiomas de Whisper; sin evidencia citada sobre rioplatense. Medir en el subconjunto argentino del corpus.",
+      "streaming": "pseudo-streaming por ventanas (alta redundancia)",
+      "weights_license": "MIT (tarjeta HF de whisper-large-v3-turbo)",
+      "apple_silicon_path": "MLX (mlx-whisper), whisper.cpp Metal/CoreML",
+      "announced_latency": null,
+      "measured_here": null,
+      "verified": true,
+      "role": "fallback ASR, no preferido para latencia",
+      "sources": [
+        "https://huggingface.co/openai/whisper-large-v3-turbo"
+      ],
+      "model_card_caveat": "La tarjeta advierte alucinaciones y rendimiento desigual por acento/dialecto; no esta disenado para tiempo real."
+    },
+    {
+      "id": "mt.opus-mt-es-en",
+      "stage": "mt",
+      "name": "Helsinki-NLP opus-mt-es-en (Marian)",
+      "languages": "es -> en",
+      "streaming": "no; traduccion por frase. Requiere politica de acumulacion (wait-k / segmentacion por puntuacion).",
+      "weights_license": "Apache-2.0 (metadata de la tarjeta HF, leida en README raw)",
+      "quality_reference": "BLEU 59.6 en Tatoeba-test (frases cortas, no representativo de habla espontanea); 35-38 en newstest2011-2013",
+      "apple_silicon_path": "CTranslate2 4.9.0 en CPU verificado funcionalmente; backend MPS experimental anunciado por la propia libreria, sin evaluar",
+      "announced_latency": null,
+      "measured_here": null,
+      "sources": [
+        "https://huggingface.co/Helsinki-NLP/opus-mt-es-en",
+        "https://huggingface.co/Helsinki-NLP/opus-mt-es-en/raw/main/README.md"
+      ],
+      "verified": true,
+      "pinned_revision": "Helsinki-NLP/opus-mt-es-en@c96e2c5399ebfae4fc43d9669556b9afa74bb69d",
+      "download_status": "descargado y convertido a CTranslate2 int8",
+      "conversion": {
+        "artifact": "~/.cache/opentraductor/models/opus-mt-es-en-ct2-int8 (80 MB)",
+        "metadata": "conversion.json en el mismo directorio",
+        "source_revision": "c96e2c5399ebfae4fc43d9669556b9afa74bb69d",
+        "tool": "ct2-transformers-converter, ctranslate2 4.9.0, quantization int8",
+        "smoke_test": "1 frase ES->EN traducida correctamente en CPU, sin medicion de tiempo"
+      }
+    },
+    {
+      "id": "mt.llm-small-mlx",
+      "stage": "mt",
+      "name": "LLM pequeno cuantizado en MLX (p.ej. familia Qwen3 u otro Apache-2.0) con prompt de traduccion incremental",
+      "streaming": "tokens en streaming; costo de prefill con contexto creciente",
+      "weights_license": "dependiente del modelo; elegir solo Apache-2.0/MIT",
+      "role": "alternativa si opus-mt degrada con habla espontanea; riesgo de latencia y alucinaciones",
+      "announced_latency": null,
+      "measured_here": null,
+      "verified": false
+    },
+    {
+      "id": "tts.pocket-tts",
+      "stage": "tts",
+      "name": "Kyutai Pocket TTS (~100M)",
+      "languages": "en, fr, de, pt, it, es, nl (README)",
+      "streaming": true,
+      "voice_cloning_prosody": "clonacion desde un wav (--voice); el README recomienda limpiar la muestra. Licencias por voz en kyutai/tts-voices.",
+      "weights_license": "CC-BY 4.0 (metadata HF API de kyutai/pocket-tts; repo gated 'auto', requiere token HF con terminos aceptados). Codigo GitHub: MIT. Voces: licencia por carpeta en kyutai/tts-voices: voice-donations CC0, voice-zero CC0, vctk CC-BY 4.0, alba-mackenna CC-BY 4.0, expresso y ears CC-BY-NC (no usar).",
+      "apple_silicon_path": "CPU (PyTorch), ~2 nucleos; deja GPU libre para ASR/MT",
+      "announced_latency": "~200 ms al primer chunk; ~6x tiempo real en CPU de MacBook Air M4 (README oficial)",
+      "measured_here": null,
+      "sources": [
+        "https://github.com/kyutai-labs/pocket-tts",
+        "https://huggingface.co/kyutai/pocket-tts",
+        "https://raw.githubusercontent.com/kyutai-labs/pocket-tts/main/LICENSE"
+      ],
+      "verified": false,
+      "verification_note": "licencias leidas; instalacion del paquete verificada; descarga de pesos pendiente de token HF",
+      "pinned_revision": "kyutai/pocket-tts@db04f0e653473e5c7333c69686ac92b7460b0c1d; kyutai/tts-voices@323332d33f997de8394f24a193e1a76df720e01a",
+      "download_status": "BLOQUEADO: GatedRepoError 401 sin token HF. Pesos no descargados."
+    },
+    {
+      "id": "tts.kokoro-82m",
+      "stage": "tts",
+      "name": "Kokoro-82M v1.0",
+      "languages": "8 idiomas, 54 voces; en-US incluido",
+      "streaming": "por oracion/fragmento, no token-streaming",
+      "voice_cloning_prosody": "NO clona; voces fijas (mezcla de voces posible)",
+      "weights_license": "Apache-2.0",
+      "apple_silicon_path": "MLX (kokoro-mlx, mlx-audio), CoreML (port comunitario)",
+      "announced_latency": null,
+      "measured_here": null,
+      "sources": [
+        "https://huggingface.co/hexgrad/Kokoro-82M",
+        "https://github.com/Blaizzy/mlx-audio"
+      ],
+      "verified": true,
+      "pinned_revision": "mlx-community/Kokoro-82M-bf16@a71e4d38b236d968966a2002c4c895dbd12b1c3c; original hexgrad/Kokoro-82M@f3ff3571791e39611d31c381e3a41a3af07b4987",
+      "download_status": "descargado, G2P verificado, sin inferencia",
+      "g2p": "misaki 0.9.4 (Apache-2.0) con en-core-web-sm 3.8.0; fonemizacion en-US probada sin espeak-ng del sistema (espeakng-loader 0.2.4 incluido como dependencia). Import de mlx_audio.tts.models.kokoro verificado; modelo no cargado."
+    },
+    {
+      "id": "tts.qwen3-tts-0.6b",
+      "stage": "tts",
+      "name": "Qwen3-TTS 12Hz 0.6B / 1.7B",
+      "languages": "10 idiomas incl. en y es",
+      "streaming": true,
+      "voice_cloning_prosody": "clonacion en 3 s y control por descripcion",
+      "weights_license": "Apache-2.0 (metadata de la tarjeta HF de Qwen3-TTS-12Hz-0.6B-Base)",
+      "apple_silicon_path": "MLX via mlx-audio (MIT)",
+      "announced_latency": "97 ms primer paquete (paper, hardware GPU del fabricante; no extrapolable)",
+      "measured_here": null,
+      "sources": [
+        "https://arxiv.org/abs/2601.15621",
+        "https://github.com/Blaizzy/mlx-audio",
+        "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+      ],
+      "verified": true,
+      "clone_plan": "Base-0.6B con muestra CC0 (voice-donations o voice-zero de kyutai/tts-voices). Licencia de la conversion MLX leida: Apache-2.0.",
+      "pinned_revision": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit@50f45ef0047cde7e84c2ef04326acb8ada2436a7 (Apache-2.0 en metadata HF); original Qwen/Qwen3-TTS-12Hz-0.6B-Base@5d83992436eae1d760afd27aff78a71d676296fc (Apache-2.0)",
+      "download_status": "descargado 8-bit (2.0 GB, incluye speech_tokenizer), sin inferencia; bf16 y 4/5/6-bit disponibles, no descargados"
+    },
+    {
+      "id": "tts.voxtral-4b",
+      "stage": "tts",
+      "name": "Mistral Voxtral TTS 4B",
+      "languages": "9 idiomas incl. en, es",
+      "streaming": true,
+      "voice_cloning_prosody": "clonacion con 2-3 s",
+      "weights_license": "CC BY-NC (no comercial)",
+      "apple_silicon_path": "MLX 4-bit comunitario",
+      "announced_latency": "~90 ms (documentacion de Mistral, modo API)",
+      "measured_here": null,
+      "sources": [
+        "https://arxiv.org/abs/2603.25551",
+        "https://mistral.ai/news/voxtral-tts/"
+      ],
+      "verified": true,
+      "role": "solo si calidad lo justifica; 4B es costoso para el presupuesto de latencia"
+    },
+    {
+      "id": "tts.kyutai-tts-1.6b",
+      "stage": "tts",
+      "name": "Kyutai TTS 1.6B en_fr",
+      "languages": "en, fr",
+      "streaming": true,
+      "voice_cloning_prosody": "solo embeddings de voz precalculados (clonacion libre restringida)",
+      "weights_license": "CC-BY 4.0",
+      "announced_latency": "audio desplazado 1.28 s respecto al texto en la arquitectura; no apto para primer audio <300 ms sin ajuste",
+      "measured_here": null,
+      "sources": [
+        "https://huggingface.co/kyutai/tts-1.6b-en_fr"
+      ],
+      "verified": true
+    }
+  ],
+  "infrastructure": [
+    {
+      "id": "infra.mlx",
+      "name": "MLX",
+      "note": "Apple documenta uso de los Neural Accelerators de la GPU del M5 con macOS beta reciente; revisar version de macOS instalada antes de medir.",
+      "sources": [
+        "https://machinelearning.apple.com/research/exploring-llms-mlx-m5"
+      ],
+      "verified": true
+    },
+    {
+      "id": "infra.mlx-audio",
+      "name": "mlx-audio",
+      "license": "MIT",
+      "note": "Agrupa TTS/STT/STS sobre MLX, cuantizacion, servidor REST compatible OpenAI.",
+      "sources": [
+        "https://github.com/Blaizzy/mlx-audio"
+      ],
+      "verified": true
+    },
+    {
+      "id": "infra.blackhole",
+      "name": "BlackHole (microfono virtual, dependencia externa)",
+      "license": "GPL-3.0 segun su README; el README indica contactar a Existential Audio para proyectos no GPLv3. No redistribuir con la app; el usuario lo instala por separado.",
+      "sources": [
+        "https://github.com/ExistentialAudio/BlackHole"
+      ],
+      "verified": true
+    }
+  ],
+  "recommendation_pending_benchmark": {
+    "baseline": "P1 provisional: parakeet-tdt-0.6b-v3 (ASR) + opus-mt-es-en CTranslate2 int8 (MT) + Kokoro-82M MLX (TTS). Pocket TTS queda como alternativa de clonacion hasta resolver su acceso gated (no se elude). Alternativa de clonacion posterior: Qwen3-TTS 0.6B MLX con muestra CC0 de voice-donations/voice-zero.",
+    "execution_priority": "Primero la ruta ejecutable ya instalable en este Mac (paquetes Python/MLX/CPU con instalacion probada). Modelos grandes y el port de Hibiki-Zero quedan despues de medir la baseline.",
+    "alternative": "P2 Hibiki-Zero solo si hay ruta Metal confirmada y licencia CC BY-NC-SA aceptable.",
+    "no_promises": "Ninguna combinacion esta demostrada <300 ms al primer audio desde el fin real de frase. La salida anticipada solo cuenta como exito si se verifica contenido y correspondencia con la frase de origen."
+  }
+}

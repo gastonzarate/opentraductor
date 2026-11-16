@@ -1,0 +1,20 @@
+{
+  "_comment": "Pesos y revisiones fijados para el entorno de evaluación. Cambiar un valor = cambiar la medición: registrar el motivo.",
+  "utmosv2": {
+    "checkpoint": {
+      "url": "https://huggingface.co/sarulab-speech/UTMOSv2/resolve/main/fold0_s42_best_model.pth",
+      "file": "fold0_s42_best_model.pth",
+      "sha256": "c8149d988e4bbf3f347e6966b5d769de347a5f8c59ffca1dc4bd4bf5b8585e57",
+      "hf_repo": "sarulab-speech/UTMOSv2",
+      "hf_revision_seen": "506474f2b33dc77c234d668cc419be1861899cad",
+      "license": "MIT"
+    },
+    "code": {"repo": "https://github.com/sarulab-speech/UTMOSv2.git", "commit": "cc2700db57bb83ee13dc31ebe1b868c254e15d09", "license": "MIT"}
+  },
+  "hf_models": [
+    {"repo": "facebook/wav2vec2-base", "revision": "0b5b8e868dd84f03fd87d01f9c4ff0f080fecfe8", "license": "apache-2.0", "used_by": "UTMOSv2 backbone"},
+    {"repo": "timm/tf_efficientnetv2_s.in21k_ft_in1k", "revision": "ea9abc143ea2b9d8e1ec1de277bce02149b9cf0e", "license": "apache-2.0", "used_by": "UTMOSv2 backbone"},
+    {"repo": "Systran/faster-whisper-small.en", "revision": "d1d751a5f8271d482d14ca55d9e2deeebbae577f", "license": "mit", "used_by": "ASR independiente (por defecto)"},
+    {"repo": "Systran/faster-whisper-tiny.en", "revision": "0d3d19a32d3338f10357c0889762bd8d64bbdeba", "license": "mit", "used_by": "ASR independiente (pruebas rápidas)"}
+  ]
+}

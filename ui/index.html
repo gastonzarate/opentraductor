@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:">
+  <title>opentraductor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>opentraductor</h1>
+      <p id="conn" class="conn bad" role="status">Conectando con el backend…</p>
+    </div>
+    <div class="session">
+      <p>Sesión: <strong id="session-state">sin conexión</strong></p>
+      <p id="engine-mode" class="small" role="status"></p>
+      <div class="buttons">
+        <button id="start" type="button" disabled>Iniciar</button>
+        <button id="stop" type="button" disabled>Parar</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section id="license-card" class="card wide" aria-labelledby="h-license" hidden>
+      <h2 id="h-license">Licencia</h2>
+      <p id="license-state" role="status"></p>
+      <form id="license-form" hidden autocomplete="off">
+        <label for="license-key">Clave de licencia</label>
+        <input id="license-key" type="text" spellcheck="false" autocapitalize="off" maxlength="200" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX">
+        <p class="muted small" id="license-notice"></p>
+        <div class="buttons"><button id="license-activate" type="submit">Activar licencia</button></div>
+        <p id="license-msg" class="small" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="vmic-card" class="card wide" aria-labelledby="h-vmic">
+      <h2 id="h-vmic">Micrófono virtual</h2>
+      <p id="vmic-state" role="status">Comprobando…</p>
+      <ol id="vmic-steps" class="steps" hidden></ol>
+      <div class="buttons"><button id="vmic-recheck" type="button" class="ghost">Volver a comprobar</button></div>
+      <p id="vmic-msg" class="small" role="status"></p>
+      <p id="vmic-note" class="muted small"></p>
+    </section>
+    <section class="card wide" aria-labelledby="h-live">
+      <h2 id="h-live">Texto en vivo</h2>
+      <div class="live">
+        <div>
+          <h3>Original (español)</h3>
+          <ol id="src" class="feed" aria-live="polite"></ol>
+        </div>
+        <div>
+          <h3>Traducción (inglés)</h3>
+          <ol id="tgt" class="feed" aria-live="polite"></ol>
+        </div>
+      </div>
+      <p class="muted small">Se muestran los últimos segmentos. El resto queda en el historial.</p>
+    </section>
+
+    <section class="card" aria-labelledby="h-audio">
+      <h2 id="h-audio">Audio</h2>
+      <p class="small"><button id="refresh-devices" type="button" disabled>Actualizar dispositivos</button> <span id="refresh-status" role="status"></span></p>
+      <p class="muted small">Si conectaste auriculares con la app abierta y no aparecen, actualizá la lista. Solo con la sesión detenida; no cambia lo que ya elegiste.</p>
+      <label for="input">Entrada (micrófono o fuente virtual)</label>
+      <select id="input" disabled></select>
+
+      <label for="output">Salida de traducción</label>
+      <select id="output" disabled></select>
+      <p class="muted small">Para Meet, Zoom o Discord, elegí BlackHole 2ch (virtual) aquí y como micrófono en la app de reuniones. Sin BlackHole: elegí tus auriculares (modo intérprete) o «Sin voz (solo subtítulos)».</p>
+      <p id="output-hint" class="small" role="status"></p>
+
+      <label class="check"><input id="monitor-on" type="checkbox" disabled> Escuchar también en mis auriculares (monitor)</label>
+      <label for="monitor" class="sr-only">Dispositivo de monitor</label>
+      <select id="monitor" disabled></select>
+      <label for="monitor-vol">Volumen del monitor</label>
+      <input id="monitor-vol" type="range" min="0" max="100" value="50" disabled>
+      <p id="monitor-state" class="small" role="status"></p>
+      <p id="monitor-hint" class="small" role="status"></p>
+      <p class="muted small">El monitor empieza apagado cada vez que se abre la app. Con el micrófono del equipo, usá auriculares: si la traducción suena por parlantes, el micrófono la capta y el sistema la traduce otra vez.</p>
+
+      <label for="audio-latency">Latencia de audio</label>
+      <select id="audio-latency" disabled>
+        <option value="default">Predeterminada (la actual)</option>
+        <option value="low">Baja</option>
+        <option value="high">Alta</option>
+      </select>
+      <p class="muted small">Baja es experimental: en la prueba con BlackHole no mostró ahorro medible de retraso y puede cortar audio en equipos ocupados. Alta es la opción más estable. Solo se cambia con la sesión detenida.</p>
+
+      <label for="voice">Voz de salida</label>
+      <select id="voice" disabled>
+        <option value="">Cargando voces…</option>
+      </select>
+    </section>
+
+    <section class="card" aria-labelledby="h-models">
+      <h2 id="h-models">Modelos</h2>
+      <ul id="models" class="list"><li class="muted">Sin datos todavía.</li></ul>
+      <h2 id="h-pre">Comprobaciones</h2>
+      <ul id="preflight" class="list"><li class="muted">Sin datos todavía.</li></ul>
+      <h2 id="h-health">Retraso y avisos</h2>
+      <dl class="kv">
+        <dt>Retraso del ASR (backlog)</dt>
+        <dd id="backlog">sin medir</dd>
+        <dt>Audio descartado (entrada y motor)</dt>
+        <dd id="dropped">sin medir</dd>
+        <dt>Audio descartado en reproducción</dt>
+        <dd id="pb-dropped">sin medir</dd>
+        <dt>Desbordes de cola</dt>
+        <dd id="overflow">0</dd>
+      </dl>
+      <div id="alerts" class="alerts" role="alert"></div>
+    </section>
+
+    <section class="card wide" aria-labelledby="h-hist">
+      <h2 id="h-hist">Historial</h2>
+      <div class="buttons">
+        <button id="export-txt" type="button" class="ghost">Exportar TXT</button>
+        <button id="export-json" type="button" class="ghost">Exportar JSON</button>
+        <button id="clear-hist" type="button" class="danger">Borrar todo</button>
+      </div>
+      <ol id="history" class="history"></ol>
+      <p id="hist-empty" class="muted">No hay textos guardados.</p>
+    </section>
+  </main>
+
+  <script src="app.js" defer></script>
+  <script src="setup.js" defer></script>
+</body>
+</html>
