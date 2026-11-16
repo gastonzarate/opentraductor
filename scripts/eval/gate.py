@@ -37,12 +37,18 @@ ENV = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
        "PYTHONPATH": str(ROOT) + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else "")}
 
 
+# T-45 (16/11, decisión de @lead): la base 409 ms / 0,050 / 51,3 ms es de otra config (Moonshine tiny ep160, 12 clips test, sin Qwen).
+# La tienda sale con Moonshine + Qwen (T-49). Hasta fijar la base con esa config (tras T-48 y T-50), estas filas se miden y se
+# muestran, pero no aprueban ni fallan. Para reactivarlas: vaciar NO_VALID_BASE y poner la base nueva en los umbrales.
+NO_VALID_BASE = ("Latencia motor", "ASR WER", "MT petición→mt_final p95")
+
+
 @dataclass
 class Row:
     metric: str
     value: str
     threshold: str
-    status: str  # PASA | FALLA | CONTENDIDO | NO MEDIDO | OMITIDO | DE @qa
+    status: str  # PASA | FALLA | CONTENDIDO | SIN BASE | NO MEDIDO | OMITIDO | DE @qa
     note: str = ""
 
 
@@ -326,6 +332,10 @@ def main() -> int:
                     if r.status == "FALLA" and r.metric.startswith(TIMED_METRICS):
                         r.status = "CONTENDIDO"
                         r.note += " · NO CONCLUYENTE, corrían a la vez: " + "; ".join(sorted(smp.seen))
+            for r in new:
+                if r.metric.startswith(NO_VALID_BASE) and r.status in ("PASA", "FALLA", "CONTENDIDO"):
+                    r.note += f" · valor medido ({r.status} contra la base vieja); SIN BASE VÁLIDA hasta T-48/T-50"
+                    r.status = "SIN BASE"
             rows += new
         except Exception as e:  # noqa: BLE001
             rows.append(Row(n, "n/d", "-", "NO MEDIDO", f"{type(e).__name__}: {e}"))
@@ -341,7 +351,8 @@ def main() -> int:
     fails = [r for r in rows if r.status == "FALLA"]
     unm = [r for r in rows if r.status in ("NO MEDIDO", "CONTENDIDO")]
     verdict = "FALLA" if fails or (unm and not a.allow_unmeasured) else "PASA"
-    md += ["", f"**GATE: {verdict}** · fallan {len(fails)} · sin medir o contendidos {len(unm)}"]
+    nb = [r for r in rows if r.status == "SIN BASE"]
+    md += ["", f"**GATE: {verdict}** · fallan {len(fails)} · sin medir o contendidos {len(unm)} · sin base válida {len(nb)} (no cuentan)"]
     (out / "gate.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
     return 0 if verdict == "PASA" else 1
