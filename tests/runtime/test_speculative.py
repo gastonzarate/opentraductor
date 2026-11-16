@@ -18,9 +18,10 @@ class FakeVAD:
 
     def __init__(self, speech_windows):
         self.n, self.speech = 0, speech_windows
-        self.model = types.SimpleNamespace(reset_states=lambda: None)
 
     def reset(self): pass
+
+    def reset_states(self): pass
 
     def probs(self, pcm):
         out = []

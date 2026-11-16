@@ -63,6 +63,22 @@ def test_vad_reset_restores_initial_state():
     assert vad.probs(pcm) == first
 
 
+def test_vad_reset_states_keeps_pending_samples():
+    # El pipeline llama a reset_states() al cerrar cada segmento (regresión: antes usaba vad.model).
+    pcm = _speechish(0.5)
+    vad = K.SileroVAD()
+    vad.probs(pcm)
+    vad.reset_states()
+    assert not vad._state.any() and not vad._ctx.any()
+    vad.probs(b"\x01\x00" * 100)  # menos de una ventana: queda como resto
+    rest = vad._rest.copy()
+    assert len(rest) > 0
+    vad.reset_states()
+    assert (vad._rest == rest).all()
+    vad.reset()
+    assert len(vad._rest) == 0
+
+
 def test_vad_matches_torch_when_available():
     pytest.importorskip("torch")
     silero = pytest.importorskip("silero_vad")

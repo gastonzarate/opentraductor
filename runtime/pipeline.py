@@ -389,7 +389,7 @@ class Engine:
         st.in_speech = False
         st.seg = None
         st.silence_ms = 0.0
-        st.vad.model.reset_states()
+        st.vad.reset_states()
 
     # ------------------------------------------------------------------ ASR
     async def _asr_loop(self, st: StreamState) -> None:

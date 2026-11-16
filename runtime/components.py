@@ -57,9 +57,14 @@ class SileroVAD:
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
         self._ctx = np.zeros((1, _VAD_CONTEXT), dtype=np.float32)
 
-    def reset(self) -> None:
+    def reset_states(self) -> None:
+        """Reinicia solo la memoria del modelo (fin de segmento). Conserva el resto
+        de muestras sin procesar, igual que ``model.reset_states()`` del Silero original."""
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
         self._ctx = np.zeros((1, _VAD_CONTEXT), dtype=np.float32)
+
+    def reset(self) -> None:
+        self.reset_states()
         self._rest = np.zeros(0, dtype=np.float32)
 
     def _window_prob(self, w: np.ndarray) -> float:
