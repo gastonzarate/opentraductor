@@ -178,3 +178,24 @@ def test_audio_latency_rejects_unknown_modes(tmp_path, bad, monkeypatch):
     monkeypatch.setattr(cli, "build_service", lambda a: pytest.fail("no debe crear servicio"))
     with pytest.raises(SystemExit):
         cli.main(["run", "--db", str(tmp_path / "h.sqlite3"), "--audio-latency", bad])
+
+
+def test_mt_engine_defaults_to_marian_and_env_or_flag_selects_qwen(tmp_path, monkeypatch):
+    """T-51: la .app elige Qwen con OPENTRADUCTOR_MT_ENGINE=qwen (+ OPENTRADUCTOR_QWEN_DIR); el flag manda."""
+    monkeypatch.delenv("OPENTRADUCTOR_MT_ENGINE", raising=False)
+    svc, cfg = cli.build_service(_args(db=tmp_path / "a.sqlite3"))
+    svc.close()
+    assert cfg.mt_engine == "marian" and cfg.qwen_model_dir is None
+
+    monkeypatch.setenv("OPENTRADUCTOR_MT_ENGINE", "qwen")
+    svc, cfg = cli.build_service(_args(db=tmp_path / "b.sqlite3"))
+    svc.close()
+    assert cfg.mt_engine == "qwen"
+
+    svc, cfg = cli.build_service(_args("--mt-engine", "marian", "--qwen-dir", "/x", db=tmp_path / "c.sqlite3"))
+    svc.close()
+    assert cfg.mt_engine == "marian" and cfg.qwen_model_dir == "/x"
+
+    monkeypatch.setenv("OPENTRADUCTOR_MT_ENGINE", "gpt")
+    with pytest.raises(SystemExit):
+        cli.build_service(_args(db=tmp_path / "d.sqlite3"))

@@ -68,6 +68,16 @@ def _mt_normalize(a) -> bool:
     return v == "on"
 
 
+def _mt_engine(a) -> str:
+    """T-51: flag explícito manda; sin flag, OPENTRADUCTOR_MT_ENGINE (lo fija la .app); si no, marian."""
+    v = getattr(a, "mt_engine", None)
+    if v is None:
+        v = os.environ.get("OPENTRADUCTOR_MT_ENGINE", "").strip().lower() or "marian"
+    if v not in ("marian", "qwen"):
+        raise SystemExit(f"OPENTRADUCTOR_MT_ENGINE inválido: {v!r} (marian|qwen)")
+    return v
+
+
 def build_service(a):
     """Crea el servicio con la configuración de la línea de comandos. No carga modelos."""
     from .config import PipelineConfig
@@ -79,6 +89,8 @@ def build_service(a):
         tts_trim_lead_margin_ms=a.tts_trim_lead_ms,
         tts_trim_tail=_tts_trim_tail(a),
         mt_normalize=_mt_normalize(a),
+        mt_engine=_mt_engine(a),
+        qwen_model_dir=getattr(a, "qwen_dir", None),
         tts_first_chunk_max_words=a.tts_first_chunk_max_words,
         asr_normalize_text=a.normalize_asr_text,
         tts_bind_conjunctions=a.tts_bind_conjunctions,
@@ -220,6 +232,10 @@ def build_parser():
     r.add_argument("--tts-trim-tail", choices=("on", "off"), default=None,
                    help="recorta el silencio final de cada fragmento TTS (-60 dBFS, conserva 80 ms). "
                         "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1 lo activa; si no, off")
+    r.add_argument("--mt-engine", choices=("marian", "qwen"), default=None,
+                   help="traductor (T-51). Sin el flag: OPENTRADUCTOR_MT_ENGINE; si no, marian")
+    r.add_argument("--qwen-dir", default=None,
+                   help="carpeta del Qwen MLX. Sin el flag: OPENTRADUCTOR_QWEN_DIR")
     r.add_argument("--mt-normalize", choices=("on", "off"), default=None,
                    help="antes de Marian: '120 mil' -> '120.000' y traduce oración por oración. "
                         "Sin el flag: OPENTRADUCTOR_MT_NORMALIZE=1 lo activa; si no, off")
