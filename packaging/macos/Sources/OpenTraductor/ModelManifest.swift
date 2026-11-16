@@ -214,12 +214,24 @@ enum ModelManifest {
 
 /// Qué motores usa este build. Sale del Info.plist (OTASRBackend, OTMTEngine, OTQwenModel); sin claves, el stack de
 /// antes (Parakeet + Marian). Cambiar el ASR (T-48) o el tamaño de Qwen (T-50) es editar el Info.plist, no el código.
+/// OTEngineMode (T-51): "baseline" o "incremental_experimental" (el de la app diaria). El incremental solo vale con el stack de
+/// tienda (Moonshine + Qwen); si no, cae a baseline. En incremental el runtime rechaza --asr-backend: el motor fija su ASR.
 struct EngineProfile {
+    static let baseline = "baseline"
+    static let incremental = "incremental_experimental"
+
     let asrBackend: String
     let mtEngine: String
     let qwenModel: String
+    var engineMode: String = EngineProfile.baseline
 
     var isStoreStack: Bool { mtEngine == "qwen" && asrBackend.hasPrefix("moonshine") }
+    var isIncremental: Bool { engineMode == EngineProfile.incremental }
+
+    /// Argumentos del motor para `run` o `check` (mismo perfil en los dos).
+    func runtimeArgs(_ cmd: String) -> [String] {
+        isIncremental ? ["-m", "runtime", cmd, "--engine-mode", engineMode] : ["-m", "runtime", cmd, "--asr-backend", asrBackend]
+    }
 
     static var current: EngineProfile { from(Bundle.main.infoDictionary ?? [:]) }
 
@@ -229,7 +241,9 @@ struct EngineProfile {
         let q = info["OTQwenModel"] as? String ?? "qwen3-4b-instruct-2507-4bit"
         let validASR = asr == "parakeet" || ModelManifest.moonshineFiles[asr] != nil
         let validQwen = ModelManifest.qwenRepos[q] != nil
-        return EngineProfile(asrBackend: validASR ? asr : "parakeet", mtEngine: (mt == "qwen" && validQwen) ? "qwen" : "marian",
-                             qwenModel: validQwen ? q : "qwen3-4b-instruct-2507-4bit")
+        var p = EngineProfile(asrBackend: validASR ? asr : "parakeet", mtEngine: (mt == "qwen" && validQwen) ? "qwen" : "marian",
+                              qwenModel: validQwen ? q : "qwen3-4b-instruct-2507-4bit")
+        if (info["OTEngineMode"] as? String) == incremental && p.isStoreStack { p.engineMode = incremental }
+        return p
     }
 }

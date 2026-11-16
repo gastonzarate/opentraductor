@@ -14,6 +14,8 @@
   <key>OTASRBackend</key><string>moonshine-tiny</string>
   <key>OTMTEngine</key><string>qwen</string>
   <key>OTQwenModel</key><string>qwen3-4b-instruct-2507-4bit</string>
+  <!-- baseline | incremental_experimental (app diaria). Lo define la fila baseline+Qwen vs incremental de T-50 (@lead, #t-48). -->
+  <key>OTEngineMode</key><string>baseline</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
   <key>NSHighResolutionCapable</key><true/>
