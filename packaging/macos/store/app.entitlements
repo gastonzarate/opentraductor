@@ -2,13 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- Sin hardened runtime (la tienda no lo exige) los permisos cs.* no tienen efecto: no van. -->
   <key>com.apple.security.app-sandbox</key><true/>
   <key>com.apple.security.device.audio-input</key><true/>
   <!-- Descarga de modelos (cliente) y servidor local 127.0.0.1 entre el shell y el motor. -->
   <key>com.apple.security.network.client</key><true/>
   <key>com.apple.security.network.server</key><true/>
-  <key>com.apple.security.cs.allow-jit</key><true/>
-  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
-  <key>com.apple.security.cs.disable-library-validation</key><true/>
 </dict>
 </plist>
