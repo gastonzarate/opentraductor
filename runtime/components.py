@@ -353,6 +353,47 @@ def lead_silence_samples(x: np.ndarray, sr: int, thr_dbfs: float = -60.0, frame_
     return len(x)
 
 
+TAIL_THR_DBFS = -60.0
+TAIL_FRAME_MS = 5.0
+TAIL_MARGIN_MS = 80.0
+
+
+def tail_keep_samples(x: np.ndarray, sr: int, thr_dbfs: float = TAIL_THR_DBFS, frame_ms: float = TAIL_FRAME_MS,
+                      margin_ms: float = TAIL_MARGIN_MS) -> int:
+    """Muestras a conservar al recortar el silencio FINAL (T-47; regla de ``incremental-tts-tail-v1/trim.py``).
+
+    ``x``: muestras s16 (cualquier dtype numérico). Bloques de ``frame_ms`` alineados DESDE EL FINAL; un bloque es
+    sonoro si su RMS (x/32768) en dBFS es > ``thr_dbfs``. Se conserva hasta el fin del último bloque sonoro más
+    ``margin_ms``, sin pasar del largo. Todo silencio o vacío: se conserva todo (nunca vacía el chunk)."""
+    x = np.asarray(x, dtype=np.float64).reshape(-1)
+    L = x.size
+    if L == 0:
+        return 0
+    n = max(1, int(sr * frame_ms / 1000))
+    thr = 32768.0 * 10 ** (thr_dbfs / 20)
+    k, r = divmod(L, n)
+    end = 0
+    if k:
+        rms = np.sqrt(np.mean(x[r:].reshape(k, n) ** 2, axis=1))
+        idx = np.nonzero(rms > thr)[0]
+        if idx.size:
+            end = r + (int(idx[-1]) + 1) * n
+    if not end and r and float(np.sqrt(np.mean(x[:r] ** 2))) > thr:
+        end = r
+    if not end:
+        return L
+    return min(L, end + int(sr * margin_ms / 1000))
+
+
+def trim_tail_pcm(pcm: bytes, sr: int) -> bytes:
+    """PCM s16le con el silencio final recortado; lo conservado es un prefijo EXACTO de ``pcm``. Si no hay nada que
+    recortar, o el PCM no es válido (largo impar, sr inválido), devuelve ``pcm`` sin cambios."""
+    if not pcm or len(pcm) % 2 or not isinstance(sr, int) or sr <= 0:
+        return pcm
+    keep = tail_keep_samples(np.frombuffer(pcm, dtype="<i2"), sr)
+    return pcm if keep * 2 >= len(pcm) else pcm[: 2 * keep]
+
+
 @dataclass
 class TTSChunk:
     pcm: bytes  # s16le mono
@@ -364,7 +405,8 @@ class KokoroTTS:
     SAMPLE_RATE = 24000
 
     def __init__(self, voice: str, speed: float, trim_lead_margin_ms: float | None = None,
-                 first_chunk_max_words: int | None = None, bind_conjunctions: bool = False) -> None:
+                 first_chunk_max_words: int | None = None, bind_conjunctions: bool = False,
+                 trim_tail: bool = False) -> None:
         from mlx_audio.tts.models.kokoro import KokoroPipeline
         from mlx_audio.tts.utils import load_model
 
@@ -385,6 +427,9 @@ class KokoroTTS:
         self.first_chunk_max_words = first_chunk_max_words
         self.bind_conjunctions = bind_conjunctions
         self.last_trim_ms = 0.0
+        # T-47: recorte del silencio FINAL de cada chunk (-60 dBFS, bloques de 5 ms, margen 80 ms). False = sin cambio.
+        self.trim_tail = trim_tail
+        self.tail_trimmed_ms_total = 0.0
 
     def plan(self, text_en: str) -> list[str]:
         """Cláusulas que se sintetizarán (determinista para un mismo texto y config)."""
@@ -422,4 +467,11 @@ class KokoroTTS:
                         self.last_trim_ms = cut / self.SAMPLE_RATE * 1000
                 if x.size:
                     first = False
-                    yield TTSChunk(float_to_pcm(x), self.SAMPLE_RATE, clause)
+                    yield self._chunk(float_to_pcm(x), clause)
+
+    def _chunk(self, pcm: bytes, clause: str) -> "TTSChunk":
+        if self.trim_tail:
+            out = trim_tail_pcm(pcm, self.SAMPLE_RATE)
+            self.tail_trimmed_ms_total += (len(pcm) - len(out)) / 2 / self.SAMPLE_RATE * 1000
+            pcm = out
+        return TTSChunk(pcm, self.SAMPLE_RATE, clause)

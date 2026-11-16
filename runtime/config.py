@@ -119,6 +119,9 @@ class PipelineConfig:
     speed: float = 1.0
     # Recorte del silencio inicial del TTS; None = desactivado. Valor = margen (ms) que se conserva antes del primer sonido.
     tts_trim_lead_margin_ms: float | None = None
+    # T-47: recorte del silencio FINAL de cada chunk TTS (-60 dBFS, bloques de 5 ms, conserva 80 ms; prefijo PCM exacto).
+    # False = camino de hoy, sin cambios. Reversible por flag (--tts-trim-tail off) o env OPENTRADUCTOR_TTS_TRIM_TAIL.
+    tts_trim_tail: bool = False
     # Primer fragmento del TTS: máx. de palabras (None = solo por puntuación). Ayuda con ASR sin puntuación.
     tts_first_chunk_max_words: int | None = None
     # Con el anterior: no cortar justo antes/después de and/or/but/nor/yet (conjunción dentro de su grupo).

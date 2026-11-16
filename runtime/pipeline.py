@@ -151,7 +151,7 @@ class Engine:
     def _spec_fp(self) -> tuple:
         c = self.cfg
         return (c.voice, c.speed, c.tts_trim_lead_margin_ms, c.tts_first_chunk_max_words,
-                c.tts_bind_conjunctions, c.asr_normalize_text)
+                c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail)
 
     def backlog(self) -> dict:
         """Estado de colas para métricas (valores medidos, no estimados)."""
@@ -175,7 +175,8 @@ class Engine:
         c = self.cfg
         self.asr = await self.asr_worker.run(lambda: timed("asr", self._make_asr))
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
-                                                   c.tts_first_chunk_max_words, c.tts_bind_conjunctions)))
+                                                   c.tts_first_chunk_max_words, c.tts_bind_conjunctions,
+                                                   c.tts_trim_tail)))
         self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2()))
         self.vad_proto = timed("vad", K.SileroVAD)
         self._out_q = asyncio.Queue(maxsize=max(1, c.max_pending_segments))

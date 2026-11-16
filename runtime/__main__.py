@@ -52,6 +52,14 @@ def _inc_options(a):
     return inc_mode.IncOptions(store_path=db.with_name("incremental_units.sqlite3"))  # rutas y pines fijos de esta Mac
 
 
+def _tts_trim_tail(a) -> bool:
+    """T-47: el flag explícito manda; sin flag, OPENTRADUCTOR_TTS_TRIM_TAIL=1 (lo fija la .app); si no, off."""
+    v = getattr(a, "tts_trim_tail", None)
+    if v is None:
+        return os.environ.get("OPENTRADUCTOR_TTS_TRIM_TAIL", "").strip().lower() in ("1", "on", "true")
+    return v == "on"
+
+
 def build_service(a):
     """Crea el servicio con la configuración de la línea de comandos. No carga modelos."""
     from .config import PipelineConfig
@@ -61,6 +69,7 @@ def build_service(a):
         asr_backend=a.asr_backend,
         asr_skip_silent_tail=a.skip_silent_tail,
         tts_trim_lead_margin_ms=a.tts_trim_lead_ms,
+        tts_trim_tail=_tts_trim_tail(a),
         tts_first_chunk_max_words=a.tts_first_chunk_max_words,
         asr_normalize_text=a.normalize_asr_text,
         tts_bind_conjunctions=a.tts_bind_conjunctions,
@@ -196,6 +205,9 @@ def build_parser():
     _add_mode_args(r)
     r.add_argument("--tts-trim-lead-ms", type=_nonneg_ms, default=None,
                    help="recorta el silencio inicial del TTS, conservando este margen en ms (experimental)")
+    r.add_argument("--tts-trim-tail", choices=("on", "off"), default=None,
+                   help="recorta el silencio final de cada fragmento TTS (-60 dBFS, conserva 80 ms). "
+                        "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1 lo activa; si no, off")
     r.add_argument("--skip-silent-tail", action="store_true",
                    help="no envía al ASR la cola silenciosa del segmento (experimental)")
     r.add_argument("--tts-first-chunk-max-words", type=_positive_int, default=None,
