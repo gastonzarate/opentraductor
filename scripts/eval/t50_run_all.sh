@@ -22,3 +22,4 @@ for s in "${SIZES[@]}"; do
     --qwen-dir "$dir" --asr "$ASR" --session-min "$SESSION_MIN" --out "$OUT/$name.json" 2> "$OUT/$name.time.txt"
   grep -E "maximum resident|peak memory footprint" "$OUT/$name.time.txt" || true
 done
+.venv/bin/python scripts/eval/t50_summary.py "$OUT" | tee "$OUT/../RESULTS.md"
