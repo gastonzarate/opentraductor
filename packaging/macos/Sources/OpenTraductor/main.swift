@@ -97,7 +97,7 @@ final class RuntimeProcess {
 
 // T-42: ventana principal, Ajustes y Acerca de en SwiftUI (sin WebKit). Ver MainView.swift, AppModel.swift y EngineClient.swift.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var window: NSWindow!
     private let model = AppModel()
     private let runtime = RuntimeProcess()
@@ -106,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var modelSetup: ModelSetup?
     private var settingsWindow: NSWindow?
     private var aboutWindow: NSWindow?
+    private var toggleItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -166,11 +167,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "Copiar", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Pegar", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Seleccionar todo", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let trItem = NSMenuItem(); main.addItem(trItem)
+        let tr = NSMenu(title: "Traducción"); trItem.submenu = tr
+        toggleItem = tr.addItem(withTitle: "Iniciar", action: #selector(toggleTranslation), keyEquivalent: "r")
+        toggleItem?.target = self
+        let refresh = tr.addItem(withTitle: "Actualizar la lista de dispositivos", action: #selector(refreshDevices), keyEquivalent: "r")
+        refresh.keyEquivalentModifierMask = [.command, .shift]
+        refresh.target = self
         let winItem = NSMenuItem(); main.addItem(winItem)
         let win = NSMenu(title: "Ventana"); winItem.submenu = win
         win.addItem(withTitle: "Minimizar", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         win.addItem(withTitle: "Cerrar", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let helpItem = NSMenuItem(); main.addItem(helpItem)
+        let help = NSMenu(title: "Ayuda"); helpItem.submenu = help
+        help.addItem(withTitle: "Política de privacidad", action: #selector(openPrivacy), keyEquivalent: "").target = self
+        help.addItem(withTitle: "Soporte", action: #selector(openSupport), keyEquivalent: "").target = self
+        help.addItem(withTitle: "Licencias de terceros", action: #selector(showAbout), keyEquivalent: "").target = self
+        NSApp.helpMenu = help
         NSApp.mainMenu = main
+    }
+
+    @objc private func toggleTranslation() { model.toggle() }
+    @objc private func refreshDevices() { model.refreshDevices() }
+    @objc private func openPrivacy() { NSWorkspace.shared.open(Links.privacy) }
+    @objc private func openSupport() { NSWorkspace.shared.open(Links.support) }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(toggleTranslation):
+            let running = model.state == "running" || model.state == "starting"
+            item.title = running ? "Detener" : "Iniciar"
+            guard case .ready = model.phase else { return false }
+            return !model.busy && model.state != "stopping" && (running || (!model.inputID.isEmpty && model.missingChecks.isEmpty))
+        case #selector(refreshDevices):
+            guard case .ready = model.phase else { return false }
+            return !model.isActive
+        default:
+            return true
+        }
     }
 
     @objc private func showSettings() {

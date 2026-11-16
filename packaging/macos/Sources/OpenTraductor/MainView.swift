@@ -1,7 +1,13 @@
 import AppKit
 import SwiftUI
 
-// T-42 (en preparación, sin compilar todavía): pantalla principal nativa.
+// T-42: pantalla principal nativa, Ajustes y Acerca de.
+
+/// Enlaces públicos que la app muestra (guía 5.1.1(i): la política de privacidad tiene que estar dentro de la app).
+enum Links {
+    static let privacy = URL(string: "https://opentraductor.lat/privacidad.html")!
+    static let support = URL(string: "https://opentraductor.lat/soporte.html")!
+}
 
 struct MainView: View {
     @ObservedObject var model: AppModel
@@ -262,13 +268,14 @@ struct SettingsView: View {
             Section("Privacidad") {
                 Text("El audio se procesa en tu Mac y no se graba. Se guardan solo los textos de cada sesión, en tu Mac.")
                     .font(.callout).foregroundStyle(.secondary)
+                Link("Política de privacidad", destination: Links.privacy)
                 Button("Abrir permisos del micrófono…") { model.openMicrophoneSettings() }
                 Button("Borrar historial de textos…", role: .destructive) { confirmDelete = true }
                     .disabled(model.isActive)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 460)
+        .frame(width: 480, height: 490)
         .confirmationDialog("¿Borrar todo el historial de textos?", isPresented: $confirmDelete) {
             Button("Borrar", role: .destructive) { model.deleteHistory() }
             Button("Cancelar", role: .cancel) {}
@@ -305,6 +312,10 @@ struct AboutView: View {
             Text(version).foregroundStyle(.secondary)
             Text("Traductor de voz de español (Argentina) a inglés (EE. UU.) que corre en tu Mac. Sin telemetría. No se graba audio. La única conexión a internet es la descarga inicial de modelos.")
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 16) {
+                Link("Política de privacidad", destination: Links.privacy)
+                Link("Soporte", destination: Links.support)
+            }
             Divider()
             Text("Licencias de terceros").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
             ScrollView {
