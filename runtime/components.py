@@ -302,6 +302,8 @@ class QwenMLX:
         self.model, self.tok = load(str(model_dir))
         self.normalize = normalize
         self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")
+        self._kv = None  # (prompt_cache, tokens) del último prefill(); lo consume el próximo translate()
+        self.kv_stats = {"used": 0, "tail_tokens": []}
 
     def prompt(self, text_es: str) -> str:
         msgs = [{"role": "system", "content": QWEN_SYSTEM}, {"role": "user", "content": f"Spanish:\n{text_es}"}]
@@ -316,8 +318,55 @@ class QwenMLX:
             return ""
         if self.normalize:
             text_es = mt_normalize_numbers(text_es)
-        out = generate(self.model, self.tok, prompt=self.prompt(text_es), max_tokens=3 * len(text_es.split()) + 16, verbose=False)
+        prompt, kw = self.prompt(text_es), {}
+        kv, self._kv = self._kv, None  # un solo uso, sea de esta frase o no
+        if kv is not None:
+            from mlx_lm.models.cache import trim_prompt_cache
+
+            cache, cached = kv
+            full = self._enc(prompt)
+            n = 0  # prefijo común de tokens (la cola del parcial puede haber cambiado)
+            while n < min(len(cached), len(full) - 1) and cached[n] == full[n]:
+                n += 1
+            if n > 0:
+                if len(cached) > n:
+                    trim_prompt_cache(cache, len(cached) - n)
+                prompt, kw = full[n:], {"prompt_cache": cache}
+                self.kv_stats["used"] += 1
+                self.kv_stats["tail_tokens"].append(len(full) - n)
+                del self.kv_stats["tail_tokens"][:-64]
+        out = generate(self.model, self.tok, prompt=prompt, max_tokens=3 * len(text_es.split()) + 16,
+                       verbose=False, **kw)
         return out.strip().split("\n")[0].strip()
+
+    def _enc(self, s: str) -> list[int]:
+        return list(self.tok.encode(s, add_special_tokens=False))
+
+    def prefill(self, partial_es: str) -> None:
+        """T-58: carga en una caché KV el prompt con el parcial SIN su última palabra (suele cambiar); el
+        translate() siguiente solo procesa la cola y el decode. También despierta la GPU, como prewarm().
+        Salida idéntica a translate() sin caché (greedy; sonda c7aec17, 9/9 en 3 frases)."""
+        import mlx.core as mx
+        from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache
+
+        t = partial_es.strip()
+        if self.normalize:
+            t = mt_normalize_numbers(t)
+        stable = " ".join(t.split()[:-1])
+        if not stable:
+            self._kv = None
+            self.prewarm()
+            return
+        p = self.prompt(stable)
+        toks = self._enc(p[: p.rindex(stable) + len(stable)])
+        cache = make_prompt_cache(self.model)
+        if not can_trim_prompt_cache(cache):
+            self._kv = None
+            self.prewarm()
+            return
+        self.model(mx.array(toks)[None], cache=cache)
+        mx.eval([c.state for c in cache])
+        self._kv = (cache, toks)
 
     def prewarm(self) -> None:
         """Forward de 1 token con un prompt mínimo: despierta la GPU tras inactividad (T-58, GPU fría)."""

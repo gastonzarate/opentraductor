@@ -530,6 +530,11 @@ class Engine:
         v = os.environ.get("OPENTRADUCTOR_MT_PREWARM")
         return (v == "1") if v in ("0", "1") else self.cfg.mt_prewarm_on_pause
 
+    @property
+    def _kv_prefill_enabled(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_MT_KV_PREFILL")
+        return (v == "1") if v in ("0", "1") else self.cfg.mt_kv_prefill_on_pause
+
     def _maybe_prewarm(self, st: StreamState) -> None:
         """Al empezar la pausa VAD de un segmento, si el hilo MLX está ocioso hace >= mt_prewarm_idle_s,
         corre un forward de 1 token de Qwen para que la MT de esa frase no pague la GPU fría. No emite nada."""
@@ -537,17 +542,23 @@ class Engine:
         seg = st.seg
         if seg is None or not st.in_speech or seg.seg_id == st.prewarm_seg_id:
             return
-        if st.silence_ms < c.mt_prewarm_silence_ms or not self._prewarm_enabled:
+        kv = self._kv_prefill_enabled
+        if st.silence_ms < c.mt_prewarm_silence_ms or not (kv or self._prewarm_enabled):
             return
         if c.mt_engine != "qwen" or self.mt is None or not hasattr(self.mt, "prewarm") or self.asr_worker is self.gpu:
             return
+        kv = kv and hasattr(self.mt, "prefill") and bool(st.last_partial.strip())
         st.prewarm_seg_id = seg.seg_id  # una vez por segmento
         g = self.gpu
-        if g.inflight or time.monotonic() - g.last_done < c.mt_prewarm_idle_s:
+        if g.inflight or (not kv and time.monotonic() - g.last_done < c.mt_prewarm_idle_s):
             self.prewarm_stats["skipped_hot"] += 1
             return
         self.prewarm_stats["started"] += 1
-        t = asyncio.ensure_future(g.run(_timed_call, self.mt.prewarm))
+        if kv:
+            self.prewarm_stats["kv_prefill"] = self.prewarm_stats.get("kv_prefill", 0) + 1
+            t = asyncio.ensure_future(g.run(_timed_call, self.mt.prefill, st.last_partial))
+        else:
+            t = asyncio.ensure_future(g.run(_timed_call, self.mt.prewarm))
         self._prewarm_tasks.add(t)
         t.add_done_callback(self._prewarm_done)
 

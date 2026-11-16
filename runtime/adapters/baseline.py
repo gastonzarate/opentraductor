@@ -79,7 +79,9 @@ class BaselineAdapter(Adapter):
             "asr_text_log": list(self.asr_text_log),
             "mt_timing_log": list(self.mt_timing_log),
             "speculation": self.engine.spec_metrics() if self.engine else {},
-            "mt_prewarm": dict(self.engine.prewarm_stats, enabled=self.engine._prewarm_enabled) if self.engine else {},
+            "mt_prewarm": dict(self.engine.prewarm_stats, enabled=self.engine._prewarm_enabled,
+                               kv_enabled=self.engine._kv_prefill_enabled,
+                               kv_used=dict(getattr(self.engine.mt, "kv_stats", {}) or {})) if self.engine else {},
         }
 
     @staticmethod

@@ -228,6 +228,11 @@ class PipelineConfig:
     mt_prewarm_on_pause: bool = False
     mt_prewarm_silence_ms: float = 32.0  # silencio VAD para lanzarlo (< endpoint_silence_ms)
     mt_prewarm_idle_s: float = 1.0  # solo si el hilo MLX lleva al menos esto sin trabajo
+    # T-58: en vez del forward de 1 token, prefill KV del prompt con el parcial sin su última palabra (mismo
+    # momento, mismo silencio). Con el final solo se procesa la cola: sonda c7aec17 -52..-58 ms sobre el prewarm,
+    # salida idéntica 9/9. Corre aunque la GPU esté caliente (no si está ocupada). Reemplaza al prewarm si están
+    # los dos. $OPENTRADUCTOR_MT_KV_PREFILL=1/0 lo fuerza.
+    mt_kv_prefill_on_pause: bool = False
     end_stream_drain_timeout_s: float = 5.0  # espera máx. a drenar salidas al cerrar un stream; luego se abandona (y se descarta lo viejo)
     # Colas / backpressure
     max_pending_segments: int = 8
