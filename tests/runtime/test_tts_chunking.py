@@ -63,7 +63,7 @@ def test_normalize_asr_text():
 
 def test_config_flags_default_off():
     c = PipelineConfig()
-    assert c.tts_first_chunk_max_words is None and c.asr_normalize_text is False
+    assert c.tts_first_chunk_max_words == 8 and c.asr_normalize_text is False  # T-58
     c = PipelineConfig.from_dict({"tts_first_chunk_max_words": 8, "asr_normalize_text": True})
     assert c.tts_first_chunk_max_words == 8 and c.asr_normalize_text
 
@@ -135,8 +135,9 @@ def test_bind_conjunctions_rule_keeps_words_and_avoids_conjunction_cuts():
     assert h.split()[-1] not in K._CONJ and r.split()[0] not in K._CONJ
 
 
-def test_bind_conjunctions_flag_default_off_and_threaded():
-    assert PipelineConfig().tts_bind_conjunctions is False
+def test_bind_conjunctions_flag_default_on_and_threaded():
+    assert PipelineConfig().tts_bind_conjunctions is True  # T-58
+    assert not PipelineConfig.from_dict({"tts_bind_conjunctions": False}).tts_bind_conjunctions
     assert PipelineConfig.from_dict({"tts_bind_conjunctions": True}).tts_bind_conjunctions
     assert K.split_clauses(LONG, first_max_words=8) == [LONG[: LONG.index(" and respect")], LONG[LONG.index("and respect"):]]
     c = K.split_clauses(LONG, first_max_words=8, bind_conjunctions=True)

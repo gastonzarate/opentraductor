@@ -32,16 +32,27 @@ def _args(*extra, db):
     return cli.build_parser().parse_args(["run", "--db", str(db), *extra])
 
 
-def test_defaults_are_conservative(tmp_path):
+def test_defaults_come_from_pipeline_config(tmp_path):
+    # T-58: sin flags rige el brazo store-tuned (defaults de PipelineConfig)
     a = _args(db=tmp_path / "h.sqlite3")
     assert a.asr_backend == "parakeet"
-    assert a.skip_silent_tail is False
-    assert a.tts_trim_lead_ms is None
-    assert a.endpoint_ms is None
+    assert a.skip_silent_tail is None and a.tts_trim_lead_ms is None and a.endpoint_ms is None
     svc, cfg = cli.build_service(a)
     try:
-        assert cfg.asr_backend == "parakeet" and cfg.asr_skip_silent_tail is False
-        assert cfg.tts_trim_lead_margin_ms is None
+        assert cfg.asr_backend == "parakeet" and cfg.asr_skip_silent_tail is True
+        assert cfg.tts_trim_lead_margin_ms == 30.0 and cfg.endpoint_silence_ms == 160.0
+        assert cfg.tts_first_chunk_max_words == 8 and cfg.tts_bind_conjunctions is True
+    finally:
+        svc.close()
+
+
+def test_tuned_defaults_can_be_turned_off(tmp_path):
+    a = _args("--no-skip-silent-tail", "--tts-trim-lead-ms", "off", "--tts-first-chunk-max-words", "off",
+              "--no-tts-bind-conjunctions", db=tmp_path / "h.sqlite3")
+    svc, cfg = cli.build_service(a)
+    try:
+        assert cfg.asr_skip_silent_tail is False and cfg.tts_trim_lead_margin_ms is None
+        assert cfg.tts_first_chunk_max_words is None and cfg.tts_bind_conjunctions is False
     finally:
         svc.close()
 
@@ -134,18 +145,18 @@ def test_endpoint_accepts_api_range_bounds(tmp_path):
     assert _args("--tts-trim-lead-ms", "0", db=tmp_path / "h.sqlite3").tts_trim_lead_ms == 0.0
 
 
-def test_new_flags_default_off_and_reach_config(tmp_path):
+def test_new_flags_default_and_reach_config(tmp_path):
     a = _args(db=tmp_path / "h.sqlite3")
     assert a.tts_first_chunk_max_words is None and a.normalize_asr_text is False
     svc, cfg = cli.build_service(a)
     try:
-        assert cfg.tts_first_chunk_max_words is None and cfg.asr_normalize_text is False
+        assert cfg.tts_first_chunk_max_words == 8 and cfg.asr_normalize_text is False
     finally:
         svc.close()
-    a = _args("--tts-first-chunk-max-words", "8", "--normalize-asr-text", db=tmp_path / "h.sqlite3")
+    a = _args("--tts-first-chunk-max-words", "5", "--normalize-asr-text", db=tmp_path / "h.sqlite3")
     svc, cfg = cli.build_service(a)
     try:
-        assert cfg.tts_first_chunk_max_words == 8 and cfg.asr_normalize_text is True
+        assert cfg.tts_first_chunk_max_words == 5 and cfg.asr_normalize_text is True
     finally:
         svc.close()
 
@@ -159,10 +170,10 @@ def test_first_chunk_words_rejects_invalid(tmp_path, bad, monkeypatch):
 
 def test_audio_latency_and_bind_conjunctions_defaults_and_flow(tmp_path):
     a = _args(db=tmp_path / "h.sqlite3")
-    assert a.audio_latency is None and a.tts_bind_conjunctions is False  # sin flag: rige guardado o default
+    assert a.audio_latency is None and a.tts_bind_conjunctions is None  # sin flag: rige guardado o default
     svc, cfg = cli.build_service(a)
     try:
-        assert cfg.tts_bind_conjunctions is False and svc._audio_latency == "default"
+        assert cfg.tts_bind_conjunctions is True and svc._audio_latency == "default"
     finally:
         svc.close()
     a = _args("--audio-latency", "low", "--tts-bind-conjunctions", db=tmp_path / "h.sqlite3")

@@ -87,18 +87,22 @@ def build_service(a):
     from .config import PipelineConfig
     from .service import RuntimeService
 
+    # T-58: sin flag (None) rige el default de PipelineConfig; con flag, el valor indicado ("off" = desactivado).
+    tuned = {}
+    for key, v in (("asr_skip_silent_tail", a.skip_silent_tail), ("tts_bind_conjunctions", a.tts_bind_conjunctions),
+                   ("tts_first_chunk_max_words", a.tts_first_chunk_max_words),
+                   ("tts_trim_lead_margin_ms", a.tts_trim_lead_ms)):
+        if v is not None:
+            tuned[key] = None if v == "off" else v
     cfg = PipelineConfig(
         asr_backend=a.asr_backend,
-        asr_skip_silent_tail=a.skip_silent_tail,
-        tts_trim_lead_margin_ms=a.tts_trim_lead_ms,
         tts_trim_tail=_tts_trim_tail(a),
         mt_normalize=_mt_normalize(a),
         mt_engine=_mt_engine(a),
         qwen_model_dir=getattr(a, "qwen_dir", None),
-        tts_first_chunk_max_words=a.tts_first_chunk_max_words,
         asr_normalize_text=a.normalize_asr_text,
-        tts_bind_conjunctions=a.tts_bind_conjunctions,
         warmup_in_open=not a.no_warmup,
+        **tuned,
     )
     explicit = set()
     if a.endpoint_ms is not None:
@@ -184,6 +188,14 @@ def _nonneg_ms(text: str) -> float:
     return v
 
 
+def _nonneg_ms_or_off(text: str) -> float | str:
+    return "off" if text == "off" else _nonneg_ms(text)
+
+
+def _positive_int_or_off(text: str) -> int | str:
+    return "off" if text == "off" else _positive_int(text)
+
+
 def _positive_int(text: str) -> int:
     try:
         v = int(text)
@@ -240,8 +252,9 @@ def build_parser():
     r.add_argument("--no-warmup", action="store_true", help="no precalentar modelos al iniciar")
     _add_engine_args(r)
     _add_mode_args(r)
-    r.add_argument("--tts-trim-lead-ms", type=_nonneg_ms, default=None,
-                   help="recorta el silencio inicial del TTS, conservando este margen en ms (experimental)")
+    r.add_argument("--tts-trim-lead-ms", type=_nonneg_ms_or_off, default=None,
+                   help="recorta el silencio inicial del TTS, conservando este margen en ms; 'off' lo desactiva. "
+                        "Sin el flag: default de PipelineConfig (30)")
     r.add_argument("--tts-trim-tail", choices=("on", "off"), default=None,
                    help="recorta el silencio final de cada fragmento TTS (-60 dBFS, conserva 80 ms). "
                         "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1 lo activa; si no, off")
@@ -249,15 +262,16 @@ def build_parser():
     r.add_argument("--mt-normalize", choices=("on", "off"), default=None,
                    help="antes de Marian: '120 mil' -> '120.000' y traduce oración por oración. "
                         "Sin el flag: OPENTRADUCTOR_MT_NORMALIZE=1 lo activa; si no, off")
-    r.add_argument("--skip-silent-tail", action="store_true",
-                   help="no envía al ASR la cola silenciosa del segmento (experimental)")
-    r.add_argument("--tts-first-chunk-max-words", type=_positive_int, default=None,
-                   help="palabras máximas del primer fragmento de TTS (entero > 0; experimental)")
+    r.add_argument("--skip-silent-tail", action=argparse.BooleanOptionalAction, default=None,
+                   help="no envía al ASR la cola silenciosa del segmento. Sin el flag: default de PipelineConfig (on)")
+    r.add_argument("--tts-first-chunk-max-words", type=_positive_int_or_off, default=None,
+                   help="palabras máximas del primer fragmento de TTS (entero > 0; 'off' = solo puntuación). "
+                        "Sin el flag: default de PipelineConfig (8)")
     r.add_argument("--audio-latency", choices=("default", "low", "high"), default=None,
                    help="latencia pedida a PortAudio: default (sounddevice, 'high'), low o high. "
                         "Si se indica, prevalece sobre el valor guardado en la base")
-    r.add_argument("--tts-bind-conjunctions", action="store_true",
-                   help="no corta el TTS justo antes ni después de conjunciones (experimental)")
+    r.add_argument("--tts-bind-conjunctions", action=argparse.BooleanOptionalAction, default=None,
+                   help="no corta el TTS justo antes ni después de conjunciones. Sin el flag: default de PipelineConfig (on)")
     r.add_argument("--normalize-asr-text", action="store_true",
                    help="normaliza el texto del ASR antes de traducir; el original se guarda aparte (experimental)")
     r.set_defaults(fn=cmd_run)

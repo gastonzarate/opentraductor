@@ -34,9 +34,9 @@ APPROVED_MODEL_MANIFEST_SHA256: str | None = "a4a9d6ca046f468b5067c2d2acaee1492f
 ADAPTER_SPEC = "inc_llm.adapter:IncrementalLLMAdapter"
 IGNORED_CONTROLS = ("voice", "endpoint_silence_ms")  # no se ofrecen ni se aceptan en modo incremental (el motor fija su politica)
 # flags del CLI que solo afectan al motor baseline: en modo incremental se rechazan (no se ignoran en silencio)
-BASELINE_ONLY_FLAGS = (("asr_backend", "parakeet", "--asr-backend"), ("skip_silent_tail", False, "--skip-silent-tail"),
+BASELINE_ONLY_FLAGS = (("asr_backend", "parakeet", "--asr-backend"), ("skip_silent_tail", None, "--skip-silent-tail"),
                        ("tts_trim_lead_ms", None, "--tts-trim-lead-ms"), ("tts_trim_tail", None, "--tts-trim-tail"), ("mt_normalize", None, "--mt-normalize"), ("tts_first_chunk_max_words", None, "--tts-first-chunk-max-words"),
-                       ("normalize_asr_text", False, "--normalize-asr-text"), ("tts_bind_conjunctions", False, "--tts-bind-conjunctions"),
+                       ("normalize_asr_text", False, "--normalize-asr-text"), ("tts_bind_conjunctions", None, "--tts-bind-conjunctions"),
                        ("endpoint_ms", None, "--endpoint-ms"), ("no_warmup", False, "--no-warmup"))
 LABEL = "Traducción simultánea · Experimental"  # texto corto de la UI; el detalle tecnico va en DETAIL (diagnostico/docs)
 DETAIL = ("Qwen3-4B sin cache + Moonshine tiny + Kokoro; sin promesa de 300 ms; voz estandar fija. 'Entregado' = PCM enviado al reproductor, "

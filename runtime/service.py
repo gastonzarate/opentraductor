@@ -53,6 +53,21 @@ FIRST_BLOCK_TIMEOUT_S = 2.0
 NO_OUTPUT = "__none__"
 
 
+def _saved_endpoint_ms(saved: dict, default: float) -> float:
+    """endpoint_silence_ms guardado, o ``default`` si no hay o si es el default viejo (250, T-58).
+
+    La app guardaba todo el config al cambiar cualquier opción, así que un 250 guardado casi
+    nunca es una elección del usuario. Cualquier otro valor guardado se respeta."""
+    v = saved.get("endpoint_silence_ms")
+    if v is None:
+        return float(default)
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return float(default)
+    return float(default) if v == C.LEGACY_ENDPOINT_SILENCE_MS else v
+
+
 def _ms(seconds: float | None) -> float | None:
     return round(seconds * 1000, 1) if seconds is not None else None
 
@@ -114,7 +129,7 @@ class RuntimeService:
             "monitor_id": saved.get("monitor_id"),
             "monitor_volume": float(saved.get("monitor_volume", 0.8)),
             "voice": saved.get("voice", self._pcfg.voice),
-            "endpoint_silence_ms": float(saved.get("endpoint_silence_ms", self._pcfg.endpoint_silence_ms)),
+            "endpoint_silence_ms": _saved_endpoint_ms(saved, self._pcfg.endpoint_silence_ms),
         }
         if "endpoint_silence_ms" in self._explicit:
             self._cfg["endpoint_silence_ms"] = float(self._pcfg.endpoint_silence_ms)

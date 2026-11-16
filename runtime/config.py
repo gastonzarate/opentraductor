@@ -166,12 +166,18 @@ def snapshot(repo: str, rev: str, required: tuple[str, ...] = ("config.json",)) 
     return d
 
 
+# T-58: default anterior de endpoint_silence_ms. La app guardaba todo el config al cambiar cualquier opción,
+# así que un 250 guardado casi nunca es una elección del usuario: se trata como "sin valor".
+LEGACY_ENDPOINT_SILENCE_MS = 250.0
+
+
 @dataclass
 class PipelineConfig:
     """Parámetros ajustables. Todos quedan registrados en la corrida."""
 
     # Endpoint
-    endpoint_silence_ms: float = 250.0
+    # T-58: 160 (antes 250). Brazo store-tuned del A/B T-58: p50 1063 vs 1234 ms, mismo WER 0,047.
+    endpoint_silence_ms: float = 160.0
     vad_threshold: float = 0.5
     min_speech_ms: float = 120.0
     max_segment_s: float = 20.0  # corte forzado de seguridad
@@ -181,12 +187,12 @@ class PipelineConfig:
     asr_chunk_ms: float = 160.0
     asr_context: tuple[int, int] = (256, 256)  # (izq, der) en frames de 80 ms; derecho pequeño degrada el texto
     # Al endpoint, no pasar al ASR la cola de audio que es solo silencio (toda la voz ya se procesó).
-    asr_skip_silent_tail: bool = False
+    asr_skip_silent_tail: bool = True  # T-58: default activo (WER sin cambio en el A/B)
     # TTS
     voice: str = "af_heart"
     speed: float = 1.0
     # Recorte del silencio inicial del TTS; None = desactivado. Valor = margen (ms) que se conserva antes del primer sonido.
-    tts_trim_lead_margin_ms: float | None = None
+    tts_trim_lead_margin_ms: float | None = 30.0  # T-58: default 30 ms (antes None)
     # T-47: recorte del silencio FINAL de cada chunk TTS (-60 dBFS, bloques de 5 ms, conserva 80 ms; prefijo PCM exacto).
     # False = camino de hoy, sin cambios. Reversible por flag (--tts-trim-tail off) o env OPENTRADUCTOR_TTS_TRIM_TAIL.
     tts_trim_tail: bool = False
@@ -200,9 +206,9 @@ class PipelineConfig:
     # T-50: tope de la caché de buffers libres de MLX (MB), para todo el proceso (Qwen + Kokoro + Parakeet). None = sin tope.
     mlx_cache_limit_mb: float | None = MLX_CACHE_LIMIT_MB_DEFAULT
     # Primer fragmento del TTS: máx. de palabras (None = solo por puntuación). Ayuda con ASR sin puntuación.
-    tts_first_chunk_max_words: int | None = None
+    tts_first_chunk_max_words: int | None = 8  # T-58: default 8 (antes None)
     # Con el anterior: no cortar justo antes/después de and/or/but/nor/yet (conjunción dentro de su grupo).
-    tts_bind_conjunctions: bool = False
+    tts_bind_conjunctions: bool = True  # T-58: default activo
     # Normaliza el texto ASR para MT (mayúscula inicial + punto final; sin comas). El crudo se conserva aparte.
     asr_normalize_text: bool = False
     # Especulación (OPCIONAL, apagada): tras una pausa VAD y con el ASR ya al día se precalcula MT (y, si el ASR

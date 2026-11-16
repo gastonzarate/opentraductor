@@ -177,13 +177,15 @@ Información del coordinador: macOS 26.6 arm64; PortAudio enumera solo micrófon
 
 Parte del contenido de fuentes web se parafraseó para respetar licencias de contenido.
 
-## Opciones de optimización del pipeline (`PipelineConfig`, todas apagadas por defecto)
+## Opciones de optimización del pipeline (`PipelineConfig`)
+
+Desde T-58 (A/B de 3 brazos, `artifacts/t58-tuned`) el brazo *store-tuned* es el default: `endpoint_silence_ms` 160, `asr_skip_silent_tail`, `tts_trim_lead_margin_ms` 30, `tts_first_chunk_max_words` 8 y `tts_bind_conjunctions`. Fin de habla→primer audio p50 1063 ms contra 1234 de los defaults anteriores, mismo WER 0,047 (Moonshine tiny + Qwen 4B). En el CLI se apagan con `--no-skip-silent-tail`, `--tts-trim-lead-ms off`, `--tts-first-chunk-max-words off` y `--no-tts-bind-conjunctions`. Un `endpoint_silence_ms` guardado igual a 250 (el default viejo, que la app guardaba con cualquier cambio de opciones) se toma como sin valor; cualquier otro valor guardado se respeta. El resto de las opciones sigue apagado.
 
 Medidas solo sobre 3 clips DEVELOPMENT (`artifacts/runtime-opt/`, `artifacts/runtime-moonshine/`); piloto, no conclusión estadística. Los límites de fin de habla son estimados.
 
 | Opción | Efecto | Limitación conocida |
 | --- | --- | --- |
-| `endpoint_silence_ms` | Silencio del VAD para cerrar segmento (250 por defecto). | 96–160 ms puede sobre-segmentar con pausas naturales; sin medir en continuo. |
+| `endpoint_silence_ms` | Silencio del VAD para cerrar segmento (160 por defecto desde T-58; antes 250). | 96–160 ms puede sobre-segmentar con pausas naturales; sin medir en continuo. |
 | `asr_chunk_ms` | Audio por paso del ASR. | Con Parakeet, 96 ms es peor que 160: cada `add()` cuesta ~110–150 ms fijos y el ASR no sigue el tiempo real (WER 0.558 en el piloto). |
 | `asr_skip_silent_tail` | Al endpoint no se envía al ASR la cola de audio que es solo silencio según el VAD. | Depende del VAD: un falso negativo en el final de una palabra suave perdería voz. |
 | `tts_trim_lead_margin_ms` | Recorta el silencio inicial del primer chunk TTS de cada frase (umbral −60 dBFS) y deja ese margen. | Reduce el tiempo de reproducción estimada, no el «PCM disponible» (que usa −50 dBFS). |

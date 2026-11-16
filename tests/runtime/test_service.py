@@ -230,6 +230,24 @@ def test_config_persists_across_reopen(tmp_path):
         b.close()
 
 
+@pytest.mark.parametrize("saved, expected", [(None, 160.0), (250.0, 160.0), (300.0, 300.0), (120.0, 120.0)])
+def test_saved_endpoint_legacy_250_uses_new_default(tmp_path, saved, expected):
+    # T-58: un 250 guardado (default viejo, se guardaba con cualquier cambio) se toma como "sin valor"
+    from runtime.text_store import TextStore
+    if saved is not None:
+        st = TextStore(tmp_path / "t.db")
+        st.set_config({"endpoint_silence_ms": saved})
+        st.close()
+    pcfg = PipelineConfig()
+    s = RuntimeService(tmp_path / "t.db", pipeline_cfg=pcfg, engine_factory=FakeEngine, audio=FakeAudio,
+                       preflight=ok_preflight)
+    try:
+        assert s.status()["config"]["endpoint_silence_ms"] == expected
+        assert pcfg.endpoint_silence_ms == expected
+    finally:
+        s.close()
+
+
 def test_input_queue_overflow_is_visible_and_counted(svc):
     ev = events_of(svc)
     configure_ok(svc)
