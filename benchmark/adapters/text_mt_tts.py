@@ -68,6 +68,11 @@ class TextMtTtsAdapter(Adapter):
     def _make_mt(self, cfg: dict):
         from runtime.components import MarianCT2  # import perezoso: el benchmark no depende del runtime
 
+        if cfg.get("mt_engine", "marian") == "qwen":  # T-58: traductor de la tienda (Qwen3 4bit MLX); necesita .venv-inc-llm
+            from runtime.components import QwenMLX
+            from runtime.config import PipelineConfig, qwen_model_dir
+
+            return QwenMLX(qwen_model_dir(PipelineConfig(qwen_model_dir=cfg.get("qwen_model_dir"))), normalize=bool(cfg.get("mt_normalize", False)))
         return MarianCT2(beam_size=cfg["beam_size"], threads=cfg["threads"])
 
     def _make_tts(self, cfg: dict):
@@ -91,7 +96,8 @@ class TextMtTtsAdapter(Adapter):
         if self.cfg["stages"] not in ("mt", "mt+tts"):
             raise ValueError(f"stages inválido: {self.cfg['stages']!r}")
         self.produces_audio = self.cfg["stages"] == "mt+tts"
-        self.name = "text-marian-ct2" + ("+kokoro" if self.produces_audio else "")
+        qwen = self.cfg.get("mt_engine", "marian") == "qwen"
+        self.name = ("text-qwen-mlx" if qwen else "text-marian-ct2") + ("+kokoro" if self.produces_audio else "")
 
         def timed(label, fn):
             t = time.perf_counter()
@@ -159,8 +165,12 @@ class TextMtTtsAdapter(Adapter):
             d["runtime_components_sha256"] = hashlib.sha256(Path(K.__file__).read_bytes()).hexdigest()
             d["adapter_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
             models: dict[str, Any] = {}
-            marian = C.marian_ct2_dir()
-            models["mt"] = {"repo": C.MARIAN_REPO, "revision": C.MARIAN_REV, "ct2_int8_dir": snapshot.weights_fingerprint(marian)}
+            if self.cfg.get("mt_engine", "marian") == "qwen":
+                qdir = C.qwen_model_dir(C.PipelineConfig(qwen_model_dir=self.cfg.get("qwen_model_dir")))
+                models["mt"] = {"engine": "qwen-mlx", "dir": str(qdir), "weights": snapshot.weights_fingerprint(qdir)}
+            else:
+                marian = C.marian_ct2_dir()
+                models["mt"] = {"repo": C.MARIAN_REPO, "revision": C.MARIAN_REV, "ct2_int8_dir": snapshot.weights_fingerprint(marian)}
             if self.produces_audio:
                 models["tts"] = self._describe_tts()
             d["models"] = models

@@ -39,8 +39,23 @@ ENV = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
 
 # T-45 (16/11, decisión de @lead): la base 409 ms / 0,050 / 51,3 ms es de otra config (Moonshine tiny ep160, 12 clips test, sin Qwen).
 # La tienda sale con Moonshine + Qwen (T-49). Hasta fijar la base con esa config (tras T-48 y T-50), estas filas se miden y se
-# muestran, pero no aprueban ni fallan. Para reactivarlas: vaciar NO_VALID_BASE y poner la base nueva en los umbrales.
+# muestran, pero no aprueban ni fallan. T-58: se reactivan solas al existir scripts/eval/store_baseline.json (ver STORE_BASE).
 NO_VALID_BASE = ("Latencia motor", "ASR WER", "MT petición→mt_final p95")
+
+# T-58: la base de la config de tienda vive en scripts/eval/store_baseline.json (la escribe @bench tras medir con
+# scripts/eval/t58_baseline.sh). Si existe, las filas con base dejan de salir SIN BASE y se comparan contra su umbral.
+# Formato: {"config": {...adapter-config de la tienda...}, "python": ".venv-inc-llm/bin/python", "latency_reps": 7,
+#           "latency_p50_ms": {"base": N, "threshold": N}, "latency_p95_ms": {...}, "mt_p95_ms": {...}, "asr_wer": {...}}
+STORE_BASE_FILE = ROOT / "scripts/eval/store_baseline.json"
+STORE_BASE: dict = json.loads(STORE_BASE_FILE.read_text(encoding="utf-8")) if STORE_BASE_FILE.exists() else {}
+BASE_KEY = {"Latencia motor, mediana": "latency_p50_ms", "Latencia motor, p95": "latency_p95_ms",
+            "ASR WER": "asr_wer", "MT petición→mt_final p95": "mt_p95_ms"}
+
+
+def store_thr(key: str):
+    """(base, umbral) de la base de tienda o None si esa fila aún no tiene base."""
+    e = STORE_BASE.get(key)
+    return (float(e["base"]), float(e["threshold"])) if isinstance(e, dict) and "base" in e and "threshold" in e else None
 
 
 @dataclass
@@ -63,7 +78,7 @@ def sh(cmd, out: Path, log: str, env=None, timeout=3600) -> int:
 
 COMPETITORS = re.compile(r"pytest|benchmark run|compare_configs|final_validation|xcodebuild|build_app|swift-build|swiftc|ab\.sh|OpenTraductor\.app|/tmp/\S+\.py|\bsay -v")
 AGENT_PROC = re.compile(r"kiro-cli|claude --print|/bin/zsh -c|bash -c")  # la línea de comandos de un agente puede contener las palabras de arriba
-TIMED_METRICS = ("Latencia motor", "ASR WER", "MT petición")  # BLEU/chrF/WER audible no dependen de la carga
+TIMED_METRICS = ("Latencia motor", "ASR WER", "MT petición")  # (con base de tienda, ver STORE_BASE)  # BLEU/chrF/WER audible no dependen de la carga
 
 
 def competing_processes() -> set[str]:
@@ -205,32 +220,52 @@ def check_vad(out: Path, a) -> list[Row]:
 
 def check_latency(out: Path, a) -> list[Row]:
     d = out / "latency"
-    env = {**ENV, "CONFIGS": "A-baseline={}", "REPS": str(a.reps)}
+    store = bool(STORE_BASE.get("config"))
+    name = "store" if store else "A-baseline"
+    cfg_json = json.dumps(STORE_BASE["config"], separators=(",", ":")) if store else "{}"
+    reps = int(STORE_BASE.get("latency_reps", a.reps)) if store else a.reps
+    env = {**ENV, "CONFIGS": f"{name}={cfg_json}", "REPS": str(max(reps, a.reps)) if store else str(a.reps)}
+    if store and STORE_BASE.get("python"):
+        env["PYBIN"] = STORE_BASE["python"]
     rc = sh([str(ROOT / "scripts/eval/compare_configs.sh"), str(d)], d, "run.log", env=env)
-    rj = d / "A-baseline/run.json"
+    rj = d / name / "run.json"
     rows = []
+    tag = "tienda" if store else "sin red"
+    b50, b95, bw = store_thr("latency_p50_ms"), store_thr("latency_p95_ms"), store_thr("asr_wer")
+    def lab(b, old): return f"≤ {num(b[1], 0) if b else old} ms (base {num(b[0], 0) if b else '409'})"
     if rc != 0 or not rj.exists():
-        rows.append(Row("Latencia motor, mediana (sin red)", "n/d", "≤ 450 ms (base 409)", "NO MEDIDO", f"ver {d}/run.log"))
+        rows.append(Row(f"Latencia motor, mediana ({tag})", "n/d", lab(b50, "450"), "NO MEDIDO", f"ver {d}/run.log"))
+        rows.append(Row(f"Latencia motor, p95 ({tag})", "n/d", lab(b95, "-"), "NO MEDIDO" if b95 else "SIN BASE", "depende de la corrida de latencia"))
         rows.append(Row("ASR WER", "n/d", "≤ 0,06", "NO MEDIDO", "depende de la corrida de latencia"))
         return rows
     data = load(rj)
-    q = find_quantile(data, "p50")
-    if q:
-        rows.append(Row("Latencia motor, mediana (sin red)", num(q[1], 0) + " ms", "≤ 450 ms (base 409)", "PASA" if q[1] <= 450 else "FALLA", f"ruta: {q[0]}"))
-    else:
-        rows.append(Row("Latencia motor, mediana (sin red)", "n/d", "≤ 450 ms", "NO MEDIDO", "no hay censoring_aware.quantiles.p50 en run.json"))
+    for q_name, b, lbl in (("p50", b50, "mediana"), ("p95", b95, "p95")):
+        q = find_quantile(data, q_name)
+        thr = b[1] if b else (450.0 if q_name == "p50" else None)
+        if q:
+            st = "PASA" if thr is None or q[1] <= thr else "FALLA"
+            rows.append(Row(f"Latencia motor, {lbl} ({tag})", num(q[1], 0) + " ms", lab(b, "450") if thr else "-", st, f"ruta: {q[0]}"))
+        else:
+            rows.append(Row(f"Latencia motor, {lbl} ({tag})", "n/d", lab(b, "450"), "NO MEDIDO", f"no hay censoring_aware.quantiles.{q_name} en run.json"))
     w = find_key(data, "wer") or find_key(data, "wer_corpus")
+    wthr = bw[1] if bw else 0.06
+    wl = f"≤ {num(wthr, 3)} (base {num(bw[0], 3) if bw else '0,050'})"
     if w:
-        rows.append(Row("ASR WER", num(w[1], 3), "≤ 0,06 (base 0,050)", "PASA" if w[1] <= 0.06 else "FALLA", f"ruta: {w[0]} (verificar que es el ASR del candidato)"))
+        rows.append(Row("ASR WER", num(w[1], 3), wl, "PASA" if w[1] <= wthr else "FALLA", f"ruta: {w[0]} (verificar que es el ASR del candidato)"))
     else:
-        rows.append(Row("ASR WER", "n/d", "≤ 0,06", "NO MEDIDO", "sin clave 'wer' en run.json; revisar el extractor"))
+        rows.append(Row("ASR WER", "n/d", wl, "NO MEDIDO", "sin clave 'wer' en run.json; revisar el extractor"))
     return rows
 
 
 def check_mt(out: Path, a) -> list[Row]:
     d = out / "mt"
-    cmd = [PY, "-m", "benchmark", "run", "--text-manifest", TEXT_MANIFEST, "--adapter", "benchmark.adapters.text_mt_tts:TextMtTtsAdapter",
-           "--adapter-config", '{"stages": "mt"}', "--split", "development", "--repetitions", str(a.reps), "--warmup", "2", "--out", str(d)]
+    store = bool(STORE_BASE.get("config"))
+    mt_cfg = {"stages": "mt"}
+    if store:  # T-58: mismo traductor que la tienda (Qwen) si la base de tienda lo declara
+        mt_cfg |= {k: v for k, v in STORE_BASE["config"].items() if k in ("mt_engine", "qwen_model_dir", "mt_normalize")}
+    py = str(ROOT / STORE_BASE["python"]) if store and STORE_BASE.get("python") else PY
+    cmd = [py, "-m", "benchmark", "run", "--text-manifest", TEXT_MANIFEST, "--adapter", "benchmark.adapters.text_mt_tts:TextMtTtsAdapter",
+           "--adapter-config", json.dumps(mt_cfg), "--split", "development", "--repetitions", str(a.reps), "--warmup", "2", "--out", str(d)]
     rc = sh(cmd, d, "run.log")
     rj = d / "run.json"
     names = ("MT petición→mt_final p95", "MT BLEU (54 casos)", "MT chrF (54 casos)")
@@ -239,7 +274,9 @@ def check_mt(out: Path, a) -> list[Row]:
     data = load(rj)
     rows = []
     q = find_quantile(data, "p95")
-    rows.append(Row(names[0], num(q[1]) + " ms", "≤ 70 ms (base 51,3)", "PASA" if q[1] <= 70 else "FALLA", f"ruta: {q[0]}") if q
+    bm = store_thr("mt_p95_ms")
+    mthr = bm[1] if bm else 70.0
+    rows.append(Row(names[0], num(q[1]) + " ms", f"≤ {num(mthr)} ms (base {num(bm[0]) if bm else '51,3'})", "PASA" if q[1] <= mthr else "FALLA", f"ruta: {q[0]}") if q
                 else Row(names[0], "n/d", "≤ 70 ms", "NO MEDIDO", "sin p95 en run.json"))
     for name, key, thr in ((names[1], "bleu", 56.0), (names[2], "chrf", 71.0)):
         r = find_key(data, key)
@@ -333,7 +370,8 @@ def main() -> int:
                         r.status = "CONTENDIDO"
                         r.note += " · NO CONCLUYENTE, corrían a la vez: " + "; ".join(sorted(smp.seen))
             for r in new:
-                if r.metric.startswith(NO_VALID_BASE) and r.status in ("PASA", "FALLA", "CONTENDIDO"):
+                key = next((v for k, v in BASE_KEY.items() if r.metric.startswith(k)), None)
+                if r.metric.startswith(NO_VALID_BASE) and not (key and store_thr(key)) and r.status in ("PASA", "FALLA", "CONTENDIDO"):
                     r.note += f" · valor medido ({r.status} contra la base vieja); SIN BASE VÁLIDA hasta T-48/T-50"
                     r.status = "SIN BASE"
             rows += new
