@@ -1,8 +1,116 @@
 // Frontend de opentraductor, contrato v0 de Kestrel-7 (backend local).
 // Solo habla con el servidor de este equipo (mismo origen). No graba audio.
 // Los textos del servidor se insertan con textContent, nunca como HTML.
+
+// Filas del texto en vivo, sin DOM (T-55, memory/decisiones/t55-contrato-eventos-frase.md).
+// Una fila por seg_id, en orden de llegada: "partial" | "final" | "discarded".
+// - from_seg_id reasigna la fila «live» al id definitivo (no crea otra).
+// - Un texto vacío nunca pisa un texto ya mostrado.
+// - discarded deja la fila visible, marcada, con su motivo.
+// - trim() nunca borra la fila parcial en curso.
+// Se prueba con `node --test tests/ui/` (module.exports al final).
+var LiveRows = (function () {
+  "use strict";
+
+  function create(max) {
+    const rows = []; // { id, es, raw, en, state, reason }
+    let current = null; // seg_id del parcial en curso
+
+    function find(id) {
+      return rows.find((r) => r.id === id) || null;
+    }
+
+    // Fila de `id`; si no existe y viene from_seg_id con fila, esa fila pasa a llamarse `id`.
+    function take(id, from) {
+      let row = find(id);
+      if (!row && from != null) {
+        row = find(String(from));
+        if (row) {
+          if (current === row.id) current = id;
+          row.id = id;
+        }
+      }
+      return row;
+    }
+
+    function setText(row, text) {
+      if (typeof text === "string" && text !== "") row.es = text;
+    }
+
+    function partial(ev) {
+      const id = String(ev.seg_id);
+      let row = take(id, ev.from_seg_id);
+      if (!row) {
+        if (!ev.text_es) return false; // nada que mostrar todavía
+        row = { id, es: "", raw: undefined, en: "", state: "partial", reason: null };
+        rows.push(row);
+      }
+      if (row.state !== "partial") return false; // ya cerrada: un parcial tardío no la reabre
+      setText(row, ev.text_es);
+      current = id;
+      trim();
+      return true;
+    }
+
+    function segment(ev) {
+      const id = String(ev.seg_id);
+      let row = take(id, ev.from_seg_id);
+      if (!row) {
+        row = { id, es: "", raw: undefined, en: "", state: "final", reason: null };
+        rows.push(row);
+      }
+      row.state = "final";
+      row.reason = null;
+      setText(row, ev.text_es);
+      row.raw = ev.text_es_raw;
+      row.en = ev.text_en || "";
+      if (current === id) current = null;
+      trim();
+      return true;
+    }
+
+    function discarded(ev) {
+      const id = String(ev.seg_id);
+      let row = take(id, ev.from_seg_id);
+      if (!row) {
+        if (!ev.text_es) return false; // sin fila y sin texto: no se muestra nada
+        row = { id, es: "", raw: undefined, en: "", state: "discarded", reason: null };
+        rows.push(row);
+      }
+      if (row.state === "final") return false; // ya tiene traducción
+      row.state = "discarded";
+      row.reason = ev.reason || null;
+      setText(row, ev.text_es);
+      if (current === id) current = null;
+      trim();
+      return true;
+    }
+
+    // Recorta las más viejas hasta `max`, salteando el parcial en curso.
+    function trim() {
+      while (rows.length > max) {
+        const i = rows.findIndex((r) => r.id !== current);
+        if (i < 0) break;
+        rows.splice(i, 1);
+      }
+    }
+
+    function clear() {
+      rows.length = 0;
+      current = null;
+    }
+
+    return { rows, partial, segment, discarded, clear, current: () => current };
+  }
+
+  return { create };
+})();
+
+if (typeof module !== "undefined" && module.exports) module.exports = LiveRows;
+
 (function () {
   "use strict";
+  if (typeof document === "undefined") return; // node --test: solo LiveRows
 
   const $ = (id) => document.getElementById(id);
   const MAX_LIVE = 6; // últimos segmentos por columna; el resto queda en el historial
@@ -77,8 +185,7 @@
     monitorTouched: false, // el usuario tocó el monitor en esta pestaña: su preferencia manda sobre el valor guardado
     serverMonitorId: null, // monitor que el backend informó en la última sincronización (undefined = sin confirmar)
     lastMonitorPoll: 0,
-    segs: new Map(), // seg_id -> { src: li, tgt: li|null }
-    partialSeg: null, // seg_id del parcial en curso
+    live: LiveRows.create(MAX_LIVE), // filas del texto en vivo por seg_id (T-55)
   };
 
   function apiError(data, status) {
@@ -676,23 +783,13 @@
     }
   }
 
-  // Columnas en vivo: un segmento parcial se actualiza en su fila. Al llegar el
-  // segmento final se fija el texto en español y se agrega la traducción.
-  function trimLive() {
-    while (el.src.children.length > MAX_LIVE) {
-      const old = el.src.firstElementChild;
-      for (const [id, pair] of ui.segs) {
-        if (pair.src === old) {
-          ui.segs.delete(id);
-          break;
-        }
-      }
-      el.src.removeChild(old);
-    }
-    while (el.tgt.children.length > MAX_LIVE) {
-      el.tgt.removeChild(el.tgt.firstElementChild);
-    }
-  }
+  // Columnas en vivo (T-55): el estado vive en ui.live (LiveRows, una fila por seg_id) y se
+  // redibuja entero en cada evento (son MAX_LIVE filas). La columna en inglés muestra las finales.
+  const DISCARD_LABEL = {
+    short: "muy corta, no se tradujo",
+    empty: "no se entendió, no se tradujo",
+    cancelled: "cancelada, no se tradujo",
+  };
 
   // Texto de origen. Si el ASR original difiere del texto que usó la traducción, se muestra debajo.
   // Sin original guardado (registros antiguos o motor sin dato) no se muestra nada extra.
@@ -714,35 +811,39 @@
     return li;
   }
 
-  function onPartial(ev) {
-    const id = String(ev.seg_id);
-    let pair = ui.segs.get(id);
-    if (!pair) {
-      pair = { src: liveItem(el.src, ev.text_es || "", "partial"), tgt: null };
-      ui.segs.set(id, pair);
-      trimLive();
-    } else {
-      pair.src.textContent = ev.text_es || "";
+  function renderLive() {
+    el.src.replaceChildren();
+    el.tgt.replaceChildren();
+    for (const row of ui.live.rows) {
+      if (row.state === "final") {
+        setSourceText(liveItem(el.src, "", "final"), row.es, row.raw);
+        liveItem(el.tgt, row.en, "final");
+      } else if (row.state === "discarded") {
+        const li = liveItem(el.src, row.es, "discarded");
+        const why = document.createElement("div");
+        why.className = "muted small";
+        why.textContent = "Descartada: " + (DISCARD_LABEL[row.reason] || "no se tradujo");
+        li.appendChild(why);
+      } else {
+        liveItem(el.src, row.es, "partial");
+      }
     }
-    ui.partialSeg = id;
     el.src.scrollTop = el.src.scrollHeight;
+    el.tgt.scrollTop = el.tgt.scrollHeight;
+  }
+
+  function onPartial(ev) {
+    if (ui.live.partial(ev)) renderLive();
   }
 
   function onSegment(ev) {
-    const id = String(ev.seg_id);
-    let pair = ui.segs.get(id);
-    if (!pair) {
-      pair = { src: liveItem(el.src, "", "final"), tgt: null };
-      ui.segs.set(id, pair);
-    } else {
-      pair.src.className = "final";
-    }
-    setSourceText(pair.src, ev.text_es || "", ev.text_es_raw);
-    pair.tgt = liveItem(el.tgt, ev.text_en || "", "final");
-    if (ui.partialSeg === id) ui.partialSeg = null;
-    trimLive();
-    el.tgt.scrollTop = el.tgt.scrollHeight;
+    ui.live.segment(ev);
+    renderLive();
     loadHistory().catch((err) => showAlert("error", err.message));
+  }
+
+  function onDiscarded(ev) {
+    if (ui.live.discarded(ev)) renderLive();
   }
 
   function handleEvent(ev) {
@@ -762,6 +863,9 @@
         break;
       case "segment":
         onSegment(ev);
+        break;
+      case "discarded":
+        onDiscarded(ev);
         break;
       case "overflow":
         ui.overflowCount += 1;

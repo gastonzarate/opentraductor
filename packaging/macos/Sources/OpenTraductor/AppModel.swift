@@ -10,12 +10,6 @@ final class AppModel: ObservableObject {
         case failed(String)
     }
 
-    struct Line: Identifiable {
-        let id = UUID()
-        let es: String
-        let en: String
-    }
-
     /// Valor de `output_id` que el motor entiende como «solo subtítulos» (runtime/service.py, NO_OUTPUT).
     static let noOutputID = "__none__"
 
@@ -31,8 +25,7 @@ final class AppModel: ObservableObject {
     @Published var voiceID = ""
     @Published var endpointMs: Double = 500
     @Published var audioLatency = "default"
-    @Published var lines: [Line] = []
-    @Published var partialES = ""
+    @Published var transcript = Transcript()
     @Published var latencyMs: Double?
     @Published var missingChecks: [String] = []
     @Published var virtualMic: VirtualMicInfo?
@@ -142,19 +135,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func handle(_ ev: EngineEvent) {
+    func handle(_ ev: EngineEvent) {
+        if transcript.apply(ev) { return }
         switch ev {
         case .state(let s, let err):
             state = s
             engineError = err
-            if s == "idle" || s == "error" { partialES = "" }
             if s == "running" { notice = nil }
-        case .partial(let es):
-            partialES = es
-        case .segment(let es, let en):
-            partialES = ""
-            lines.append(Line(es: es, en: en))
-            if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+        case .partial, .segment, .discarded:
+            break
         case .latency(let ms):
             if let ms { latencyMs = ms }
         case .problem(let m):

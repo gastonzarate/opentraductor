@@ -130,32 +130,49 @@ struct MainView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    if model.lines.isEmpty && model.partialES.isEmpty {
+                    if model.transcript.isEmpty {
                         Text(model.state == "running"
                              ? "Hablá en español. La traducción aparece acá."
                              : "Elegí tu micrófono y tocá «Iniciar». Los subtítulos aparecen acá.")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(model.lines) { line in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(line.es).foregroundStyle(.secondary)
-                            Text(line.en).font(.title3.weight(.medium))
-                        }
-                        .textSelection(.enabled)
-                        .accessibilityElement(children: .combine)
+                    ForEach(model.transcript.rows) { row in
+                        subtitleRow(row)
                     }
-                    if !model.partialES.isEmpty {
-                        Text(model.partialES).italic().foregroundStyle(.secondary)
+                    if !model.transcript.legacyPartial.isEmpty {
+                        Text(model.transcript.legacyPartial).italic().foregroundStyle(.secondary)
                     }
                     Color.clear.frame(height: 1).id("fin")
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: model.lines.count) { _, _ in proxy.scrollTo("fin") }
-            .onChange(of: model.partialES) { _, _ in proxy.scrollTo("fin") }
+            .onChange(of: model.transcript.rows) { _, _ in proxy.scrollTo("fin") }
+            .onChange(of: model.transcript.legacyPartial) { _, _ in proxy.scrollTo("fin") }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    /// Una frase: parcial (cursiva), final (español + inglés) o descartada (tachada, con el motivo).
+    @ViewBuilder
+    private func subtitleRow(_ row: Transcript.Row) -> some View {
+        switch row.state {
+        case .final:
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.es).foregroundStyle(.secondary)
+                Text(row.en).font(.title3.weight(.medium))
+            }
+            .textSelection(.enabled)
+            .accessibilityElement(children: .combine)
+        case .partial:
+            Text(row.es).italic().foregroundStyle(.secondary)
+        case .discarded(let reason):
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.es).strikethrough().foregroundStyle(.tertiary)
+                Text(Transcript.discardLabel(reason)).font(.caption).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     // MARK: Pie

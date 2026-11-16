@@ -74,20 +74,33 @@ struct EngineStatus: Decodable {
 
 enum EngineEvent {
     case state(String, String?)
-    case partial(String)
-    case segment(es: String, en: String)
+    /// `id` = seg_id (nil con un motor viejo); `from` = from_seg_id (fila «live» que se reasigna).
+    case partial(id: String?, from: String?, es: String)
+    case segment(id: String?, from: String?, es: String, en: String)
+    case discarded(id: String?, from: String?, es: String, reason: String?)
     case latency(Double?)
     case problem(String)
     case overflow
+
+    /// seg_id puede venir como número (pipeline) o texto (modo incremental).
+    private static func segID(_ v: Any?) -> String? {
+        if let s = v as? String { return s }
+        if let n = v as? NSNumber { return n.stringValue }
+        return nil
+    }
 
     static func parse(_ json: String) -> EngineEvent? {
         guard let data = json.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = obj["type"] as? String else { return nil }
+        let id = segID(obj["seg_id"])
+        let from = segID(obj["from_seg_id"])
+        let es = obj["text_es"] as? String ?? ""
         switch type {
         case "state": return .state(obj["state"] as? String ?? "idle", obj["error"] as? String)
-        case "partial": return .partial(obj["text_es"] as? String ?? "")
-        case "segment": return .segment(es: obj["text_es"] as? String ?? "", en: obj["text_en"] as? String ?? "")
+        case "partial": return .partial(id: id, from: from, es: es)
+        case "segment": return .segment(id: id, from: from, es: es, en: obj["text_en"] as? String ?? "")
+        case "discarded": return .discarded(id: id, from: from, es: es, reason: obj["reason"] as? String)
         case "metrics": return .latency((obj["last_endpoint_to_audio_ms"] as? NSNumber)?.doubleValue)
         case "error": return .problem(obj["message"] as? String ?? "Error desconocido.")
         case "overflow": return .overflow

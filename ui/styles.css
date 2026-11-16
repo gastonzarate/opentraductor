@@ -98,6 +98,8 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .feed li { padding: 6px 8px; border-left: 3px solid var(--line); margin-bottom: 6px; }
 .feed li.partial { color: var(--muted); font-style: italic; border-left-color: var(--warn); }
 .feed li.final { border-left-color: var(--ok); }
+.feed li.discarded { color: var(--muted); text-decoration: line-through; border-left-color: var(--line); }
+.feed li.discarded .small { text-decoration: none; }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; }
 .kv dt { color: var(--muted); }
