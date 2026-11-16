@@ -113,15 +113,18 @@ def cmd_run(a) -> int:
         if not c.ok:
             print(f"FALTA {c.name} - {c.detail}")
     db = Path(a.db) if a.db else default_db()
-    from .license import LicenseManager, default_license_path
-
     # La licencia vive junto a la base de datos: con --db o OPENTRADUCTOR_DATA apuntando a otra carpeta,
     # la prueba y la clave quedan ahí (útil para pruebas de QA con una prueba nueva o vencida).
-    # Edición de la Mac App Store: la tienda cobra y la guía 2.4.5(vi) prohíbe claves propias. Sin licencia, sin red.
+    # Edición de la Mac App Store: la tienda cobra y la guía 2.4.5(vi) prohíbe claves propias. Sin licencia, sin red,
+    # y sin importar runtime/license.py (sign_store.sh lo borra del bundle de tienda).
     store = os.environ.get("OPENTRADUCTOR_EDITION") == "store"
-    lic = None if store else LicenseManager(db.with_name("license.json") if a.db else default_license_path())
+    lic = None
+    if not store:
+        from .license import LicenseManager, default_license_path
+
+        lic = LicenseManager(db.with_name("license.json") if a.db else default_license_path())
     try:
-        srv = ControlServer(svc, port=a.port, license=lic)
+        srv = ControlServer(svc, port=a.port, license=lic, store=store)
         srv.start()
     except OSError as exc:
         svc.close()  # el servicio ya creó hilos y una base: se cierran antes de salir

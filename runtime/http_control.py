@@ -96,9 +96,11 @@ class ControlServer:
         ui_dir: Path | None = None,
         token: str | None = None,
         license: Any | None = None,  # noqa: A002 - LicenseManager; None = sin prueba ni licencia (pruebas, modo desarrollo)
+        store: bool = False,  # edición Mac App Store: /api/license* no existe (404)
     ) -> None:
         self._service = service
-        self._license = license
+        self._license = None if store else license
+        self._store = store
         self._ui_dir = Path(ui_dir) if ui_dir else UI_DIR
         self._token = token or secrets.token_urlsafe(32)
         self._lock = threading.Lock()
@@ -381,6 +383,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(HTTPStatus.OK, virtual_mic.detect(svc.devices()))
 
         if path in ("/api/license", "/api/license/activate"):
+            if self.ctl._store:  # tienda: sin licencia propia (guía 2.4.5(vi)); la ruta no existe
+                return self._error(HTTPStatus.NOT_FOUND, "not_found", "Ruta no encontrada.")
             lic = self.ctl._license
             if lic is None:  # sin gestor de licencia (pruebas o desarrollo): todo permitido
                 if path == "/api/license":
