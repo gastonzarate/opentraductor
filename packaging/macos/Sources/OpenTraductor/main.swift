@@ -46,6 +46,11 @@ final class RuntimeProcess {
             env["OPENTRADUCTOR_MARIAN_CT2"] = marian.path
         }
         if isStoreEdition { env["OPENTRADUCTOR_EDITION"] = "store" }
+        // T-49: motores del build (Info.plist). Qwen lee sus pesos del snapshot que baja la descarga guiada.
+        let profile = EngineProfile.current
+        env["OPENTRADUCTOR_ASR_BACKEND"] = profile.asrBackend
+        env["OPENTRADUCTOR_MT_ENGINE"] = profile.mtEngine
+        if profile.mtEngine == "qwen", let q = ModelManifest.qwenDir(profile.qwenModel) { env["OPENTRADUCTOR_QWEN_DIR"] = q.path }
         // BUG-7 (22e7f7a, validado por @qa en texto): normaliza cifras y traduce oración por oración.
         env["OPENTRADUCTOR_MT_NORMALIZE"] = "1"
         return env
@@ -58,7 +63,7 @@ final class RuntimeProcess {
         env["HF_HUB_OFFLINE"] = "1"  // el motor nunca descarga
         env["TRANSFORMERS_OFFLINE"] = "1"
         process.executableURL = python
-        process.arguments = ["-m", "runtime", "run", "--port", "0"]
+        process.arguments = ["-m", "runtime", "run", "--port", "0", "--asr-backend", EngineProfile.current.asrBackend]
         process.currentDirectoryURL = appDir
         process.environment = env
         process.standardOutput = outPipe

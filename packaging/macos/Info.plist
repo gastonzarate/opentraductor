@@ -10,6 +10,10 @@
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>
   <key>CFBundleVersion</key><string>__BUILD__</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <!-- T-49: motores (EngineProfile en ModelManifest.swift). ASR lo fija T-48 y el tamaño de Qwen T-50. -->
+  <key>OTASRBackend</key><string>moonshine-tiny</string>
+  <key>OTMTEngine</key><string>qwen</string>
+  <key>OTQwenModel</key><string>qwen3-4b-instruct-2507-4bit</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
   <key>NSHighResolutionCapable</key><true/>

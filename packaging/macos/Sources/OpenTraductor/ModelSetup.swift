@@ -36,7 +36,7 @@ final class ModelSetup: NSObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let p = Process()
             p.executableURL = RuntimeProcess.pythonURL()
-            p.arguments = ["-m", "runtime", "check"]
+            p.arguments = ["-m", "runtime", "check", "--asr-backend", EngineProfile.current.asrBackend]
             p.currentDirectoryURL = RuntimeProcess.appDirURL()
             var env = (try? RuntimeProcess.makeEnvironment()) ?? ProcessInfo.processInfo.environment
             env["HF_HUB_OFFLINE"] = "1"
