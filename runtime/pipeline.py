@@ -442,7 +442,21 @@ class Engine:
                     )
                     if ((seg.end_s or seg.start_s) - seg.start_s) * 1000 < self.cfg.min_speech_ms:
                         self._spec_drop(st.stream_id, seg.seg_id, st.gen)
-                        cur = None  # pico breve: no genera traducción
+                        cur = None  # pico breve: no genera traducción, pero se avisa (T-55)
+                        await self.emit(
+                            "discarded",
+                            {"stream_id": st.stream_id, "seg_id": seg.seg_id, "text": seg.text_es or st.last_partial,
+                             "reason": "short"},
+                        )
+                        continue
+                    if not (seg.text_es or "").strip():
+                        self._spec_drop(st.stream_id, seg.seg_id, st.gen)
+                        cur = None  # ASR final vacío: la fila del parcial queda como descartada (T-55)
+                        await self.emit(
+                            "discarded",
+                            {"stream_id": st.stream_id, "seg_id": seg.seg_id, "text": st.last_partial,
+                             "reason": "empty"},
+                        )
                         continue
                     await self.emit(
                         "asr_final",

@@ -13,3 +13,13 @@ Este archivo documenta cambios de comportamiento y rutas nuevas; la lista comple
 
 En la edición tienda el motor no importa `runtime/license.py` (sign_store.sh lo borra del bundle, guía 2.4.5(vi))
 y `/api/start` no tiene compuerta de licencia: cobra la App Store. La UI nativa de la tienda no llama a estas rutas.
+
+## /events: eventos de frase (T-55)
+
+Contrato completo: `memory/decisiones/t55-contrato-eventos-frase.md`. Un `seg_id` identifica una sola frase.
+
+| Evento | Campos | Cambio |
+|---|---|---|
+| `partial` | `seg_id`, `text_es`, `from_seg_id?` | `text_es` nunca llega vacío. En modo incremental la fila en vivo es `"{sid}:live:{n}"` (una por frase). El primer `partial` con el id de commit trae `from_seg_id` = id live que reemplaza: la UI reasigna esa fila, no crea otra. |
+| `segment` | `seg_id`, `text_es`, `text_es_raw`, `text_en`, `ts` | Sin cambios. Solo cierra la fila de su `seg_id`. |
+| `discarded` (nuevo) | `seg_id`, `text_es`, `reason` | `reason` ∈ `short` (bajo `min_speech_ms`), `empty` (ASR final vacío), `cancelled` (unidad incremental cancelada o sin audio). La fila queda visible como descartada. Si no hay fila y `text_es` es `""`, no se muestra nada. Clientes viejos lo ignoran. |

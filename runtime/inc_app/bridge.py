@@ -158,6 +158,7 @@ class IncrementalEngineBridge:
                       "units_discarded_unemitted": 0, "units_done_without_pcm": 0, "claim_mismatch": 0, "stale_stream_events": 0, "tts_emit_failures": 0, "errors": 0}
         self._q: asyncio.Queue | None = None
         self._feeder: asyncio.Task | None = None
+        self._live_n = 0
         self._pump: asyncio.Task | None = None
         self._sid: str | None = None
         self._accepting = False
@@ -190,6 +191,7 @@ class IncrementalEngineBridge:
         if self._pump is None or self._pump.done():
             raise RuntimeError("el bombeo de eventos del motor no esta activo (open fallo o termino)")
         self._sid = stream_id  # identidad activa ANTES de start_stream: el adapter puede emitir al arrancar
+        self._live_n = 0  # T-55: la fila live de cada frase tiene su propio id "{sid}:live:{n}"
         try:
             await self.adapter.start_stream(stream_id, 0)
         except BaseException:
@@ -384,6 +386,9 @@ class IncrementalEngineBridge:
         except Exception as exc:  # noqa: BLE001
             await self._fail(self._sid or "", f"events: {type(exc).__name__}: {exc}")
 
+    def _live_id(self, sid) -> str:
+        return f"{sid}:live:{self._live_n}"
+
     def _unit(self, sid, cid, **kw) -> _Unit:
         k = (sid, cid)
         if k not in self.units:
@@ -401,13 +406,16 @@ class IncrementalEngineBridge:
             await self._report(sid, f"evento {k} sin commit_id: descartado")
             return
         if k == "asr_partial":
-            await self.emit("asr_partial", {"stream_id": sid, "text": ev.text or "", "audio_pos_s": ev.audio_pos_s, "seg_id": f"{sid}:live"})
+            await self.emit("asr_partial", {"stream_id": sid, "text": ev.text or "", "audio_pos_s": ev.audio_pos_s, "seg_id": self._live_id(sid)})
         elif k == "endpoint":
-            await self.emit("endpoint", {"stream_id": sid, "audio_pos_s": ev.audio_pos_s, "seg_id": cid or f"{sid}:live"})
+            await self.emit("endpoint", {"stream_id": sid, "audio_pos_s": ev.audio_pos_s, "seg_id": cid or self._live_id(sid)})
         elif k == "asr_final":
             if cid:
                 self.store.record_line({"session": sid, "line_id": cid, "text_es": ev.text or "", "ts": time.strftime("%Y-%m-%dT%H:%M:%S")})
-            await self.emit("asr_final", {"stream_id": sid, "text": ev.text or "", "text_raw": None, "seg_id": cid})
+            live = self._live_id(sid)
+            self._live_n += 1  # la frase siguiente abre otra fila live
+            await self.emit("asr_final", {"stream_id": sid, "text": ev.text or "", "text_raw": None, "seg_id": cid or live,
+                                          "from_seg_id": live})
         elif k == "mt_partial":
             u = self._unit(sid, cid)
             if u.state not in TERMINAL_STATES:
@@ -444,6 +452,7 @@ class IncrementalEngineBridge:
             if u.chunks <= 0:  # los claims terminales no sustituyen PCM observado
                 self._finish(u, "delivered")  # -> discarded + contador
                 await self._report(sid, f"unit_done de {cid} sin PCM observado: no se persiste ni se muestra")
+                await self.emit("discarded", {"stream_id": sid, "seg_id": cid, "text": "", "reason": "cancelled"})
                 return
             reason = getattr(ev, "unit_reason", None)
             if claimed is not None and claimed != u.chunks:
@@ -463,6 +472,7 @@ class IncrementalEngineBridge:
             u.state = "cancelled"
             u.reason = getattr(ev, "unit_reason", None)
             self.stats["units_cancelled"] += 1
+            await self.emit("discarded", {"stream_id": sid, "seg_id": cid, "text": "", "reason": "cancelled"})
         elif k == "error":
             self.stats["errors"] += 1
             await self.emit("error", {"stream_id": sid, "error_kind": ev.error_kind or "error del motor incremental", "seg_id": cid})

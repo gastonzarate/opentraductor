@@ -147,6 +147,7 @@ class RuntimeService:
         self._audio_clock_s = 0.0
         self._pending_es: dict[str, str] = {}
         self._pending_raw: dict[str, str | None] = {}  # salida cruda del ASR por segmento
+        self._shown_es: dict[str, str] = {}  # T-55: último texto ES publicado por fila (para `discarded`)
         self._endpoint_t: dict[str, float] = {}
         self._first_chunk_seen: set[str] = set()
         self._m = {"overflow_count": 0, "input_dropped_ms": 0.0, "engine_dropped_ms": 0.0,
@@ -489,6 +490,7 @@ class RuntimeService:
                                    "el borrado por sesión de los textos incrementales no estará disponible para esta sesión."})
             self._pending_es.clear()
             self._pending_raw.clear()
+            self._shown_es.clear()
             self._endpoint_t.clear()  # mapeos por segmento: solo viven durante una sesión
             self._first_chunk_seen.clear()
             self._audio_clock_s = 0.0
@@ -680,24 +682,59 @@ class RuntimeService:
         self._endpoint_t.clear()
         self._first_chunk_seen.clear()
         self._pending_raw.clear()
+        self._shown_es.clear()
 
     # ------------------------------------------------------ eventos del motor
     async def _on_engine_event(self, kind: str, f: dict) -> None:
         seg = f.get("seg_id")
         key = str(seg) if seg is not None else None
+        # Contrato T-55 (memory/decisiones/t55-contrato-eventos-frase.md): un seg_id por frase, nunca un
+        # partial con text_es vacío, `from_seg_id` al pasar de la fila live al id de commit y `discarded`
+        # en vez de descartes mudos.
         if kind == "asr_partial":
-            if key is not None:
-                self._publish({"type": "partial", "seg_id": key, "text_es": f.get("text", "")})
+            text = f.get("text") or ""
+            if key is not None and text.strip():
+                self._shown_es[key] = text
+                self._publish({"type": "partial", "seg_id": key, "text_es": text})
         elif kind == "endpoint":
             if key is not None:
                 self._endpoint_t[key] = time.monotonic()
         elif kind == "asr_final":
-            self._pending_es[key] = f.get("text", "")
+            text = f.get("text") or ""
+            src = f.get("from_seg_id")
+            src = str(src) if src is not None and str(src) != key else None
+            if not text.strip():  # ASR final vacío: la fila queda visible como descartada
+                row = src or key
+                if row is not None:
+                    shown = self._shown_es.pop(row, "")
+                    if key is not None:
+                        self._shown_es.pop(key, None)
+                    self._publish_discarded(row, shown, "empty")
+                return
+            self._pending_es[key] = text
             self._pending_raw[key] = f.get("text_raw")
-            self._publish({"type": "partial", "seg_id": key, "text_es": f.get("text", "")})
+            ev = {"type": "partial", "seg_id": key, "text_es": text}
+            if src is not None:
+                ev["from_seg_id"] = src
+                self._shown_es.pop(src, None)
+            self._shown_es[key] = text
+            self._publish(ev)
+        elif kind == "discarded":
+            if key is None:
+                return
+            src = f.get("from_seg_id")
+            row = str(src) if src is not None else key
+            text = (f.get("text") or self._pending_es.pop(key, None) or self._shown_es.get(row)
+                    or self._shown_es.get(key) or "")
+            self._pending_es.pop(key, None)
+            self._pending_raw.pop(key, None)
+            self._shown_es.pop(row, None)
+            self._shown_es.pop(key, None)
+            self._publish_discarded(row, text, f.get("reason") or "cancelled")
         elif kind == "mt_final":
             es = self._pending_es.pop(key, "")
             raw = self._pending_raw.pop(key, None)  # None si el motor no informó el original
+            self._shown_es.pop(key, None)
             ts = _now_iso()
             self._publish({"type": "segment", "seg_id": key, "text_es": es, "text_es_raw": raw,
                            "text_en": f.get("text", ""), "ts": ts})
@@ -729,6 +766,12 @@ class RuntimeService:
                            "dropped_ms": f.get("dropped_ms"), "seg_id": key})
         elif kind == "error":
             self._publish({"type": "error", "message": str(f.get("error_kind") or "Error desconocido")})
+
+    _DISCARD_REASONS = ("short", "empty", "cancelled")
+
+    def _publish_discarded(self, seg_id: str, text_es: str, reason: str) -> None:
+        reason = reason if reason in self._DISCARD_REASONS else "cancelled"
+        self._publish({"type": "discarded", "seg_id": seg_id, "text_es": text_es, "reason": reason})
 
     # ---------------------------------------------------------------- historial
     def _writer_loop(self) -> None:
