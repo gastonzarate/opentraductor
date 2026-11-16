@@ -25,22 +25,50 @@ def float_to_pcm(x: np.ndarray) -> bytes:
 
 
 # ----------------------------------------------------------------------- VAD
+_VAD_CONTEXT = 64  # muestras de contexto que el modelo ONNX espera delante de cada ventana @16 kHz
+
+
 class SileroVAD:
     """Probabilidad de voz por ventana de 32 ms, con estado. Una instancia por
-    stream (``reset`` entre streams)."""
+    stream (``reset`` entre streams).
+
+    Corre el ONNX oficial de Silero con onnxruntime (CPU, 1 hilo) y numpy, sin
+    torch. Mismo cálculo que ``silero_vad.OnnxWrapper``: entrada = 64 muestras de
+    contexto + 512 de la ventana, estado (2, 1, 128).
+    """
 
     def __init__(self) -> None:
-        import torch
-        from silero_vad import load_silero_vad
+        import onnxruntime as ort
 
-        torch.set_num_threads(1)
-        self._torch = torch
-        self.model = load_silero_vad()
+        path = C.silero_vad_onnx_path()
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Falta el modelo Silero VAD ONNX en {path}. "
+                "Copia silero_vad.onnx a runtime/data/ o define OPENTRADUCTOR_SILERO_ONNX."
+            )
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
+        self._sess = ort.InferenceSession(
+            str(path), sess_options=opts, providers=["CPUExecutionProvider"]
+        )
+        self._sr = np.array(16000, dtype=np.int64)
         self._rest = np.zeros(0, dtype=np.float32)
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._ctx = np.zeros((1, _VAD_CONTEXT), dtype=np.float32)
 
     def reset(self) -> None:
-        self.model.reset_states()
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._ctx = np.zeros((1, _VAD_CONTEXT), dtype=np.float32)
         self._rest = np.zeros(0, dtype=np.float32)
+
+    def _window_prob(self, w: np.ndarray) -> float:
+        x = np.concatenate([self._ctx, w[None, :]], axis=1)
+        out, self._state = self._sess.run(
+            None, {"input": x, "state": self._state, "sr": self._sr}
+        )
+        self._ctx = x[:, -_VAD_CONTEXT:]
+        return float(out[0, 0])
 
     def probs(self, pcm: bytes) -> list[tuple[int, float]]:
         """Devuelve [(fin_de_ventana_en_muestras_desde_el_inicio_de_ESTE_chunk, prob)].
@@ -53,10 +81,9 @@ class SileroVAD:
         x = np.concatenate([self._rest, pcm_to_float(pcm)])
         out = []
         n = len(x) // VAD_WINDOW
-        with self._torch.inference_mode():
-            for i in range(n):
-                w = self._torch.from_numpy(x[i * VAD_WINDOW : (i + 1) * VAD_WINDOW])
-                out.append(((i + 1) * VAD_WINDOW - prev, float(self.model(w, 16000).item())))
+        for i in range(n):
+            w = x[i * VAD_WINDOW : (i + 1) * VAD_WINDOW]
+            out.append(((i + 1) * VAD_WINDOW - prev, self._window_prob(w)))
         self._rest = x[n * VAD_WINDOW :]
         return out
 

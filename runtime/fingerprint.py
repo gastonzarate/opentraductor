@@ -8,7 +8,7 @@ from pathlib import Path
 from . import config as C
 
 ENGINE_PKGS = ("mlx", "mlx-audio", "parakeet-mlx", "ctranslate2", "torch", "transformers",
-               "sentencepiece", "silero-vad", "misaki", "huggingface-hub", "numpy")
+               "sentencepiece", "silero-vad", "onnxruntime", "misaki", "huggingface-hub", "numpy")
 
 
 def code_hash() -> str:

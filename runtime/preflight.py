@@ -73,7 +73,15 @@ def run_checks(cfg: C.PipelineConfig) -> list[Check]:
         return "en_core_web_sm"
 
     chk("g2p:en_core_web_sm", spacy_model)
-    chk("vad:silero", lambda: "silero_vad" if importlib.util.find_spec("silero_vad") else (_ for _ in ()).throw(ModuleNotFoundError("silero_vad")))
+    def vad():
+        if importlib.util.find_spec("onnxruntime") is None:
+            raise ModuleNotFoundError("onnxruntime no instalado")
+        p = C.silero_vad_onnx_path()
+        if not p.exists():
+            raise FileNotFoundError(f"falta {p} (Silero VAD ONNX)")
+        return p
+
+    chk("vad:silero-onnx", vad)
     return out
 
 

@@ -44,7 +44,40 @@ def moonshine_model_dir(backend: str) -> Path:
 
 
 def marian_ct2_dir() -> Path:
+    """Marian ya convertido a CTranslate2 int8.
+
+    Edición de tienda: el build lo convierte (``scripts/convert_marian.py``) y lo
+    copia a Resources; el shell lanza el runtime con ``OPENTRADUCTOR_MARIAN_CT2``
+    apuntando a esa carpeta (solo lectura). Sin la variable, va a ``models_dir()``.
+    """
+    override = os.environ.get("OPENTRADUCTOR_MARIAN_CT2")
+    if override:
+        return Path(override).expanduser()
     return models_dir() / "opus-mt-es-en-ct2-int8"
+
+
+def silero_vad_onnx_path() -> Path:
+    """Modelo Silero VAD en ONNX (MIT). Se lee como archivo de datos, sin importar
+    el paquete ``silero_vad`` (que arrastra torch/torchaudio).
+
+    Orden: ``$OPENTRADUCTOR_SILERO_ONNX``; ``runtime/data/silero_vad.onnx``
+    (incluido en el bundle); en desarrollo, el archivo del paquete instalado
+    (se ubica con ``find_spec``, sin importarlo).
+    """
+    override = os.environ.get("OPENTRADUCTOR_SILERO_ONNX")
+    if override:
+        return Path(override).expanduser()
+    vendored = Path(__file__).resolve().parent / "data" / "silero_vad.onnx"
+    if vendored.exists():
+        return vendored
+    import importlib.util
+
+    spec = importlib.util.find_spec("silero_vad")
+    for loc in (spec.submodule_search_locations or []) if spec else []:
+        cand = Path(loc) / "data" / "silero_vad.onnx"
+        if cand.exists():
+            return cand
+    return vendored  # no existe: el que llama falla con un mensaje claro
 
 
 def snapshot(repo: str, rev: str, required: tuple[str, ...] = ("config.json",)) -> Path:
