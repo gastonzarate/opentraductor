@@ -12,6 +12,10 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>opentraductor usa el micrófono para traducir tu voz de español a inglés. El audio se procesa en tu Mac y no se graba ni se envía a ningún servidor.</string>
 </dict>
