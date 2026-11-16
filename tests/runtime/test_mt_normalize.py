@@ -18,6 +18,21 @@ def test_normalize_numbers(src, out):
     assert K.mt_normalize_numbers(src) == out
 
 
+@pytest.mark.parametrize("src,out", [
+    ("Nos vemos mañana a las 9, no a las 19.", "Nos vemos mañana a las 9, no a las 7 p. m."),
+    ("a las 19", "a las 7 p. m."),
+    ("a las 15:30 en punto", "a las 3:30 p. m. en punto"),
+    ("desde las 13 hs.", "desde la 1 p. m."),
+    ("a las 21 horas, ¿sí?", "a las 9 p. m., ¿sí?"),
+    ("a las 19 personas", "a las 19 personas"),    # no es hora
+    ("a las 9, no a las 12.", "a las 9, no a las 12."),  # 12 y menos: sin cambio
+    ("las 24.", "las 24."),
+    ("a las 190.", "a las 190."),
+])
+def test_normalize_hours(src, out):
+    assert K.mt_normalize_numbers(src) == out
+
+
 @pytest.mark.parametrize("src,parts", [
     ("¿Se puede pasar a la siguiente diapositiva? No veo el gráfico.",
      ["¿Se puede pasar a la siguiente diapositiva?", "No veo el gráfico."]),

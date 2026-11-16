@@ -212,9 +212,22 @@ def mt_split_sentences(text: str) -> list[str]:
     return [p for p in _MT_SENT.split(text.strip()) if p]
 
 
+# BUG-7 (frase 28): Marian pasa "a las 19" a "7:00" y pierde la tarde; con "7 p. m." la conserva.
+# "HH:MM" (13-23) siempre; "HH" solo si sigue fin, puntuación o h/hs/horas (no toca "las 19 personas").
+_MT_HORA = re.compile(
+    r"\b(las|la)\s+(1[3-9]|2[0-3])"
+    r"(?:(:[0-5]\d)(?:\s*(?:h|hs|horas)\b)?|(?:\s*(?:h|hs|horas)\b)?(?=\s*(?:[.,;:!?)]|$)))"
+)
+
+
+def _hora_12(g: re.Match) -> str:
+    h = int(g.group(2)) - 12
+    return f"{'la' if h == 1 else 'las'} {h}{g.group(3) or ''} p. m."
+
+
 def mt_normalize_numbers(text: str) -> str:
-    """'120 mil' -> '120.000'. Solo enteros de 1 a 3 cifras seguidos de 'mil' (no toca '1,2 millones')."""
-    return _MT_MIL.sub(lambda g: g.group(1) + ".000", text)
+    """'120 mil' -> '120.000' (1 a 3 cifras; no toca '1,2 millones') y 'a las 19' -> 'a las 7 p. m.'."""
+    return _MT_HORA.sub(_hora_12, _MT_MIL.sub(lambda g: g.group(1) + ".000", text)).replace("p. m..", "p. m.")
 
 
 class MarianCT2:
