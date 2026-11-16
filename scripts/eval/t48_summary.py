@@ -102,6 +102,22 @@ def summarize(run_dir: Path) -> tuple[dict, list[tuple[str, str, str]]]:
     return row, english
 
 
+def peak_mem_mb(run_dir: Path) -> tuple[float | None, float | None]:
+    """(maximum resident set size, peak memory footprint) en MB, de /usr/bin/time -l (<run>.rss.txt)."""
+    f = run_dir.with_name(run_dir.name + ".rss.txt")
+    rss = foot = None
+    if f.is_file():
+        for line in f.read_text(errors="replace").splitlines():
+            parts = line.split()
+            if not parts or not parts[0].isdigit():
+                continue
+            if "maximum resident set size" in line:
+                rss = int(parts[0]) / 1e6
+            elif "peak memory footprint" in line:
+                foot = int(parts[0]) / 1e6
+    return rss, foot
+
+
 def fmt(x, nd=3):
     return "n/d" if x is None else (f"{x:.{nd}f}" if isinstance(x, float) else str(x))
 
@@ -113,15 +129,16 @@ def main(root: Path) -> None:
         if not runs:
             continue
         print(f"## {set_dir.name}\n")
-        print("| backend | streams | WER | % en inglés | WER 1 pal. | WER 2 pal. | WER 3-4 pal. | WER 5+ | e2f p50 ms | e2f p95 ms | outcomes | load ini/fin | contención |")
-        print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+        print("| backend | streams | WER | % en inglés | WER 1 pal. | WER 2 pal. | WER 3-4 pal. | WER 5+ | e2f p50 ms | e2f p95 ms | outcomes | load ini/fin | contención | RSS pico MB | footprint pico MB |")
+        print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         bad_all = []
         for r in runs:
             row, bad = summarize(r)
+            rss, foot = peak_mem_mb(r)
             wl = row["wer_by_len"]
             print(f"| {r.name} | {row['n']} | {fmt(row['wer'])} | {fmt(row['english_pct'], 1)} | {fmt(wl.get('1'))} | "
                   f"{fmt(wl.get('2'))} | {fmt(wl.get('3-4'))} | {fmt(wl.get('5+'))} | {fmt(row['p50'], 0)} | "
-                  f"{fmt(row['p95'], 0)} | {row['outcomes']} | {row['load']} | {row['contention']} |")
+                  f"{fmt(row['p95'], 0)} | {row['outcomes']} | {row['load']} | {row['contention']} | {fmt(rss, 0)} | {fmt(foot, 0)} |")
             bad_all += [(r.name, *b) for b in bad]
         if bad_all:
             print("\nSalieron en inglés:\n")

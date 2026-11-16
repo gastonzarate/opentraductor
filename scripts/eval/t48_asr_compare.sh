@@ -23,9 +23,10 @@ for set in $SETS; do
       cfg='{"asr_backend":"moonshine-tiny","endpoint_silence_ms":160,"tts_trim_lead_margin_ms":30,"asr_skip_silent_tail":true,"tts_first_chunk_max_words":8,"tts_bind_conjunctions":true}'
     else cfg="{\"asr_backend\":\"$b\"}"; fi
     echo "== $set / $b ($(uptime | sed 's/.*load averages*: //'))"
-    .venv/bin/python -m benchmark run --manifest "$man" --audio-root "$root" --split "$split" \
+    # RAM pico del proceso entero (ASR + Marian + Kokoro): /usr/bin/time -l, a $OUT/$set/$b.rss.txt
+    { /usr/bin/time -l .venv/bin/python -m benchmark run --manifest "$man" --audio-root "$root" --split "$split" \
       --adapter runtime.adapters.baseline:BaselineAdapter --adapter-config "$cfg" \
-      --repetitions "$reps" --warmup 1 --out "$OUT/$set/$b" --system-name "t48-$b"
+      --repetitions "$reps" --warmup 1 --out "$OUT/$set/$b" --system-name "t48-$b" ; } 2> >(tee "$OUT/$set/$b.rss.txt" >&2)
   done
 done
 .venv/bin/python scripts/eval/t48_summary.py "$OUT" | tee "$OUT/../RESULTS.md"
