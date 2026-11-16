@@ -484,7 +484,7 @@ class KokoroTTS:
 
     def __init__(self, voice: str, speed: float, trim_lead_margin_ms: float | None = None,
                  first_chunk_max_words: int | None = None, bind_conjunctions: bool = False,
-                 trim_tail: bool = False) -> None:
+                 trim_tail: bool = False, trim_lead_all_clauses: bool = False) -> None:
         from mlx_audio.tts.models.kokoro import KokoroPipeline
         from mlx_audio.tts.utils import load_model
 
@@ -508,6 +508,8 @@ class KokoroTTS:
         # T-47: recorte del silencio FINAL de cada chunk (-60 dBFS, bloques de 5 ms, margen 80 ms). False = sin cambio.
         self.trim_tail = trim_tail
         self.tail_trimmed_ms_total = 0.0
+        # T-58: recorte inicial también en el 1.er chunk de cada cláusula (no solo de la frase). False = sin cambio.
+        self.trim_lead_all_clauses = trim_lead_all_clauses
 
     def plan(self, text_en: str) -> list[str]:
         """Cláusulas que se sintetizarán (determinista para un mismo texto y config)."""
@@ -529,6 +531,7 @@ class KokoroTTS:
         if first:
             self.last_trim_ms = 0.0
         for clause in clauses:
+            head = True  # 1.er chunk con audio de esta cláusula
             for r in self.pipe(
                 clause, voice=self.voice, speed=self.speed, split_pattern=None
             ):
@@ -537,14 +540,17 @@ class KokoroTTS:
                     continue
                 mx.eval(a)
                 x = np.asarray(a, dtype=np.float32).reshape(-1)
-                if x.size and first and self.trim_lead_margin_ms is not None:
+                trim = first or (head and getattr(self, "trim_lead_all_clauses", False))
+                if x.size and trim and self.trim_lead_margin_ms is not None:
                     keep = int(self.SAMPLE_RATE * self.trim_lead_margin_ms / 1000)
                     cut = max(0, lead_silence_samples(x, self.SAMPLE_RATE) - keep)
                     if cut < x.size:  # nunca vaciar el chunk
                         x = x[cut:]
-                        self.last_trim_ms = cut / self.SAMPLE_RATE * 1000
+                        if first:
+                            self.last_trim_ms = cut / self.SAMPLE_RATE * 1000
                 if x.size:
                     first = False
+                    head = False
                     yield self._chunk(float_to_pcm(x), clause)
 
     def _chunk(self, pcm: bytes, clause: str) -> "TTSChunk":

@@ -196,6 +196,10 @@ class PipelineConfig:
     # T-47: recorte del silencio FINAL de cada chunk TTS (-60 dBFS, bloques de 5 ms, conserva 80 ms; prefijo PCM exacto).
     # False = camino de hoy, sin cambios. Reversible por flag (--tts-trim-tail off) o env OPENTRADUCTOR_TTS_TRIM_TAIL.
     tts_trim_tail: bool = False
+    # T-58: aplica el recorte de silencio inicial (tts_trim_lead_margin_ms) al 1.er chunk de CADA cláusula, no solo
+    # de la frase. Kokoro abre cada cláusula con ~300-380 ms de silencio: sin esto, cortar el 1.er fragmento más corto
+    # mete pausas >=300 ms a mitad de frase. False = camino de hoy.
+    tts_trim_lead_all_clauses: bool = False
     # BUG-7: antes de Marian, "120 mil" -> "120.000" y una llamada por oración (Marian omitía la 2.ª).
     # False = camino de hoy. Reversible por flag (--mt-normalize off) o env OPENTRADUCTOR_MT_NORMALIZE.
     mt_normalize: bool = False

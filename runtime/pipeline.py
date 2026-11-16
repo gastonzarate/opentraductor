@@ -189,7 +189,8 @@ class Engine:
     def _spec_fp(self) -> tuple:
         c = self.cfg
         return (c.voice, c.speed, c.tts_trim_lead_margin_ms, c.tts_first_chunk_max_words,
-                c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail, c.mt_normalize, c.mt_engine)
+                c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail, c.mt_normalize, c.mt_engine,
+                c.tts_trim_lead_all_clauses)
 
     def backlog(self) -> dict:
         """Estado de colas para métricas (valores medidos, no estimados)."""
@@ -215,7 +216,7 @@ class Engine:
         self.asr = await self.asr_worker.run(lambda: timed("asr", self._make_asr))
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
                                                    c.tts_first_chunk_max_words, c.tts_bind_conjunctions,
-                                                   c.tts_trim_tail)))
+                                                   c.tts_trim_tail, c.tts_trim_lead_all_clauses)))
         if c.mt_engine == "qwen":  # T-51: Qwen MLX comparte el hilo GPU con Kokoro
             from .config import qwen_model_dir
 
