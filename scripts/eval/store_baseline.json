@@ -26,5 +26,15 @@
   "base": 358.659,
   "threshold": 394.5,
   "path": ".aggregate.groups[0].request_to_first_ms.censoring_aware.quantiles.p95.value"
+ },
+ "bleu_chrf_min": {
+  "4b": [
+   70.0,
+   80.0
+  ],
+  "1.7b": [
+   56.0,
+   71.0
+  ]
  }
 }

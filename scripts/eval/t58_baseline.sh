@@ -14,7 +14,7 @@ PYBIN=".venv-inc-llm/bin/python"; MODE="${MODE:-baseline}"
 mkdir -p "$OUT"
 { echo "commit: $(git rev-parse --short HEAD) · MODE=$MODE · ASR=$ASR · QWEN_DIR=$QWEN_DIR"; date; uptime
   lsof -iTCP:8877 -sTCP:LISTEN >/dev/null 2>&1 && echo ":8877 ABIERTA (app de la persona)" || echo ":8877 libre"; } | tee "$OUT/entorno.txt"
-scripts/eval/wait_quiet.sh 3 4 "${QUIET_TIMEOUT_S:-600}" | tee -a "$OUT/entorno.txt"
+scripts/eval/wait_quiet.sh 3 4 "${QUIET_TIMEOUT_S:-600}" | tee -a "$OUT/entorno.txt" || echo "AVISO: medido SIN reposo (referencia)" | tee -a "$OUT/entorno.txt"
 export OPENTRADUCTOR_QWEN_DIR="$QWEN_DIR"
 # Tope de caché MLX de la tienda (decisión T-50): lo aplica scripts/eval/mlxcap/sitecustomize.py en cada proceso.
 export OT_MLX_CACHE_LIMIT_MB="${CACHE_MB:-256}" EXTRA_PYTHONPATH="$ROOT/scripts/eval/mlxcap"

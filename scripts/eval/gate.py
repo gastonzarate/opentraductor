@@ -282,7 +282,10 @@ def check_mt(out: Path, a) -> list[Row]:
     mthr = bm[1] if bm else 70.0
     rows.append(Row(names[0], num(q[1]) + " ms", f"≤ {num(mthr)} ms (base {num(bm[0]) if bm else '51,3'})", "PASA" if q[1] <= mthr else "FALLA", f"ruta: {q[0]}") if q
                 else Row(names[0], "n/d", "≤ 70 ms", "NO MEDIDO", "sin p95 en run.json"))
-    for name, key, thr in ((names[1], "bleu", 56.0), (names[2], "chrf", 71.0)):
+    qd = str(mt_cfg.get("qwen_model_dir", "")).lower()  # T-58: piso de calidad según el tamaño de Qwen de la tienda (decisión @lead 16/11)
+    size = "1.7b" if "1.7b" in qd else "4b" if re.search(r"(?<![\d.])4b(?!it)", qd) else None
+    bmin = (STORE_BASE.get("bleu_chrf_min") or {}).get(size, [56.0, 71.0]) if store else [56.0, 71.0]
+    for name, key, thr in ((names[1], "bleu", float(bmin[0])), (names[2], "chrf", float(bmin[1]))):
         r = find_key(data, key)
         rows.append(Row(name, num(r[1]), f"≥ {thr:g}".replace(".", ","), "PASA" if r[1] >= thr else "FALLA", f"ruta: {r[0]}; las referencias son 'generated'") if r
                     else Row(name, "n/d", f"≥ {thr:g}", "NO MEDIDO", f"sin clave '{key}' en run.json; ver {d}/report.md"))
