@@ -385,3 +385,17 @@ def test_queued_segments_of_closed_session_are_purged(monkeypatch):
         assert e._purge_queue("a", 1) == 2 and e._out_q.qsize() == 1
         assert e._out_q.get_nowait()[0] == "b"
     asyncio.run(go())
+
+
+def test_mt_final_reports_compute_ms_only_without_spec_hit():
+    """T-58: mt_compute_ms (dentro del hilo) acompaña a mt_ms en la ruta normal; en un hit no se recalcula."""
+    async def go():
+        e, ev = await run_segment(partial="hola", final="hola mundo", spec=False)
+        f = [f for k, f in ev if k == "mt_final"][0]
+        assert 0 <= f["mt_compute_ms"] <= f["mt_ms"]
+        await e.close()
+        e, ev = await run_segment(partial="hola mundo", final="hola mundo", settle=True)
+        f = [f for k, f in ev if k == "mt_final"][0]
+        assert f["spec"] == "hit" and "mt_compute_ms" not in f
+        await e.close()
+    asyncio.run(go())

@@ -36,6 +36,8 @@ class BaselineAdapter(Adapter):
         # ASR crudo vs texto usado como entrada de MT (el contrato AdapterEvent solo
         # lleva ``text``): queda en ``describe()['asr_text_log']`` -> run.json.
         self.asr_text_log: list[dict[str, Any]] = []
+        # T-58: mt_ms (desde que el speaker loop toma el segmento) vs mt_compute_ms (dentro del hilo MT).
+        self.mt_timing_log: list[dict[str, Any]] = []
 
     async def _emit(self, kind: str, f: dict) -> None:
         if kind == "asr_final" and len(self.asr_text_log) < 5000:
@@ -44,6 +46,11 @@ class BaselineAdapter(Adapter):
                 "commit_id": f"{f['stream_id']}:{f['seg_id']}" if f.get("seg_id") is not None else None,
                 "asr_raw": f.get("text_raw", f.get("text")),
                 "mt_input": f.get("text"),
+            })
+        if kind == "mt_final" and len(self.mt_timing_log) < 5000:
+            self.mt_timing_log.append({
+                "commit_id": f"{f['stream_id']}:{f['seg_id']}" if f.get("seg_id") is not None else None,
+                "mt_ms": f.get("mt_ms"), "mt_compute_ms": f.get("mt_compute_ms"), "spec": f.get("spec"),
             })
         ev = AdapterEvent(
             _KIND[kind],
@@ -70,6 +77,7 @@ class BaselineAdapter(Adapter):
             "pipeline_config": {k: getattr(cfg, k) for k in cfg.__dataclass_fields__},
             "load_ms": dict(self.engine.load_ms) if self.engine else {},
             "asr_text_log": list(self.asr_text_log),
+            "mt_timing_log": list(self.mt_timing_log),
             "speculation": self.engine.spec_metrics() if self.engine else {},
         }
 

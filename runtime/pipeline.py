@@ -48,6 +48,13 @@ def _apply_mlx_cache_limit(cfg: PipelineConfig) -> int | None:
     return b
 
 
+def _timed_call(fn, *a):
+    """Ejecuta ``fn`` y devuelve (resultado, ms medidos dentro del hilo del executor)."""
+    t = time.perf_counter()
+    r = fn(*a)
+    return r, (time.perf_counter() - t) * 1000
+
+
 class ModelWorker:
     """Un hilo dedicado: MLX liga arrays/streams al hilo que los crea."""
 
@@ -626,12 +633,14 @@ class Engine:
                 if entry is not None:
                     text_en = entry.text_en
                 else:
-                    text_en = await self._mt_exec.run(self.mt.translate, seg.text_es)
+                    text_en, mt_compute_ms = await self._mt_exec.run(_timed_call, self.mt.translate, seg.text_es)
                 mt_ms = (time.perf_counter() - t0) * 1000
                 if not self._is_live(stream_id, seg.gen):  # se cerró durante la MT: se descarta
                     self.stale_dropped += 1
                     continue
                 ev = {"stream_id": stream_id, "text": text_en, "seg_id": seg.seg_id, "mt_ms": round(mt_ms, 1)}
+                if entry is None:  # T-58: cómputo dentro del hilo vs espera (cola del executor + bucle)
+                    ev["mt_compute_ms"] = round(mt_compute_ms, 1)
                 if spec is not None:
                     ev["spec"] = spec
                 await self.emit("mt_final", ev)
