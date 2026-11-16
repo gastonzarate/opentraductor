@@ -1,7 +1,7 @@
 import AppKit
-import WebKit
+import SwiftUI
 
-/// Shell nativo de opentraductor: lanza el runtime Python embebido (solo en 127.0.0.1) y muestra su UI en una ventana propia.
+/// Shell nativo de opentraductor: lanza el runtime Python embebido (solo en 127.0.0.1) y muestra una interfaz SwiftUI propia.
 /// La única conexión a internet es la descarga inicial de modelos (ModelSetup.swift, con pantalla explícita).
 /// El motor corre siempre en modo offline.
 
@@ -93,48 +93,46 @@ final class RuntimeProcess {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+// T-42: ventana principal, Ajustes y Acerca de en SwiftUI (sin WebKit). Ver MainView.swift, AppModel.swift y EngineClient.swift.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
-    private var web: WKWebView!
+    private let model = AppModel()
     private let runtime = RuntimeProcess()
-    private var baseURL: URL?
+    private var started = false
     private var quitting = false
     private var modelSetup: ModelSetup?
+    private var settingsWindow: NSWindow?
+    private var aboutWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
-        let cfg = WKWebViewConfiguration()
-        cfg.websiteDataStore = .nonPersistent()  // sin cookies ni caché en disco
-        web = WKWebView(frame: .zero, configuration: cfg)
-        web.navigationDelegate = self
-        web.uiDelegate = self
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 780),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
         window.title = "opentraductor"
-        window.minSize = NSSize(width: 760, height: 560)
-        window.contentView = web
+        window.minSize = NSSize(width: 720, height: 540)
+        window.contentView = NSHostingView(rootView: MainView(model: model))
         window.setFrameAutosaveName("main")
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        showMessage(title: "Iniciando…", body: "Preparando el motor de traducción en tu Mac.")
 
         runtime.onURL = { [weak self] url in
-            guard let self, self.baseURL == nil else { return }
-            self.baseURL = url
-            self.web.load(URLRequest(url: url))
+            guard let self, !self.started else { return }
+            self.started = true
+            self.model.attach(url: url)
         }
         runtime.onExit = { [weak self] code in
             guard let self, !self.quitting else { return }
-            self.showMessage(title: "El motor se detuvo (código \(code))",
-                             body: "Cerrá y volvé a abrir la app. Si se repite, escribinos con este detalle:\n\n" + self.runtime.stderrTail)
+            self.model.showFailure("El motor se detuvo (código \(code)).\n\n" + self.runtime.stderrTail)
         }
         // Primer arranque: si faltan los modelos, descarga guiada antes de iniciar el motor.
+        model.showMessage("Comprobando los modelos de voz…")
         ModelSetup.modelsReady { [weak self] ready in
             guard let self else { return }
             if ready { return ModelSetup.requestMicrophoneIfNeeded { self.startRuntime() } }
-            self.showMessage(title: "Faltan los modelos de voz", body: "Hace falta una descarga inicial.")
+            self.model.showMessage("Faltan los modelos de voz. Hace falta una descarga inicial.")
             let setup = ModelSetup(parent: self.window) { [weak self] in self?.startRuntime() }
             self.modelSetup = setup
             setup.present()
@@ -143,83 +141,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     private func startRuntime() {
         modelSetup = nil
-        showMessage(title: "Iniciando…", body: "Preparando el motor de traducción en tu Mac.")
+        model.showMessage("Preparando el motor de traducción en tu Mac…")
         do { try runtime.start() } catch {
-            showMessage(title: "No se pudo iniciar el motor", body: "\(error.localizedDescription)")
+            model.showFailure("No se pudo iniciar el motor: \(error.localizedDescription)")
         }
-    }
-
-    private func esc(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
-    }
-
-    private func showMessage(title: String, body: String) {
-        let html = """
-        <html><body style="font:15px -apple-system;padding:48px;color-scheme:light dark">
-        <h2>\(esc(title))</h2><pre style="white-space:pre-wrap;font:13px ui-monospace">\(esc(body))</pre></body></html>
-        """
-        web.loadHTMLString(html, baseURL: nil)
-    }
-
-    // Solo se navega dentro del servidor local; todo lo demás (p. ej. existential.audio) se abre en el navegador.
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = action.request.url else { return decisionHandler(.cancel) }
-        if url.scheme == "about" || url.host == "127.0.0.1" { return decisionHandler(.allow) }
-        if ["http", "https"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
-        decisionHandler(.cancel)
-    }
-
-    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url, ["http", "https"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
-        return nil
-    }
-
-    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        let a = NSAlert(); a.messageText = message; a.runModal(); completionHandler()
-    }
-
-    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        let a = NSAlert(); a.messageText = message
-        a.addButton(withTitle: "Aceptar"); a.addButton(withTitle: "Cancelar")
-        completionHandler(a.runModal() == .alertFirstButtonReturn)
     }
 
     private func buildMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu(); appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "Acerca de opentraductor", action: #selector(about), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "Acerca de opentraductor", action: #selector(showAbout), keyEquivalent: "").target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Ajustes…", action: #selector(showSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Ocultar opentraductor", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Salir de opentraductor", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        // Menú Edición: sin él, Cmd+C/V no funcionan en el campo de la clave de licencia.
         let editItem = NSMenuItem(); main.addItem(editItem)
         let edit = NSMenu(title: "Edición"); editItem.submenu = edit
-        edit.addItem(withTitle: "Deshacer", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(.separator())
         edit.addItem(withTitle: "Cortar", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copiar", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Pegar", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "Seleccionar todo", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        let viewItem = NSMenuItem(); main.addItem(viewItem)
-        let view = NSMenu(title: "Ventana"); viewItem.submenu = view
-        view.addItem(withTitle: "Minimizar", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        view.addItem(withTitle: "Cerrar", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let winItem = NSMenuItem(); main.addItem(winItem)
+        let win = NSMenu(title: "Ventana"); winItem.submenu = win
+        win.addItem(withTitle: "Minimizar", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        win.addItem(withTitle: "Cerrar", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         NSApp.mainMenu = main
     }
 
-    @objc private func about() {
-        let net = RuntimeProcess.isStoreEdition
-            ? "La única conexión a internet es la descarga inicial de modelos."
-            : "La única conexión a internet es la activación de la licencia, una vez, y la descarga inicial de modelos."
-        let credits = NSAttributedString(string: """
-        Traductor de voz español (Argentina) a inglés (EE. UU.), 100 % en tu Mac. Sin telemetría; no se graba audio.
-        \(net)
+    @objc private func showSettings() {
+        if settingsWindow == nil {
+            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model)))
+            w.title = "Ajustes"
+            w.styleMask = [.titled, .closable]
+            w.isReleasedWhenClosed = false
+            settingsWindow = w
+        }
+        settingsWindow?.center()
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
 
-        Modelos de voz Moonshine: Moonshine AI Community License. Parakeet (NVIDIA): CC-BY 4.0.
-        """)
-        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    @objc private func showAbout() {
+        if aboutWindow == nil {
+            let w = NSWindow(contentViewController: NSHostingController(rootView: AboutView()))
+            w.title = "Acerca de opentraductor"
+            w.styleMask = [.titled, .closable]
+            w.isReleasedWhenClosed = false
+            aboutWindow = w
+        }
+        aboutWindow?.center()
+        aboutWindow?.makeKeyAndOrderFront(nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -232,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let delegate = AppDelegate()
+let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate
 signal(SIGTERM, SIG_IGN)
 let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
