@@ -62,7 +62,19 @@ def run_checks(cfg: C.PipelineConfig) -> list[Check]:
             raise FileNotFoundError(f"faltan {miss} en {d}")
         return d
 
-    chk("mt:marian-ct2", mt)
+    def qwen():
+        d = C.qwen_model_dir(cfg)
+        miss = [f for f in ("config.json", "model.safetensors", "tokenizer.json") if not (d / f).exists()]
+        if miss:
+            raise FileNotFoundError(f"faltan {miss} en {d} (no se descarga aquí)")
+        if importlib.util.find_spec("mlx_lm") is None:
+            raise ModuleNotFoundError("mlx_lm no instalado (mlx-lm==0.32.2)")
+        return d
+
+    if cfg.mt_engine == "qwen":
+        chk("mt:qwen-mlx", qwen)
+    else:
+        chk("mt:marian-ct2", mt)
 
     def spacy_model():
         if importlib.util.find_spec("en_core_web_sm") is None:

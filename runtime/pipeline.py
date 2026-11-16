@@ -148,10 +148,15 @@ class Engine:
         d["enabled"] = self.cfg.speculative_mt_tts
         return d
 
+    @property
+    def _mt_exec(self):
+        """Ejecutor del MT: Marian en el hilo CPU; Qwen (MLX) en el hilo GPU, el mismo de Kokoro."""
+        return self.gpu if self.cfg.mt_engine == "qwen" else self.cpu
+
     def _spec_fp(self) -> tuple:
         c = self.cfg
         return (c.voice, c.speed, c.tts_trim_lead_margin_ms, c.tts_first_chunk_max_words,
-                c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail, c.mt_normalize)
+                c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail, c.mt_normalize, c.mt_engine)
 
     def backlog(self) -> dict:
         """Estado de colas para métricas (valores medidos, no estimados)."""
@@ -177,7 +182,12 @@ class Engine:
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
                                                    c.tts_first_chunk_max_words, c.tts_bind_conjunctions,
                                                    c.tts_trim_tail)))
-        self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
+        if c.mt_engine == "qwen":  # T-51: Qwen MLX comparte el hilo GPU con Kokoro
+            from .config import qwen_model_dir
+
+            self.mt = await self.gpu.run(lambda: timed("mt", lambda: K.QwenMLX(qwen_model_dir(c), normalize=c.mt_normalize)))
+        else:
+            self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)
         self._out_q = asyncio.Queue(maxsize=max(1, c.max_pending_segments))
         self._out_task = asyncio.ensure_future(self._speaker_loop())
@@ -198,7 +208,7 @@ class Engine:
     async def _warmup(self) -> None:
         silence = bytes(2 * SR // 2)
         await self.asr_worker.run(lambda: (self.asr.start(), self.asr.add(silence), self.asr.finish()))
-        await self.cpu.run(lambda: self.mt.translate("hola"))
+        await self._mt_exec.run(lambda: self.mt.translate("hola"))
         await self.gpu.run(lambda: list(self.tts.synth("Hello there.")))
 
     async def close(self) -> None:
@@ -503,7 +513,7 @@ class Engine:
     async def _spec_run(self, e: SpecEntry) -> None:
         try:
             t = time.perf_counter()
-            text_en = await self.cpu.run(self.mt.translate, e.text_es)
+            text_en = await self._mt_exec.run(self.mt.translate, e.text_es)
             e.mt_ms = (time.perf_counter() - t) * 1000
             if e.cancelled:
                 return
@@ -586,7 +596,7 @@ class Engine:
                 if entry is not None:
                     text_en = entry.text_en
                 else:
-                    text_en = await self.cpu.run(self.mt.translate, seg.text_es)
+                    text_en = await self._mt_exec.run(self.mt.translate, seg.text_es)
                 mt_ms = (time.perf_counter() - t0) * 1000
                 if not self._is_live(stream_id, seg.gen):  # se cerró durante la MT: se descarta
                     self.stale_dropped += 1

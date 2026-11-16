@@ -43,6 +43,14 @@ def moonshine_model_dir(backend: str) -> Path:
     return base / name / MOONSHINE_REV
 
 
+def qwen_model_dir(cfg: "PipelineConfig") -> Path:
+    """T-51: pesos de Qwen en disco (sin descarga aquí): ``cfg.qwen_model_dir`` o ``$OPENTRADUCTOR_QWEN_DIR``."""
+    d = cfg.qwen_model_dir or os.environ.get("OPENTRADUCTOR_QWEN_DIR")
+    if not d:
+        raise FileNotFoundError("mt_engine=qwen sin carpeta del modelo (qwen_model_dir u OPENTRADUCTOR_QWEN_DIR)")
+    return Path(d).expanduser()
+
+
 def marian_ct2_dir() -> Path:
     """Marian ya convertido a CTranslate2 int8.
 
@@ -125,6 +133,10 @@ class PipelineConfig:
     # BUG-7: antes de Marian, "120 mil" -> "120.000" y una llamada por oración (Marian omitía la 2.ª).
     # False = camino de hoy. Reversible por flag (--mt-normalize off) o env OPENTRADUCTOR_MT_NORMALIZE.
     mt_normalize: bool = False
+    # T-51: traductor. "marian" (CTranslate2, CPU) = camino de hoy | "qwen" (Qwen3 4bit MLX, en el hilo GPU con Kokoro).
+    mt_engine: str = "marian"
+    # Carpeta del Qwen MLX (config.json + model.safetensors + tokenizer). None = $OPENTRADUCTOR_QWEN_DIR.
+    qwen_model_dir: str | None = None
     # Primer fragmento del TTS: máx. de palabras (None = solo por puntuación). Ayuda con ASR sin puntuación.
     tts_first_chunk_max_words: int | None = None
     # Con el anterior: no cortar justo antes/después de and/or/but/nor/yet (conjunción dentro de su grupo).

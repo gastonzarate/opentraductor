@@ -283,6 +283,43 @@ _NO_END = frozenset(
 _CONJ = frozenset({"and", "or", "but", "nor", "yet"})
 
 
+# T-51: mismo prompt que la app diaria (MP4-A) y que T-50 (probe_qwen_sizes.py).
+QWEN_SYSTEM = ("You translate Argentine Spanish speech from software team meetings into natural US English. "
+               "Output only the English translation, with no notes, quotes or explanations. "
+               "Keep numbers, negations, names and technical terms exact.")
+
+
+class QwenMLX:
+    """MT ES->EN con Qwen3 4bit en MLX (mlx-lm). Greedy, corte en el primer salto de línea, max_tokens = 3n+16.
+
+    Usa la GPU: el pipeline lo llama desde el mismo hilo que Kokoro (MLX no se comparte entre hilos).
+    ``normalize`` aplica el mismo preproceso de BUG-7 que Marian (cifras y horas, sin partir oraciones:
+    Qwen no omite la 2.ª oración y partirla costaría una llamada más)."""
+
+    def __init__(self, model_dir, normalize: bool = False) -> None:
+        from mlx_lm import load
+
+        self.model, self.tok = load(str(model_dir))
+        self.normalize = normalize
+        self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")
+
+    def prompt(self, text_es: str) -> str:
+        msgs = [{"role": "system", "content": QWEN_SYSTEM}, {"role": "user", "content": f"Spanish:\n{text_es}"}]
+        kw = {"enable_thinking": False} if self._hybrid else {}
+        return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
+
+    def translate(self, text_es: str) -> str:
+        from mlx_lm import generate
+
+        text_es = text_es.strip()
+        if not text_es:
+            return ""
+        if self.normalize:
+            text_es = mt_normalize_numbers(text_es)
+        out = generate(self.model, self.tok, prompt=self.prompt(text_es), max_tokens=3 * len(text_es.split()) + 16, verbose=False)
+        return out.strip().split("\n")[0].strip()
+
+
 def _risky_token(w: str) -> bool:
     """Números e identificadores que no deben cortarse ni separarse de su vecino."""
     return (
