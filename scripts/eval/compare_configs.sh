@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
 OUT="${1:-artifacts/runtime-opt}"; REPS="${REPS:-3}"
 PYBIN="${PYBIN:-.venv/bin/python}"  # T-58: PYBIN=.venv-inc-llm/bin/python para la config de la tienda (Qwen/MLX)
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH="$ROOT"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH="$ROOT${EXTRA_PYTHONPATH:+:$EXTRA_PYTHONPATH}"
 run() { # nombre json
   "$PYBIN" -m benchmark run --manifest artifacts/benchmark/offline-review/manifest.jsonl \
     --audio-root data/audio --split development --adapter runtime.adapters.baseline:BaselineAdapter \

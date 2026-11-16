@@ -16,8 +16,11 @@ mkdir -p "$OUT"
   lsof -iTCP:8877 -sTCP:LISTEN >/dev/null 2>&1 && echo ":8877 ABIERTA (app de la persona)" || echo ":8877 libre"; } | tee "$OUT/entorno.txt"
 scripts/eval/wait_quiet.sh 3 4 "${QUIET_TIMEOUT_S:-600}" | tee -a "$OUT/entorno.txt"
 export OPENTRADUCTOR_QWEN_DIR="$QWEN_DIR"
+# Tope de caché MLX de la tienda (decisión T-50): lo aplica scripts/eval/mlxcap/sitecustomize.py en cada proceso.
+export OT_MLX_CACHE_LIMIT_MB="${CACHE_MB:-256}" EXTRA_PYTHONPATH="$ROOT/scripts/eval/mlxcap"
+echo "tope caché MLX: ${OT_MLX_CACHE_LIMIT_MB} MB" | tee -a "$OUT/entorno.txt"
 if [ "$MODE" = "incremental" ]; then
-  HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH=".:artifacts/analysis/incremental-adapter-v1:artifacts/analysis/incremental-llm-v1" "$PYBIN" -m benchmark run \
+  HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH=".:artifacts/analysis/incremental-adapter-v1:artifacts/analysis/incremental-llm-v1:$EXTRA_PYTHONPATH" "$PYBIN" -m benchmark run \
     --manifest artifacts/benchmark/offline-review/manifest.jsonl --audio-root data/audio --split development \
     --adapter inc_llm.adapter:IncrementalLLMAdapter --adapter-config '{}' --repetitions "$LAT_REPS" --warmup 1 \
     --out "$OUT/latency/store" --system-name store
@@ -25,7 +28,7 @@ else
   CONFIGS="store={\"asr_backend\":\"$ASR\",\"mt_engine\":\"qwen\",\"qwen_model_dir\":\"$QWEN_DIR\"}" REPS="$LAT_REPS" PYBIN="$PYBIN" \
     scripts/eval/compare_configs.sh "$OUT/latency"
 fi
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH="$ROOT" "$PYBIN" -m benchmark run --text-manifest data/manifests/text_meetings_ar_dev.jsonl \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH="$ROOT:$EXTRA_PYTHONPATH" "$PYBIN" -m benchmark run --text-manifest data/manifests/text_meetings_ar_dev.jsonl \
   --adapter benchmark.adapters.text_mt_tts:TextMtTtsAdapter --adapter-config "{\"stages\":\"mt\",\"mt_engine\":\"qwen\",\"qwen_model_dir\":\"$QWEN_DIR\"}" \
   --split development --repetitions "$MT_REPS" --warmup 2 --out "$OUT/mt"
 uptime | tee -a "$OUT/entorno.txt"

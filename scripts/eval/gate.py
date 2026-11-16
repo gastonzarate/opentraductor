@@ -48,6 +48,10 @@ NO_VALID_BASE = ("Latencia motor", "ASR WER", "MT petición→mt_final p95")
 #           "latency_p50_ms": {"base": N, "threshold": N}, "latency_p95_ms": {...}, "mt_p95_ms": {...}, "asr_wer": {...}}
 STORE_BASE_FILE = ROOT / "scripts/eval/store_baseline.json"
 STORE_BASE: dict = json.loads(STORE_BASE_FILE.read_text(encoding="utf-8")) if STORE_BASE_FILE.exists() else {}
+if STORE_BASE:  # T-58: la tienda fija el tope de caché MLX (decisión T-50); lo aplica scripts/eval/mlxcap/sitecustomize.py (solo si hay mlx)
+    _cap = str(ROOT / "scripts/eval/mlxcap")
+    ENV.update({"OT_MLX_CACHE_LIMIT_MB": str(STORE_BASE.get("mlx_cache_limit_mb", 256)), "EXTRA_PYTHONPATH": _cap,
+                "PYTHONPATH": ENV["PYTHONPATH"] + os.pathsep + _cap})
 BASE_KEY = {"Latencia motor, mediana": "latency_p50_ms", "Latencia motor, p95": "latency_p95_ms",
             "ASR WER": "asr_wer", "MT petición→mt_final p95": "mt_p95_ms"}
 

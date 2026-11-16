@@ -1,0 +1,30 @@
+{
+ "config": {
+  "asr_backend": "moonshine-tiny",
+  "mt_engine": "qwen",
+  "qwen_model_dir": "artifacts/analysis/llm-mp4-a/models/qwen3-4b-instruct-2507-4bit"
+ },
+ "python": ".venv-inc-llm/bin/python",
+ "latency_reps": 7,
+ "mlx_cache_limit_mb": 256,
+ "latency_p50_ms": {
+  "base": 1237.428,
+  "threshold": 1361.2,
+  "path": ".aggregate.groups[0].end_to_first_ms.censoring_aware.quantiles.p50.value"
+ },
+ "latency_p95_ms": {
+  "base": 1412.208,
+  "threshold": 1553.4,
+  "path": ".aggregate.groups[0].end_to_first_ms.censoring_aware.quantiles.p95.value"
+ },
+ "asr_wer": {
+  "base": 0.047,
+  "threshold": 0.06,
+  "path": ".quality.candidate_asr_es.human.wer"
+ },
+ "mt_p95_ms": {
+  "base": 358.659,
+  "threshold": 394.5,
+  "path": ".aggregate.groups[0].request_to_first_ms.censoring_aware.quantiles.p95.value"
+ }
+}
