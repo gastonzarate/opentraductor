@@ -127,5 +127,34 @@ if case .partial(let id, _, _) = ev(#"{"type":"partial","seg_id":12,"text_es":"x
     check(id == "12", "seg_id numérico")
 } else { check(false, "partial") }
 
+// Integración: la secuencia que publica el runtime real (tests/integration/t55_dump_events.py).
+// Ninguna frase que ya se vio desaparece en ningún paso, y el estado final es el esperado.
+if CommandLine.arguments.count > 1 {
+    let url = URL(fileURLWithPath: CommandLine.arguments[1])
+    guard let data = try? Data(contentsOf: url),
+          let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          let scenarios = root["scenarios"] as? [[String: Any]], !scenarios.isEmpty
+    else { fatalError("no se pudo leer \(url.path)") }
+    for sc in scenarios {
+        let name = sc["name"] as? String ?? "?"
+        let events = sc["events"] as? [[String: Any]] ?? []
+        let expect = (sc["expect"] as? [[String]] ?? []).map { $0.joined(separator: "|") }
+        var t = Transcript()
+        var shown = Set<String>()
+        for (i, obj) in events.enumerated() {
+            let json = String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+            let id = obj["seg_id"].map { "\($0)" }
+            if let from = obj["from_seg_id"].map({ "\($0)" }), shown.remove(from) != nil, let id { shown.insert(id) }
+            t.apply(ev(json))
+            if let id, let es = obj["text_es"] as? String, !es.isEmpty { shown.insert(id) }
+            let lost = shown.filter { s in !t.rows.contains { $0.id == s && !$0.es.isEmpty } }
+            check(lost.isEmpty, "runtime → app [\(name)] evento \(i): desaparecieron \(lost.sorted())")
+        }
+        check(view(t) == expect, "runtime → app [\(name)]: \(view(t)) != \(expect)")
+    }
+} else {
+    print("AVISO: sin fixture del runtime (pasar tests/fixtures/t55_runtime_events.json)")
+}
+
 print(failures == 0 ? "OK: \(count) comprobaciones" : "\(failures) de \(count) fallaron")
 exit(failures == 0 ? 0 : 1)

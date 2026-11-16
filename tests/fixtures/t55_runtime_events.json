@@ -1,0 +1,245 @@
+{
+ "source": "tests/integration/t55_dump_events.py",
+ "scenarios": [
+  {
+   "name": "incremental: commit, barge-in y unidad sin PCM",
+   "events": [
+    {
+     "type": "partial",
+     "seg_id": "s1:live:0",
+     "text_es": "buenos días"
+    },
+    {
+     "type": "partial",
+     "seg_id": "s1:live:0",
+     "text_es": "buenos días quisiera"
+    },
+    {
+     "type": "partial",
+     "seg_id": "c1",
+     "text_es": "Buenos días, quisiera una mesa.",
+     "from_seg_id": "s1:live:0"
+    },
+    {
+     "type": "partial",
+     "seg_id": "s1:live:1",
+     "text_es": "para dos"
+    },
+    {
+     "type": "partial",
+     "seg_id": "s1:live:1",
+     "text_es": "para dos personas"
+    },
+    {
+     "type": "segment",
+     "seg_id": "c1",
+     "text_es": "Buenos días, quisiera una mesa.",
+     "text_es_raw": null,
+     "text_en": "Good morning, I'd like a table."
+    },
+    {
+     "type": "partial",
+     "seg_id": "c2",
+     "text_es": "Para dos personas.",
+     "from_seg_id": "s1:live:1"
+    },
+    {
+     "type": "partial",
+     "seg_id": "s1:live:2",
+     "text_es": "eh"
+    },
+    {
+     "type": "discarded",
+     "seg_id": "c2",
+     "text_es": "Para dos personas.",
+     "reason": "cancelled"
+    },
+    {
+     "type": "partial",
+     "seg_id": "c3",
+     "text_es": "Eh, perdón.",
+     "from_seg_id": "s1:live:2"
+    },
+    {
+     "type": "discarded",
+     "seg_id": "c3",
+     "text_es": "Eh, perdón.",
+     "reason": "cancelled"
+    }
+   ],
+   "expect": [
+    [
+     "c1",
+     "final",
+     "Buenos días, quisiera una mesa.",
+     "Good morning, I'd like a table."
+    ],
+    [
+     "c2",
+     "discarded:cancelled",
+     "Para dos personas.",
+     ""
+    ],
+    [
+     "c3",
+     "discarded:cancelled",
+     "Eh, perdón.",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "baseline: segment de N con parcial de N+1 en pantalla, y final vacío",
+   "events": [
+    {
+     "type": "partial",
+     "seg_id": "1",
+     "text_es": "primera"
+    },
+    {
+     "type": "partial",
+     "seg_id": "1",
+     "text_es": "Primera frase."
+    },
+    {
+     "type": "partial",
+     "seg_id": "2",
+     "text_es": "segunda"
+    },
+    {
+     "type": "partial",
+     "seg_id": "2",
+     "text_es": "segunda en curso"
+    },
+    {
+     "type": "segment",
+     "seg_id": "1",
+     "text_es": "Primera frase.",
+     "text_es_raw": "primera frase",
+     "text_en": "First sentence."
+    },
+    {
+     "type": "partial",
+     "seg_id": "2",
+     "text_es": "Segunda en curso."
+    },
+    {
+     "type": "partial",
+     "seg_id": "3",
+     "text_es": "mmm"
+    },
+    {
+     "type": "discarded",
+     "seg_id": "3",
+     "text_es": "mmm",
+     "reason": "empty"
+    },
+    {
+     "type": "segment",
+     "seg_id": "2",
+     "text_es": "Segunda en curso.",
+     "text_es_raw": null,
+     "text_en": "Second in progress."
+    }
+   ],
+   "expect": [
+    [
+     "1",
+     "final",
+     "Primera frase.",
+     "First sentence."
+    ],
+    [
+     "2",
+     "final",
+     "Segunda en curso.",
+     "Second in progress."
+    ],
+    [
+     "3",
+     "discarded:empty",
+     "mmm",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "pipeline: frase normal",
+   "events": [
+    {
+     "type": "partial",
+     "seg_id": "1",
+     "text_es": "hola"
+    },
+    {
+     "type": "partial",
+     "seg_id": "1",
+     "text_es": "hola"
+    },
+    {
+     "type": "segment",
+     "seg_id": "1",
+     "text_es": "hola",
+     "text_es_raw": "hola",
+     "text_en": "EN hola"
+    }
+   ],
+   "expect": [
+    [
+     "1",
+     "final",
+     "hola",
+     "EN hola"
+    ]
+   ]
+  },
+  {
+   "name": "pipeline: frase corta (min_speech_ms)",
+   "events": [
+    {
+     "type": "partial",
+     "seg_id": "1",
+     "text_es": "hola"
+    },
+    {
+     "type": "discarded",
+     "seg_id": "1",
+     "text_es": "hola",
+     "reason": "short"
+    }
+   ],
+   "expect": [
+    [
+     "1",
+     "discarded:short",
+     "hola",
+     ""
+    ]
+   ]
+  },
+  {
+   "name": "pipeline: ASR final vacío",
+   "events": [
+    {
+     "type": "partial",
+     "seg_id": "1",
+     "text_es": "hola"
+    },
+    {
+     "type": "discarded",
+     "seg_id": "1",
+     "text_es": "hola",
+     "reason": "empty"
+    }
+   ],
+   "expect": [
+    [
+     "1",
+     "discarded:empty",
+     "hola",
+     ""
+    ]
+   ]
+  }
+ ]
+}
