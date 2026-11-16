@@ -13,7 +13,7 @@ PYHOME="$("$PYSRC" -c 'import sys; print(sys.base_prefix)')"
 echo "==> limpiando $APP"; rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$RES/app"
 
 echo "==> compilando el shell (Swift)"
-swiftc -O -target arm64-apple-macos14.0 -o "$APP/Contents/MacOS/OpenTraductor" "$HERE"/Sources/OpenTraductor/*.swift
+swiftc -O -target arm64-apple-macos15.0 -o "$APP/Contents/MacOS/OpenTraductor" "$HERE"/Sources/OpenTraductor/*.swift
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" "$HERE/Info.plist" > "$APP/Contents/Info.plist"
 
 echo "==> copiando runtime y UI"

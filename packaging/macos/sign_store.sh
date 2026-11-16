@@ -27,9 +27,7 @@ PL="$APP/Contents/Info.plist"
 rm -rf "$APP/Contents/_CodeSignature"
 # Herramientas de compilación que no se usan en ejecución.
 find "$APP/Contents/Resources/python" -type f \( -name 'protoc' -o -name 'protoc-*' \) -delete
-# Moonshine (ASR experimental, pide macOS 15) no va en la tienda: mínimo 14 y la guía 2.5.19 no admite funciones latentes.
-rm -rf "$APP/Contents/Resources/app/setup_moonshine.py"
-find "$APP/Contents/Resources/python" -maxdepth 4 -type d -name 'moonshine_voice*' -path '*site-packages*' -prune -exec rm -rf {} +
+# T-49: Moonshine es el ASR de la tienda (libmoonshine pide macOS 15, por eso LSMinimumSystemVersion=15.0). Ya no se quita.
 # Apple rechaza symlinks que apuntan fuera del bundle.
 BAD="$(find "$APP" -type l -exec sh -c 'case "$(readlink "$1")" in /*) echo "$1";; esac' _ {} \;)"
 [[ -z "$BAD" ]] || { echo "symlinks absolutos:\n$BAD" >&2; exit 1; }
