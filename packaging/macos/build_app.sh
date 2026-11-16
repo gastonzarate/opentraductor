@@ -20,6 +20,10 @@ echo "==> copiando runtime y UI"
 rsync -a --exclude '__pycache__' --exclude '*.pyc' "$ROOT/runtime" "$ROOT/ui" "$RES/app/"
 cp "$ROOT/scripts/setup_moonshine.py" "$RES/app/" 2>/dev/null || true
 
+echo "==> convirtiendo Marian a CTranslate2 (usa torch solo en este Mac, no va en la app)"
+( cd "$ROOT" && uv run --extra runtime --extra build python scripts/convert_marian.py --out "$RES/marian_ct2" )
+[[ -f "$RES/marian_ct2/model.bin" ]] || { echo "falta marian_ct2/model.bin" >&2; exit 1; }
+
 echo "==> copiando Python 3.12 embebido desde $PYHOME"
 rsync -a --exclude '__pycache__' --exclude 'test' --exclude 'tests' --exclude 'idlelib' --exclude 'tkinter' \
   --exclude 'turtledemo' --exclude 'ensurepip' --exclude '/lib/python3.12/site-packages' --exclude 'pyvenv.cfg' "$PYHOME/" "$RES/python/"
@@ -48,6 +52,9 @@ PY
 (( ${#MLX_URLS} == 2 )) || { echo "No encuentro las ruedas de MLX para macOS 14 en uv.lock" >&2; exit 1; }
 uv pip install --python "$RES/python/bin/python3.12" --break-system-packages --no-compile --no-deps --reinstall \
   --target "$RES/python/lib/python3.12/site-packages" "${MLX_URLS[@]}" 2>&1 | tail -3
+# La app de tienda no puede llevar torch (tamaño, APIs no públicas). Falla el build si se coló.
+LEAK="$(find "$RES/python/lib/python3.12/site-packages" -maxdepth 1 \( -iname 'torch' -o -iname 'torch-*' -o -iname 'torchaudio*' -o -iname 'silero_vad*' \))"
+[[ -z "$LEAK" ]] || { echo "torch en el bundle:\n$LEAK" >&2; exit 1; }
 find "$RES/python" -name '__pycache__' -type d -prune -exec rm -rf {} +
 find "$RES/python/lib/python3.12/site-packages" -type d \( -name tests -o -name test \) -prune -exec rm -rf {} + 2>/dev/null || true
 

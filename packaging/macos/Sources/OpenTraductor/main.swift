@@ -40,6 +40,11 @@ final class RuntimeProcess {
         env["OPENTRADUCTOR_MODELS"] = support.appendingPathComponent("models").path
         env["OPENTRADUCTOR_MOONSHINE_DIR"] = support.appendingPathComponent("moonshine").path
         env["HF_HOME"] = support.appendingPathComponent("hf").path
+        // Marian ya convertido a CTranslate2 viene dentro del bundle (solo lectura); el build lo genera sin torch en la app.
+        let marian = Bundle.main.resourceURL!.appendingPathComponent("marian_ct2")
+        if fm.fileExists(atPath: marian.appendingPathComponent("model.bin").path) {
+            env["OPENTRADUCTOR_MARIAN_CT2"] = marian.path
+        }
         if isStoreEdition { env["OPENTRADUCTOR_EDITION"] = "store" }
         return env
     }
