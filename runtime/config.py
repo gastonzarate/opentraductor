@@ -217,6 +217,13 @@ class PipelineConfig:
     speculative_mt_tts: bool = False
     spec_silence_ms: float = 64.0  # silencio VAD mínimo para especular (< endpoint_silence_ms)
     spec_max_entries: int = 4  # entradas en caché simultáneas (acotado)
+    # T-58 GPU fría: tras >=1 s de GPU ociosa la 1.ª generación de Qwen tarda ~170 ms más (sonda t58_mt_gpu_probe:
+    # idle 2 s p50 472-499 vs en caliente 306). Un forward de 1 token de "hola" (~240 ms) lanzado al empezar la pausa
+    # VAD despierta la GPU durante endpoint + ASR finish y la MT de la frase corre en caliente (309). Solo Qwen y con
+    # el ASR fuera del hilo MLX. $OPENTRADUCTOR_MT_PREWARM=1/0 lo fuerza (para medir sin tocar la UI).
+    mt_prewarm_on_pause: bool = False
+    mt_prewarm_silence_ms: float = 32.0  # silencio VAD para lanzarlo (< endpoint_silence_ms)
+    mt_prewarm_idle_s: float = 1.0  # solo si el hilo MLX lleva al menos esto sin trabajo
     end_stream_drain_timeout_s: float = 5.0  # espera máx. a drenar salidas al cerrar un stream; luego se abandona (y se descarta lo viejo)
     # Colas / backpressure
     max_pending_segments: int = 8

@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import concurrent.futures as cf
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
@@ -60,9 +61,16 @@ class ModelWorker:
 
     def __init__(self, name: str) -> None:
         self._ex = cf.ThreadPoolExecutor(1, thread_name_prefix=name)
+        self.inflight = 0  # trabajos encolados o corriendo (solo se toca desde el loop)
+        self.last_done = 0.0  # time.monotonic() del último trabajo terminado
 
     async def run(self, fn, *a):
-        return await asyncio.get_running_loop().run_in_executor(self._ex, fn, *a)
+        self.inflight += 1
+        try:
+            return await asyncio.get_running_loop().run_in_executor(self._ex, fn, *a)
+        finally:
+            self.inflight -= 1
+            self.last_done = time.monotonic()
 
     def shutdown(self) -> None:
         self._ex.shutdown(wait=True, cancel_futures=True)
@@ -126,6 +134,7 @@ class StreamState:
     skipped_tail_ms: float = 0.0  # cola silenciosa no enviada al ASR (medido)
     asr_done_pos_s: float = 0.0  # fin de audio del último chunk ya procesado por el ASR
     spec_seg_id: int | None = None  # segmento para el que ya se especuló
+    prewarm_seg_id: int | None = None  # segmento para el que ya se evaluó el prewarm de MT
     gen: int = 0  # generación (cada start_stream incrementa; separa sesiones con el mismo id)
 
 
@@ -154,6 +163,8 @@ class Engine:
             "skipped_busy": 0, "skipped_limit": 0, "miss_config": 0, "inflight_unmeasured": 0,
             "discarded_observed_ms": 0.0, "overlap_estimate_ms": 0.0,
         }
+        self.prewarm_stats: dict[str, Any] = {"started": 0, "skipped_hot": 0, "error": 0, "cost_ms": []}
+        self._prewarm_tasks: set[asyncio.Future] = set()
         self._gen = 0
         self._live_gen: dict[str, int] = {}  # generación vigente por stream; lo de otras generaciones no se emite
         self.stale_dropped = 0  # emisiones/trabajos de sesiones cerradas descartados (medido)
@@ -368,6 +379,7 @@ class Engine:
                 appended = False
         st.pos_samples += len(pcm) // 2
         self._maybe_speculate(st)
+        self._maybe_prewarm(st)
         if st.in_speech:
             if len(st.asr_buf) // 2 >= SR * c.asr_chunk_ms / 1000:
                 await self._queue_audio(st, chunk_end_s)
@@ -510,6 +522,42 @@ class Engine:
             except asyncio.QueueEmpty:
                 pass
         await q.put((st.stream_id, seg))
+
+    # ------------------------------------------------------- prewarm MT (T-58)
+    @property
+    def _prewarm_enabled(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_MT_PREWARM")
+        return (v == "1") if v in ("0", "1") else self.cfg.mt_prewarm_on_pause
+
+    def _maybe_prewarm(self, st: StreamState) -> None:
+        """Al empezar la pausa VAD de un segmento, si el hilo MLX está ocioso hace >= mt_prewarm_idle_s,
+        corre un forward de 1 token de Qwen para que la MT de esa frase no pague la GPU fría. No emite nada."""
+        c = self.cfg
+        seg = st.seg
+        if seg is None or not st.in_speech or seg.seg_id == st.prewarm_seg_id:
+            return
+        if st.silence_ms < c.mt_prewarm_silence_ms or not self._prewarm_enabled:
+            return
+        if c.mt_engine != "qwen" or self.mt is None or not hasattr(self.mt, "prewarm") or self.asr_worker is self.gpu:
+            return
+        st.prewarm_seg_id = seg.seg_id  # una vez por segmento
+        g = self.gpu
+        if g.inflight or time.monotonic() - g.last_done < c.mt_prewarm_idle_s:
+            self.prewarm_stats["skipped_hot"] += 1
+            return
+        self.prewarm_stats["started"] += 1
+        t = asyncio.ensure_future(g.run(_timed_call, self.mt.prewarm))
+        self._prewarm_tasks.add(t)
+        t.add_done_callback(self._prewarm_done)
+
+    def _prewarm_done(self, t: asyncio.Future) -> None:
+        self._prewarm_tasks.discard(t)
+        if t.cancelled():
+            return
+        if t.exception() is not None:
+            self.prewarm_stats["error"] += 1
+            return
+        self.prewarm_stats["cost_ms"].append(round(t.result()[1], 1))
 
     # ------------------------------------------------------- especulación
     def _maybe_speculate(self, st: StreamState) -> None:

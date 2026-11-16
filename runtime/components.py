@@ -319,6 +319,12 @@ class QwenMLX:
         out = generate(self.model, self.tok, prompt=self.prompt(text_es), max_tokens=3 * len(text_es.split()) + 16, verbose=False)
         return out.strip().split("\n")[0].strip()
 
+    def prewarm(self) -> None:
+        """Forward de 1 token con un prompt mínimo: despierta la GPU tras inactividad (T-58, GPU fría)."""
+        from mlx_lm import generate
+
+        generate(self.model, self.tok, prompt=self.prompt("hola"), max_tokens=1, verbose=False)
+
 
 def _risky_token(w: str) -> bool:
     """Números e identificadores que no deben cortarse ni separarse de su vecino."""

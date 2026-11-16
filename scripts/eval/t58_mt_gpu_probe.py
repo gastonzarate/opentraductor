@@ -14,6 +14,7 @@ Mide ``translate`` de los 3 textos asr_final en un solo proceso con Qwen + Kokor
   idle_spin  IDLE_S de CPU ocupada en el mismo hilo, sin GPU (¿es la CPU la que se duerme?)
   idle_prewarm  IDLE_S de espera y justo antes una generación corta (PREWARM_TOK tokens) del texto sin
              sus 3 últimas palabras (lo que el pipeline podría correr durante endpoint + ASR finish)
+  idle_prewarm_short  como idle_prewarm pero 1 token sobre el prompt de "hola" (prefill mínimo)
   idle_bigtick  como idle_tick con una matmul 2048x2048 (GPU con carga real)
 CONDS=hot,idle,... elige condiciones.
 
@@ -47,6 +48,11 @@ QDIR = os.environ.get("OPENTRADUCTOR_QWEN_DIR", str(ROOT / "artifacts/analysis/l
 def main(out: str) -> None:
     cfg = PipelineConfig()
     cap = _apply_mlx_cache_limit(cfg)
+    if os.environ.get("WIRED") == "1":
+        # mlx_lm.generate sube el wired limit y lo restaura al salir: entre frases los pesos quedan
+        # sin fijar y tras GPU ociosa hay que volver a hacerlos residentes. Fijarlo una vez lo evita.
+        import mlx.core as mx0
+        mx0.set_wired_limit(mx0.device_info()["max_recommended_working_set_size"])
     texts = [json.loads(line)["text_es"] for line in (ROOT / "data/manifests/t58_asr_final_texts.jsonl").read_text().splitlines() if line.strip()]
     tts = K.KokoroTTS(cfg.voice, cfg.speed, cfg.tts_trim_lead_margin_ms, cfg.tts_first_chunk_max_words,
                       cfg.tts_bind_conjunctions, cfg.tts_trim_tail)
@@ -82,6 +88,13 @@ def main(out: str) -> None:
                     p0 = time.perf_counter()
                     generate(mt.model, mt.tok, prompt=mt.prompt(" ".join(t.split()[:-3])), max_tokens=PREWARM_TOK, verbose=False)
                     res.setdefault("prewarm_cost", []).append((time.perf_counter() - p0) * 1000)
+                elif cond == "idle_prewarm_short":
+                    # forward de 1 token con el prompt de "hola": toca todos los pesos con prefill mínimo
+                    from mlx_lm import generate
+                    time.sleep(IDLE_S)
+                    p0 = time.perf_counter()
+                    generate(mt.model, mt.tok, prompt=mt.prompt("hola"), max_tokens=1, verbose=False)
+                    res.setdefault("prewarm_short_cost", []).append((time.perf_counter() - p0) * 1000)
                 elif cond == "idle_spin":
                     end = time.perf_counter() + IDLE_S
                     while time.perf_counter() < end:
