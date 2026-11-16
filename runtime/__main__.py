@@ -60,6 +60,14 @@ def _tts_trim_tail(a) -> bool:
     return v == "on"
 
 
+def _mt_normalize(a) -> bool:
+    """BUG-7: igual que T-47. Flag explícito manda; sin flag, OPENTRADUCTOR_MT_NORMALIZE=1; si no, off."""
+    v = getattr(a, "mt_normalize", None)
+    if v is None:
+        return os.environ.get("OPENTRADUCTOR_MT_NORMALIZE", "").strip().lower() in ("1", "on", "true")
+    return v == "on"
+
+
 def build_service(a):
     """Crea el servicio con la configuración de la línea de comandos. No carga modelos."""
     from .config import PipelineConfig
@@ -70,6 +78,7 @@ def build_service(a):
         asr_skip_silent_tail=a.skip_silent_tail,
         tts_trim_lead_margin_ms=a.tts_trim_lead_ms,
         tts_trim_tail=_tts_trim_tail(a),
+        mt_normalize=_mt_normalize(a),
         tts_first_chunk_max_words=a.tts_first_chunk_max_words,
         asr_normalize_text=a.normalize_asr_text,
         tts_bind_conjunctions=a.tts_bind_conjunctions,
@@ -208,6 +217,9 @@ def build_parser():
     r.add_argument("--tts-trim-tail", choices=("on", "off"), default=None,
                    help="recorta el silencio final de cada fragmento TTS (-60 dBFS, conserva 80 ms). "
                         "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1 lo activa; si no, off")
+    r.add_argument("--mt-normalize", choices=("on", "off"), default=None,
+                   help="antes de Marian: '120 mil' -> '120.000' y traduce oración por oración. "
+                        "Sin el flag: OPENTRADUCTOR_MT_NORMALIZE=1 lo activa; si no, off")
     r.add_argument("--skip-silent-tail", action="store_true",
                    help="no envía al ASR la cola silenciosa del segmento (experimental)")
     r.add_argument("--tts-first-chunk-max-words", type=_positive_int, default=None,

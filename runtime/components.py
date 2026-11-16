@@ -202,8 +202,23 @@ class MoonshineStreamer:
 
 
 # ------------------------------------------------------------------------ MT
+# BUG-7: Marian traduce "120 mil" como "$120 billion" y omite la 2.ª oración de una entrada.
+# Separa solo tras . ! ? seguidos de mayúscula o ¿ ¡ (no corta "1,2" ni "2.0.0").
+_MT_SENT = re.compile(r"(?<=[.!?])\s+(?=[¿¡A-ZÁÉÍÓÚÑ])")
+_MT_MIL = re.compile(r"\b(\d{1,3}) mil\b")
+
+
+def mt_split_sentences(text: str) -> list[str]:
+    return [p for p in _MT_SENT.split(text.strip()) if p]
+
+
+def mt_normalize_numbers(text: str) -> str:
+    """'120 mil' -> '120.000'. Solo enteros de 1 a 3 cifras seguidos de 'mil' (no toca '1,2 millones')."""
+    return _MT_MIL.sub(lambda g: g.group(1) + ".000", text)
+
+
 class MarianCT2:
-    def __init__(self, beam_size: int = 1, threads: int = 4) -> None:
+    def __init__(self, beam_size: int = 1, threads: int = 4, normalize: bool = False) -> None:
         import ctranslate2
         import sentencepiece as spm
 
@@ -219,11 +234,18 @@ class MarianCT2:
             str(d), device="cpu", inter_threads=1, intra_threads=threads
         )
         self.beam = beam_size
+        self.normalize = normalize
 
     def translate(self, text_es: str) -> str:
         text_es = text_es.strip()
         if not text_es:
             return ""
+        if self.normalize:
+            parts = mt_split_sentences(mt_normalize_numbers(text_es))
+            return " ".join(t for t in (self._translate_one(p) for p in parts) if t)
+        return self._translate_one(text_es)
+
+    def _translate_one(self, text_es: str) -> str:
         toks = self.sp_s.encode(text_es, out_type=str) + ["</s>"]
         res = self.tr.translate_batch(
             [toks], beam_size=self.beam, max_decoding_length=256
