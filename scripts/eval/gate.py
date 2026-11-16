@@ -5,8 +5,8 @@ Uso:  scripts/eval/gate.sh [--out DIR] [--only a,b] [--skip a,b] [--reps 3] [--a
 Códigos de salida: 0 todo PASA (las OMITIDAS se listan) · 1 algún umbral FALLA o una métrica NO SE PUDO MEDIR · 2 uso incorrecto.
 Cada corrida guarda sus salidas en --out (por defecto artifacts/gate/<fecha-hora>) y escribe gate.md con la tabla.
 
-ESTADO: escrito en T-45 SIN poder ejecutarlo (el run no tenía terminal). Los extractores de run.json buscan
-la clave de forma recursiva e imprimen la ruta usada; verificar la primera corrida contra PILOT_RESULTS.md.
+ESTADO: ejecutado el 16/11 (torch, tests, vad, latency, mt verificados; tts pendiente). Los extractores de run.json buscan
+la clave de forma recursiva e imprimen la ruta usada en la columna Nota.
 """
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def find_quantile(run_json: dict, q: str):
     def walk(o, path=""):
         if isinstance(o, dict):
             qs = o.get("censoring_aware", {}).get("quantiles") if isinstance(o.get("censoring_aware"), dict) else None
-            if qs and q in qs and isinstance(qs[q], dict) and "value" in qs[q]:
+            if qs and q in qs and isinstance(qs[q], dict) and isinstance(qs[q].get("value"), (int, float)):
                 return f"{path}.censoring_aware.quantiles.{q}.value", float(qs[q]["value"])
             for k, x in o.items():
                 r = walk(x, f"{path}.{k}")
@@ -233,7 +233,10 @@ def environment_note() -> list[str]:
         notes.append("La app de la persona responde en :8877 (no se mató): las latencias pueden tener contención.")
     except OSError:
         notes.append("Puerto :8877 libre.")
-    notes.append("loadavg 1/5/15 min: " + ", ".join(f"{x:.2f}" for x in os.getloadavg()))
+    la = os.getloadavg()
+    notes.append("loadavg 1/5/15 min: " + ", ".join(f"{x:.2f}" for x in la))
+    if la[0] > 2:
+        notes.append(f"AVISO: carga {la[0]:.1f} > 2 al empezar: las latencias no son comparables con la línea base (medida sin otras cargas); repetir con la máquina quieta antes de culpar a un commit.")
     try:
         notes.append("commit: " + subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
                      + (" (con cambios sin commitear)" if subprocess.run(["git", "status", "--porcelain", "--", "runtime", "packaging", "pyproject.toml", "uv.lock"],
