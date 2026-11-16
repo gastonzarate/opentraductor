@@ -1,14 +1,33 @@
 import AppKit
+import AVFoundation
+import SwiftUI
 
-/// Descarga guiada de modelos (primer arranque). Es el único momento en que la app usa internet.
-/// Corre `python -m runtime.setup` (revisiones fijas de los pesos, Marian convertido a int8) con red habilitada;
-/// el motor de traducción en sí sigue arrancando con HF_HUB_OFFLINE=1. Los pesos son datos, no código.
-/// Se guardan en el contenedor del sandbox (Application Support/OpenTraductor).
+/// Arranque guiado del primer uso: 1) permiso de micrófono, 2) descarga de modelos con URLSession (ModelDownloader),
+/// 3) preparación del traductor y aviso para arrancar el motor. Es el único momento en que la app usa internet.
+/// El motor Python sigue arrancando con HF_HUB_OFFLINE=1. Los pesos son datos, no código, y se guardan en el
+/// contenedor del sandbox (Application Support/OpenTraductor).
 final class ModelSetup: NSObject {
-    /// Tamaño aproximado de todo lo que baja el setup (medido: 3,24 GB con Parakeet, Kokoro, Marian fuente y convertido).
-    static let expectedBytes: Int64 = 3_250_000_000
-    /// Espacio libre mínimo recomendado: descarga + conversión + margen.
-    static let requiredFreeBytes: Int64 = 5_000_000_000
+    private let parent: NSWindow
+    private let panel: NSWindow
+    private let model: SetupModel
+
+    init(parent: NSWindow, onReady: @escaping () -> Void) {
+        self.parent = parent
+        let m = SetupModel()
+        self.model = m
+        self.panel = NSWindow(contentViewController: NSHostingController(rootView: SetupView(model: m)))
+        super.init()
+        panel.styleMask = [.titled]
+        m.onQuit = { NSApp.terminate(nil) }
+        m.onReady = { [weak self] in
+            guard let self else { return }
+            self.parent.endSheet(self.panel)
+            self.panel.orderOut(nil)
+            onReady()
+        }
+    }
+
+    func present() { parent.beginSheet(panel) }
 
     // MARK: Comprobación (sin red)
 
@@ -31,242 +50,59 @@ final class ModelSetup: NSObject {
         }
     }
 
-    // MARK: Ventana
-
-    private let parent: NSWindow
-    private let onReady: () -> Void
-    private let panel: NSWindow
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let bodyLabel = NSTextField(wrappingLabelWithString: "")
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let detailLabel = NSTextField(wrappingLabelWithString: "")
-    private let bar = NSProgressIndicator()
-    private let primary = NSButton(title: "", target: nil, action: nil)
-    private let secondary = NSButton(title: "", target: nil, action: nil)
-
-    private var process: Process?
-    private var timer: Timer?
-    private var cancelled = false
-    private var stderrTail = ""
-    private var stage = ""
-
-    init(parent: NSWindow, onReady: @escaping () -> Void) {
-        self.parent = parent
-        self.onReady = onReady
-        panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
-                         styleMask: [.titled], backing: .buffered, defer: false)
-        super.init()
-        buildUI()
+    /// Si los modelos ya estaban y el micrófono nunca se consultó, pide el permiso antes de arrancar el motor.
+    static func requestMicrophoneIfNeeded(completion: @escaping () -> Void) {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return completion() }
+        AVCaptureDevice.requestAccess(for: .audio) { _ in DispatchQueue.main.async { completion() } }
     }
 
-    func present() {
-        showIntro()
-        parent.beginSheet(panel)
-    }
+    // MARK: Preparación del traductor
 
-    private func buildUI() {
-        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-        bodyLabel.font = .systemFont(ofSize: 13)
-        statusLabel.font = .systemFont(ofSize: 12)
-        statusLabel.textColor = .secondaryLabelColor
-        detailLabel.font = .systemFont(ofSize: 11)
-        detailLabel.textColor = .secondaryLabelColor
-        detailLabel.maximumNumberOfLines = 4
-        bar.isIndeterminate = false
-        bar.minValue = 0
-        bar.maxValue = 1
-        bar.style = .bar
-        primary.bezelStyle = .rounded
-        primary.keyEquivalent = "\r"
-        primary.target = self
-        primary.action = #selector(primaryTapped)
-        secondary.bezelStyle = .rounded
-        secondary.target = self
-        secondary.action = #selector(secondaryTapped)
-
-        let buttons = NSStackView(views: [secondary, primary])
-        buttons.orientation = .horizontal
-        buttons.spacing = 12
-        let stack = NSStackView(views: [titleLabel, bodyLabel, bar, statusLabel, detailLabel, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 20, right: 24)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
-        content.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: content.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            content.widthAnchor.constraint(equalToConstant: 520),
-            bar.widthAnchor.constraint(equalToConstant: 472),
-            bodyLabel.widthAnchor.constraint(equalToConstant: 472),
-            detailLabel.widthAnchor.constraint(equalToConstant: 472),
-        ])
-        buttons.setHuggingPriority(.required, for: .vertical)
-        panel.contentView = content
-    }
-
-    // MARK: Estados
-
-    private enum State { case intro, downloading, failed }
-    private var state: State = .intro
-
-    private func showIntro() {
-        state = .intro
-        let free = Self.freeBytes()
-        titleLabel.stringValue = "Descarga inicial de modelos"
-        bodyLabel.stringValue = """
-        opentraductor traduce tu voz sin salir de tu Mac. Para eso necesita bajar una sola vez los modelos de voz y traducción \
-        (unos 3,2 GB) desde Hugging Face. Después funciona sin internet. No se envía audio ni ningún dato tuyo.
-        """
-        bar.doubleValue = 0
-        bar.isHidden = true
-        statusLabel.stringValue = free == Int64.max ? "" : "Espacio libre en este Mac: \(Self.format(free))."
-        detailLabel.stringValue = free < Self.requiredFreeBytes
-            ? "Hace falta al menos \(Self.format(Self.requiredFreeBytes)) libres. Liberá espacio y reintentá."
-            : ""
-        primary.title = "Descargar modelos"
-        primary.isEnabled = free >= Self.requiredFreeBytes
-        secondary.title = "Salir"
-        secondary.isHidden = false
-    }
-
-    private func showDownloading() {
-        state = .downloading
-        titleLabel.stringValue = "Descargando modelos…"
-        bar.isHidden = false
-        bar.isIndeterminate = false
-        bar.doubleValue = 0
-        statusLabel.stringValue = "Preparando…"
-        detailLabel.stringValue = "Podés cancelar y retomar después: lo ya descargado se conserva."
-        primary.title = "Cancelar"
-        primary.isEnabled = true
-        secondary.isHidden = true
-    }
-
-    private func showFailure(_ message: String, detail: String) {
-        state = .failed
-        timer?.invalidate(); timer = nil
-        bar.isHidden = true
-        titleLabel.stringValue = "No se pudo completar la descarga"
-        statusLabel.stringValue = message
-        detailLabel.stringValue = detail
-        primary.title = "Reintentar"
-        primary.isEnabled = true
-        secondary.title = "Salir"
-        secondary.isHidden = false
-    }
-
-    // MARK: Acciones
-
-    @objc private func primaryTapped() {
-        switch state {
-        case .intro, .failed: startDownload()
-        case .downloading: cancelDownload()
+    /// Deja el traductor (Marian CTranslate2 int8) en `Application Support/OpenTraductor/models`.
+    /// Con la copia ya convertida dentro del bundle solo se copia; si no, se convierte con el Python embebido (sin red).
+    /// Devuelve nil si salió bien, o el motivo del fallo.
+    static func prepareTranslator() -> String? {
+        let fm = FileManager.default
+        let dest = ModelManifest.installedMarianDir()
+        let required = ["model.bin", "source.spm", "target.spm"]
+        if required.allSatisfy({ fm.fileExists(atPath: dest.appendingPathComponent($0).path) }) { return nil }
+        do {
+            try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let src = ModelManifest.bundledMarianDir() {
+                let tmp = dest.appendingPathExtension("tmp")
+                try? fm.removeItem(at: tmp)
+                try? fm.removeItem(at: dest)
+                try fm.copyItem(at: src, to: tmp)
+                try fm.moveItem(at: tmp, to: dest)
+                return nil
+            }
+        } catch {
+            return "No se pudo copiar el traductor: \(error.localizedDescription)"
         }
-    }
-
-    @objc private func secondaryTapped() { NSApp.terminate(nil) }
-
-    private func cancelDownload() {
-        cancelled = true
-        process?.terminate()
-    }
-
-    private func startDownload() {
-        cancelled = false
-        stderrTail = ""
-        stage = ""
-        showDownloading()
+        // Sin copia en el bundle: conversión local con el Python embebido, sin red.
         let p = Process()
         p.executableURL = RuntimeProcess.pythonURL()
-        p.arguments = ["-u", "-m", "runtime.setup"]
+        p.arguments = ["-c", "from runtime.setup import convert_marian; convert_marian()"]
         p.currentDirectoryURL = RuntimeProcess.appDirURL()
         do {
             var env = try RuntimeProcess.makeEnvironment()
-            env.removeValue(forKey: "HF_HUB_OFFLINE")      // único paso con red
-            env.removeValue(forKey: "TRANSFORMERS_OFFLINE")
-            env["HF_HUB_DISABLE_TELEMETRY"] = "1"
-            env["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
-            env["DO_NOT_TRACK"] = "1"
-            // Con Xet el archivo se arma en memoria y aparece completo al final: la barra no avanzaría.
-            // Con HTTP clásico el .incomplete crece en disco y el progreso es real.
-            env["HF_HUB_DISABLE_XET"] = "1"
+            env["HF_HUB_OFFLINE"] = "1"
+            env["TRANSFORMERS_OFFLINE"] = "1"
             p.environment = env
+            let err = Pipe()
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = err
+            try p.run()
+            let data = err.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            if p.terminationStatus != 0 {
+                let tail = String(String(data: data, encoding: .utf8)?.suffix(400) ?? "")
+                return "No se pudo preparar el traductor (código \(p.terminationStatus)). \(tail)"
+            }
         } catch {
-            return showFailure("No se pudo preparar la descarga.", detail: error.localizedDescription)
+            return "No se pudo preparar el traductor: \(error.localizedDescription)"
         }
-        let out = Pipe(), err = Pipe()
-        p.standardOutput = out
-        p.standardError = err
-        out.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            DispatchQueue.main.async { self?.handleOutput(text) }
-        }
-        err.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            DispatchQueue.main.async { guard let self else { return }; self.stderrTail = String((self.stderrTail + text).suffix(1500)) }
-        }
-        p.terminationHandler = { [weak self] proc in
-            out.fileHandleForReading.readabilityHandler = nil
-            err.fileHandleForReading.readabilityHandler = nil
-            DispatchQueue.main.async { self?.finished(status: proc.terminationStatus) }
-        }
-        do { try p.run() } catch {
-            return showFailure("No se pudo iniciar la descarga.", detail: error.localizedDescription)
-        }
-        process = p
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in self?.pollProgress() }
-    }
-
-    private func handleOutput(_ text: String) {
-        for line in text.split(separator: "\n") {
-            if line.hasPrefix("ASR") { stage = "Reconocimiento de voz" }
-            else if line.hasPrefix("TTS") { stage = "Voz en inglés" }
-            else if line.hasPrefix("MT") && line.contains("convirtiendo") {
-                stage = "Optimizando el traductor para tu Mac"
-                bar.isIndeterminate = true
-                bar.startAnimation(nil)
-                statusLabel.stringValue = stage + "…"
-            }
-            else if line.hasPrefix("MT") { stage = "Traductor" }
-        }
-    }
-
-    private func pollProgress() {
-        guard state == .downloading, !bar.isIndeterminate else { return }
-        let support = RuntimeProcess.supportDir()
-        let dirs = [support.appendingPathComponent("hf"), support.appendingPathComponent("models")]
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let bytes = Self.directorySize(dirs)
-            DispatchQueue.main.async {
-                guard let self, self.state == .downloading, !self.bar.isIndeterminate else { return }
-                let frac = min(0.99, Double(bytes) / Double(Self.expectedBytes))
-                self.bar.doubleValue = frac
-                let label = self.stage.isEmpty ? "Descargando" : "Descargando: \(self.stage)"
-                self.statusLabel.stringValue = "\(label) · \(Self.format(min(bytes, Self.expectedBytes))) de \(Self.format(Self.expectedBytes))"
-            }
-        }
-    }
-
-    private func finished(status: Int32) {
-        process = nil
-        timer?.invalidate(); timer = nil
-        if cancelled { return showIntro() }
-        if status == 0 {
-            parent.endSheet(panel)
-            panel.orderOut(nil)
-            return onReady()
-        }
-        let tail = stderrTail.trimmingCharacters(in: .whitespacesAndNewlines)
-        showFailure("Revisá tu conexión a internet y el espacio libre en disco, y volvé a intentar. Lo ya descargado se conserva.",
-                    detail: String(tail.suffix(400)))
+        return nil
     }
 
     // MARK: Utilidades
@@ -281,18 +117,284 @@ final class ModelSetup: NSObject {
         let v = try? probe.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return v?.volumeAvailableCapacityForImportantUsage ?? Int64.max
     }
+}
 
-    /// Suma archivos regulares (no enlaces simbólicos: la caché de Hugging Face enlaza snapshots a blobs).
-    static func directorySize(_ roots: [URL]) -> Int64 {
-        var total: Int64 = 0
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
-        for root in roots {
-            guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: []) else { continue }
-            for case let f as URL in e {
-                guard let v = try? f.resourceValues(forKeys: Set(keys)), v.isRegularFile == true else { continue }
-                total += Int64(v.fileSize ?? 0)
+// MARK: - Modelo de la pantalla
+
+final class SetupModel: ObservableObject {
+    enum Step { case microphone, download, downloading, finishing, failed }
+
+    @Published var step: Step
+    @Published var micStatus: AVAuthorizationStatus
+    @Published var progress: DownloadProgress? = nil
+    @Published var note = ""
+    @Published var paused = false
+    @Published var failure = ""
+    @Published var freeBytes: Int64
+
+    let files: [ModelFile]
+    let totalBytes: Int64
+    /// Descarga + margen para la conversión del traductor.
+    var requiredFree: Int64 { totalBytes + 1_500_000_000 }
+    var enoughSpace: Bool { freeBytes >= requiredFree }
+
+    var onReady: () -> Void = {}
+    var onQuit: () -> Void = {}
+    private var downloader: ModelDownloader?
+
+    init() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        let list = ModelManifest.filesToDownload()
+        micStatus = status
+        step = status == .authorized ? .download : .microphone
+        files = list
+        totalBytes = list.reduce(0) { $0 + $1.size }
+        freeBytes = ModelSetup.freeBytes()
+    }
+
+    // Micrófono
+
+    func requestMicrophone() {
+        AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                if granted { self.step = .download }
             }
         }
-        return total
+    }
+
+    func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// El permiso se puede dar después desde Ajustes del Sistema; no bloquea la descarga.
+    func continueWithoutMicrophone() { step = .download }
+
+    /// Al volver de Ajustes del Sistema, se vuelve a leer el estado.
+    func refreshMicrophone() {
+        micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if micStatus == .authorized && step == .microphone { step = .download }
+    }
+
+    // Descarga
+
+    func startDownload() {
+        freeBytes = ModelSetup.freeBytes()
+        guard enoughSpace else { step = .download; return }
+        step = .downloading
+        paused = false
+        note = ""
+        progress = nil
+        downloader?.shutdown()
+        let d = ModelDownloader(files: files, hub: ModelManifest.hubDir()) { [weak self] event in self?.handle(event) }
+        downloader = d
+        d.start()
+    }
+
+    func togglePause() {
+        if paused {
+            paused = false
+            note = ""
+            downloader?.start()
+        } else {
+            downloader?.pause()
+        }
+    }
+
+    private func handle(_ event: DownloadEvent) {
+        switch event {
+        case .progress(let p):
+            progress = p
+            if !paused { note = "" }
+        case .verifying(let label):
+            note = "Verificando «\(label)»…"
+        case .retrying(let message):
+            note = message
+        case .paused:
+            paused = true
+            note = "En pausa. Lo ya descargado se conserva."
+        case .failed(let message):
+            fail(message)
+        case .finished:
+            finish()
+        }
+    }
+
+    private func finish() {
+        step = .finishing
+        downloader?.shutdown()
+        downloader = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let problem = ModelSetup.prepareTranslator()
+            DispatchQueue.main.async {
+                if let problem { self?.fail(problem); return }
+                ModelSetup.modelsReady { ok in
+                    guard let self else { return }
+                    if ok { self.onReady() } else {
+                        self.fail("Los modelos se bajaron, pero la comprobación final no pasó. Reintentá la descarga; si se repite, escribinos.")
+                    }
+                }
+            }
+        }
+    }
+
+    private func fail(_ message: String) {
+        downloader?.shutdown()
+        downloader = nil
+        failure = message
+        step = .failed
+    }
+}
+
+// MARK: - Pantalla (SwiftUI)
+
+struct SetupView: View {
+    @ObservedObject var model: SetupModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            content
+            Spacer(minLength: 0)
+            footer
+        }
+        .padding(28)
+        .frame(width: 540, height: 400)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshMicrophone()
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch model.step {
+        case .microphone: microphone
+        case .download: download
+        case .downloading: downloading
+        case .finishing: finishing
+        case .failed: failed
+        }
+    }
+
+    // Paso 1: micrófono
+
+    private var microphone: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "mic.fill").font(.system(size: 34)).foregroundStyle(Color.accentColor)
+            Text("Permiso del micrófono").font(.title2.weight(.semibold))
+            Text("opentraductor necesita tu micrófono para escuchar lo que decís y traducirlo. El audio se procesa en tu Mac: no se graba ni se envía a ningún servidor. macOS te va a pedir confirmación.")
+                .fixedSize(horizontal: false, vertical: true)
+            if model.micStatus == .denied || model.micStatus == .restricted {
+                Text("El permiso está desactivado. Podés activarlo en Ajustes del Sistema, en Privacidad y seguridad, Micrófono. También podés seguir y activarlo después.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // Paso 2: descarga
+
+    private var download: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "arrow.down.circle.fill").font(.system(size: 34)).foregroundStyle(Color.accentColor)
+            Text("Descarga de modelos").font(.title2.weight(.semibold))
+            Text("Para traducir sin internet, la app baja una sola vez los modelos de voz y de traducción (unos \(ModelSetup.format(model.totalBytes))) desde Hugging Face. Después funciona sin conexión. No se envía audio ni ningún dato tuyo. Conviene estar con wifi.")
+                .fixedSize(horizontal: false, vertical: true)
+            if model.freeBytes != Int64.max {
+                Text(model.enoughSpace
+                     ? "Espacio libre en este Mac: \(ModelSetup.format(model.freeBytes))."
+                     : "Hace falta al menos \(ModelSetup.format(model.requiredFree)) libres y hay \(ModelSetup.format(model.freeBytes)). Liberá espacio y reintentá.")
+                    .font(.callout)
+                    .foregroundStyle(model.enoughSpace ? Color.secondary : Color.red)
+            }
+        }
+    }
+
+    private var downloading: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(model.paused ? "Descarga en pausa" : "Descargando modelos…").font(.title2.weight(.semibold))
+            ProgressView(value: model.progress?.fraction ?? 0)
+                .progressViewStyle(.linear)
+            if let p = model.progress {
+                Text(progressLine(p)).font(.callout).monospacedDigit()
+                Text("Archivo \(p.fileIndex) de \(p.fileCount): \(p.fileLabel)").font(.callout).foregroundStyle(.secondary)
+            } else {
+                Text("Preparando…").font(.callout).foregroundStyle(.secondary)
+            }
+            if !model.note.isEmpty {
+                Text(model.note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Podés pausar o cerrar la app: al volver, la descarga sigue desde donde quedó.")
+                .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func progressLine(_ p: DownloadProgress) -> String {
+        var s = "\(ModelSetup.format(p.doneBytes)) de \(ModelSetup.format(p.totalBytes))"
+        if !model.paused && p.bytesPerSecond > 0 {
+            s += " · \(ModelSetup.format(Int64(p.bytesPerSecond)))/s"
+            if let r = p.remainingSeconds { s += " · \(Self.remaining(r))" }
+        }
+        return s
+    }
+
+    private static func remaining(_ seconds: Double) -> String {
+        let minutes = Int((seconds / 60).rounded(.up))
+        if minutes <= 1 { return "falta menos de 1 minuto" }
+        if minutes > 120 { return "faltan más de 2 horas" }
+        return "faltan unos \(minutes) minutos"
+    }
+
+    private var finishing: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Preparando el traductor…").font(.title2.weight(.semibold))
+            ProgressView().progressViewStyle(.linear)
+            Text("Se está verificando todo y dejando el traductor listo para tu Mac. Puede tardar un momento.")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var failed: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 34)).foregroundStyle(.orange)
+            Text("No se pudo completar la descarga").font(.title2.weight(.semibold))
+            Text(model.failure).fixedSize(horizontal: false, vertical: true)
+            Text("Lo ya descargado se conserva y se retoma al reintentar.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+    }
+
+    // Botones
+
+    @ViewBuilder private var footer: some View {
+        HStack {
+            Button("Salir") { model.onQuit() }
+            Spacer()
+            switch model.step {
+            case .microphone:
+                if model.micStatus == .denied || model.micStatus == .restricted {
+                    Button("Seguir sin micrófono") { model.continueWithoutMicrophone() }
+                    Button("Abrir Ajustes del Sistema") { model.openPrivacySettings() }
+                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Permitir micrófono") { model.requestMicrophone() }
+                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                }
+            case .download:
+                Button("Descargar modelos") { model.startDownload() }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                    .disabled(!model.enoughSpace)
+            case .downloading:
+                Button(model.paused ? "Reanudar" : "Pausar") { model.togglePause() }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            case .finishing:
+                EmptyView()
+            case .failed:
+                Button("Reintentar") { model.startDownload() }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+        }
+        .controlSize(.large)
     }
 }

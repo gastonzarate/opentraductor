@@ -128,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         // Primer arranque: si faltan los modelos, descarga guiada antes de iniciar el motor.
         ModelSetup.modelsReady { [weak self] ready in
             guard let self else { return }
-            if ready { return self.startRuntime() }
+            if ready { return ModelSetup.requestMicrophoneIfNeeded { self.startRuntime() } }
             self.showMessage(title: "Faltan los modelos de voz", body: "Hace falta una descarga inicial.")
             let setup = ModelSetup(parent: self.window) { [weak self] in self?.startRuntime() }
             self.modelSetup = setup
