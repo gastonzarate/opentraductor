@@ -135,6 +135,8 @@ class StreamState:
     asr_done_pos_s: float = 0.0  # fin de audio del último chunk ya procesado por el ASR
     spec_seg_id: int | None = None  # segmento para el que ya se especuló
     prewarm_seg_id: int | None = None  # segmento para el que ya se evaluó el prewarm de MT
+    kv_pause: tuple | None = None  # (seg_id, last_speech_end_s) de la última pausa evaluada para prefill KV
+    kv_stable: tuple | None = None  # (seg_id, prefijo estable) ya cargado en la caché KV
     gen: int = 0  # generación (cada start_stream incrementa; separa sesiones con el mismo id)
 
 
@@ -540,25 +542,52 @@ class Engine:
         corre un forward de 1 token de Qwen para que la MT de esa frase no pague la GPU fría. No emite nada."""
         c = self.cfg
         seg = st.seg
-        if seg is None or not st.in_speech or seg.seg_id == st.prewarm_seg_id:
+        if seg is None or not st.in_speech:
             return
         kv = self._kv_prefill_enabled
+        if not kv and seg.seg_id == st.prewarm_seg_id:
+            return
         if st.silence_ms < c.mt_prewarm_silence_ms or not (kv or self._prewarm_enabled):
             return
         if c.mt_engine != "qwen" or self.mt is None or not hasattr(self.mt, "prewarm") or self.asr_worker is self.gpu:
             return
-        kv = kv and hasattr(self.mt, "prefill") and bool(st.last_partial.strip())
-        st.prewarm_seg_id = seg.seg_id  # una vez por segmento
         g = self.gpu
-        if g.inflight or (not kv and time.monotonic() - g.last_done < c.mt_prewarm_idle_s):
+        if kv and hasattr(self.mt, "prefill"):
+            # Prefill KV: se evalúa en CADA pausa VAD del segmento (no una vez por segmento). En frases
+            # largas la 1.ª pausa >= 32 ms llega a mitad de frase, a veces antes del 1.er parcial; si se
+            # gastaba ahí, la pausa final no tenía prefill (dignidad 21 pal., @bench 90a0051).
+            pause = (seg.seg_id, st.last_speech_end_s)
+            if pause == st.kv_pause:
+                return
+            st.kv_pause = pause
+            text = st.last_partial.strip()
+            stable = " ".join(text.split()[:-1])
+            if stable and (seg.seg_id, stable) != st.kv_stable:
+                if g.inflight:
+                    self.prewarm_stats["skipped_hot"] += 1
+                    return
+                st.kv_stable = (seg.seg_id, stable)
+                st.prewarm_seg_id = seg.seg_id  # ya despierta la GPU: no hace falta el prewarm de 1 token
+                self.prewarm_stats["started"] += 1
+                self.prewarm_stats["kv_prefill"] = self.prewarm_stats.get("kv_prefill", 0) + 1
+                ws = self.prewarm_stats.setdefault("kv_words", [])
+                ws.append(len(text.split()))
+                del ws[:-64]
+                t = asyncio.ensure_future(g.run(_timed_call, self.mt.prefill, text))
+                self._prewarm_tasks.add(t)
+                t.add_done_callback(self._prewarm_done)
+                return
+            if not stable:
+                self.prewarm_stats["kv_no_partial"] = self.prewarm_stats.get("kv_no_partial", 0) + 1
+            if seg.seg_id == st.prewarm_seg_id:
+                return
+            # Sin parcial todavía: prewarm de 1 token (una vez por segmento, solo con GPU fría).
+        st.prewarm_seg_id = seg.seg_id  # una vez por segmento
+        if g.inflight or time.monotonic() - g.last_done < c.mt_prewarm_idle_s:
             self.prewarm_stats["skipped_hot"] += 1
             return
         self.prewarm_stats["started"] += 1
-        if kv:
-            self.prewarm_stats["kv_prefill"] = self.prewarm_stats.get("kv_prefill", 0) + 1
-            t = asyncio.ensure_future(g.run(_timed_call, self.mt.prefill, st.last_partial))
-        else:
-            t = asyncio.ensure_future(g.run(_timed_call, self.mt.prewarm))
+        t = asyncio.ensure_future(g.run(_timed_call, self.mt.prewarm))
         self._prewarm_tasks.add(t)
         t.add_done_callback(self._prewarm_done)
 

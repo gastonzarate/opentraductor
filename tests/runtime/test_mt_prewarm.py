@@ -138,3 +138,40 @@ def test_kv_prefill_runs_hot_but_not_busy(monkeypatch):
         e.gpu.inflight = 0
         e.gpu.shutdown(); e.cpu.shutdown()
     asyncio.run(go())
+
+
+def test_kv_prefill_each_pause_after_early_empty_pause(monkeypatch):
+    """Frase larga: la 1.ª pausa llega sin parcial (prewarm de 1 token); la pausa final igual hace prefill KV."""
+    monkeypatch.setenv("OPENTRADUCTOR_MT_KV_PREFILL", "1")
+
+    async def go():
+        from runtime.config import PipelineConfig
+        from runtime.pipeline import Segment, StreamState
+        e = Engine(PipelineConfig(mt_engine="qwen", asr_backend="moonshine-tiny"), lambda *a: None)
+        e.mt = PrefillMT()
+        e.gpu.last_done = 0.0  # fría
+        st = StreamState(stream_id="s", vad=None)
+        st.seg, st.in_speech, st.silence_ms = Segment(1, start_s=0.0), True, 100.0
+        st.last_speech_end_s = 0.5
+        e._maybe_prewarm(st)  # pausa temprana, sin parcial
+        await asyncio.gather(*list(e._prewarm_tasks))
+        assert e.mt.prewarms == 1 and e.mt.prefills == [] and e.prewarm_stats["kv_no_partial"] == 1
+        st.last_partial = "la dignidad no se"
+        e._maybe_prewarm(st)  # misma pausa: no se reevalúa
+        assert e.mt.prefills == []
+        st.last_speech_end_s = 2.0  # pausa nueva, con parcial
+        e._maybe_prewarm(st)
+        await asyncio.gather(*list(e._prewarm_tasks))
+        assert e.mt.prefills == ["la dignidad no se"]
+        st.last_partial = "la dignidad no sé"  # cambia solo la última palabra: mismo prefijo estable
+        st.last_speech_end_s = 2.5
+        e._maybe_prewarm(st)
+        assert e.mt.prefills == ["la dignidad no se"]
+        st.last_partial = "la dignidad no se negocia nunca"
+        st.last_speech_end_s = 3.5
+        e._maybe_prewarm(st)
+        await asyncio.gather(*list(e._prewarm_tasks))
+        assert e.mt.prefills[-1] == "la dignidad no se negocia nunca" and e.mt.prewarms == 1
+        assert e.prewarm_stats["kv_prefill"] == 2 and e.prewarm_stats["kv_words"] == [4, 6]
+        e.gpu.shutdown(); e.cpu.shutdown()
+    asyncio.run(go())
