@@ -24,6 +24,13 @@ for k, v in vals.items():
     # WER: con 3 clips es ruidoso; piso de umbral 0,06 (el del estándar) para no fallar por un solo error de palabra.
     thr = max(round(base * (1 + a.margin), 3), 0.06) if k == "asr_wer" else round(base * (1 + a.margin), 1)
     res[k] = {"base": base, "threshold": thr, "path": v[0]}
+# conserva el piso BLEU/chrF por tamaño de Qwen que ya esté en el archivo (no sale de run.json de latencia)
+try:
+    old = json.loads(gate.STORE_BASE_FILE.read_text(encoding="utf-8"))
+    if "bleu_chrf_min" in old:
+        res["bleu_chrf_min"] = old["bleu_chrf_min"]
+except (OSError, ValueError):
+    pass
 print(json.dumps(res, indent=1, ensure_ascii=False))
 if not a.dry:
     gate.STORE_BASE_FILE.write_text(json.dumps(res, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")

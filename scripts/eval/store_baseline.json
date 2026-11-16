@@ -8,13 +8,13 @@
  "latency_reps": 7,
  "mlx_cache_limit_mb": 256,
  "latency_p50_ms": {
-  "base": 1237.428,
-  "threshold": 1361.2,
+  "base": 1077.409,
+  "threshold": 1185.1,
   "path": ".aggregate.groups[0].end_to_first_ms.censoring_aware.quantiles.p50.value"
  },
  "latency_p95_ms": {
-  "base": 1412.208,
-  "threshold": 1553.4,
+  "base": 1178.218,
+  "threshold": 1296.0,
   "path": ".aggregate.groups[0].end_to_first_ms.censoring_aware.quantiles.p95.value"
  },
  "asr_wer": {
@@ -23,8 +23,8 @@
   "path": ".quality.candidate_asr_es.human.wer"
  },
  "mt_p95_ms": {
-  "base": 358.659,
-  "threshold": 394.5,
+  "base": 330.477,
+  "threshold": 363.5,
   "path": ".aggregate.groups[0].request_to_first_ms.censoring_aware.quantiles.p95.value"
  },
  "bleu_chrf_min": {
