@@ -19,6 +19,7 @@ import socket
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +42,7 @@ class Row:
     metric: str
     value: str
     threshold: str
-    status: str  # PASA | FALLA | NO MEDIDO | OMITIDO | DE @qa
+    status: str  # PASA | FALLA | CONTENDIDO | NO MEDIDO | OMITIDO | DE @qa
     note: str = ""
 
 
@@ -52,6 +53,55 @@ def sh(cmd, out: Path, log: str, env=None, timeout=3600) -> int:
         f.write("$ " + " ".join(map(str, cmd)) + "\n")
         f.flush()
         return subprocess.run(cmd, cwd=ROOT, env=env or ENV, stdout=f, stderr=subprocess.STDOUT, timeout=timeout).returncode
+
+
+COMPETITORS = re.compile(r"pytest|benchmark run|compare_configs|final_validation|xcodebuild|build_app|swift-build|swiftc|ab\.sh|OpenTraductor\.app|/tmp/\S+\.py|\bsay -v")
+AGENT_PROC = re.compile(r"kiro-cli|claude --print|/bin/zsh -c|bash -c")  # la línea de comandos de un agente puede contener las palabras de arriba
+TIMED_METRICS = ("Latencia motor", "ASR WER", "MT petición")  # BLEU/chrF/WER audible no dependen de la carga
+
+
+def competing_processes() -> set[str]:
+    """Otros procesos de benchmark/test/build que no descienden de este gate (contaminan las latencias)."""
+    ps = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True).stdout.splitlines()
+    rows = []
+    for ln in ps:
+        parts = ln.split(None, 2)
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+            rows.append((int(parts[0]), int(parts[1]), parts[2]))
+    mine, grew = {os.getpid()}, True
+    while grew:
+        grew = False
+        for pid, ppid, _ in rows:
+            if ppid in mine and pid not in mine:
+                mine.add(pid)
+                grew = True
+    return {re.sub(r"\s+", " ", cmd)[:90] for pid, _, cmd in rows
+            if pid not in mine and COMPETITORS.search(cmd) and not AGENT_PROC.search(cmd)}
+
+
+class ContentionSampler:
+    """Muestrea cada 3 s mientras corre un chequeo: procesos competidores y el pico de loadavg."""
+    def __init__(self):
+        self.seen: set[str] = set()
+        self.peak_load = 0.0
+        self._stop = threading.Event()
+        self._t = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.is_set():
+            self.seen |= competing_processes()
+            self.peak_load = max(self.peak_load, os.getloadavg()[0])
+            self._stop.wait(3)
+
+    def __enter__(self):
+        self._t.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._t.join()
+        self.seen |= competing_processes()
+        return False
 
 
 def find_key(obj, key, path=""):
@@ -267,8 +317,16 @@ def main() -> int:
     rows: list[Row] = []
     for n in names:
         print(f"[gate] {n} ...", flush=True)
+        smp = ContentionSampler()
         try:
-            rows += CHECKS[n](out, a)
+            with smp:
+                new = CHECKS[n](out, a)
+            if smp.seen:
+                for r in new:  # una FALLA de tiempo con otros procesos corriendo no es concluyente
+                    if r.status == "FALLA" and r.metric.startswith(TIMED_METRICS):
+                        r.status = "CONTENDIDO"
+                        r.note += " · NO CONCLUYENTE, corrían a la vez: " + "; ".join(sorted(smp.seen))
+            rows += new
         except Exception as e:  # noqa: BLE001
             rows.append(Row(n, "n/d", "-", "NO MEDIDO", f"{type(e).__name__}: {e}"))
     for n in CHECKS:
@@ -281,9 +339,9 @@ def main() -> int:
           "| Métrica | Valor | Umbral | Estado | Nota |", "|---|---|---|---|---|"]
     md += [f"| {r.metric} | {r.value} | {r.threshold} | **{r.status}** | {r.note} |" for r in rows]
     fails = [r for r in rows if r.status == "FALLA"]
-    unm = [r for r in rows if r.status == "NO MEDIDO"]
+    unm = [r for r in rows if r.status in ("NO MEDIDO", "CONTENDIDO")]
     verdict = "FALLA" if fails or (unm and not a.allow_unmeasured) else "PASA"
-    md += ["", f"**GATE: {verdict}** · fallan {len(fails)} · sin medir {len(unm)}"]
+    md += ["", f"**GATE: {verdict}** · fallan {len(fails)} · sin medir o contendidos {len(unm)}"]
     (out / "gate.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
     return 0 if verdict == "PASA" else 1
