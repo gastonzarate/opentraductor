@@ -18,6 +18,8 @@ class PrewarmMT(FakeMT):
 
 
 def _run(**kw):
+    kw.setdefault("mt_kv_prefill_on_pause", False)  # estos tests cubren el prewarm de 1 token solo
+
     async def go():
         mt = PrewarmMT()
         e, ev = await run_segment(partial="hola mundo", final="hola mundo", spec=False, mt=mt, **kw)
@@ -63,7 +65,7 @@ def test_hot_gpu_skips(monkeypatch):
 
     async def go():
         from runtime.config import PipelineConfig
-        e = Engine(PipelineConfig(mt_engine="qwen", asr_backend="moonshine-tiny"), lambda *a: None)
+        e = Engine(PipelineConfig(mt_engine="qwen", asr_backend="moonshine-tiny", mt_kv_prefill_on_pause=False), lambda *a: None)
         e.mt = PrewarmMT()
         e.gpu.last_done = time.monotonic()
         from runtime.pipeline import Segment, StreamState
@@ -104,13 +106,15 @@ def test_kv_prefill_replaces_prewarm_and_output_unchanged(monkeypatch):
     assert [f["text"] for k, f in ev if k == "mt_final"] == ["EN hola mundo"]
 
 
-def test_kv_prefill_off_by_default_and_env(monkeypatch):
+def test_kv_prefill_on_by_default_and_env(monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_MT_PREWARM", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_MT_KV_PREFILL", raising=False)
     _, _, mt = _run_kv(mt_engine="qwen")
+    assert mt.prefills == ["hola mundo"]
+    _, _, mt = _run_kv(mt_engine="qwen", mt_kv_prefill_on_pause=False)
     assert mt.prefills == [] and mt.prewarms == 0
     monkeypatch.setenv("OPENTRADUCTOR_MT_KV_PREFILL", "1")
-    _, _, mt = _run_kv(mt_engine="qwen")
+    _, _, mt = _run_kv(mt_engine="qwen", mt_kv_prefill_on_pause=False)
     assert mt.prefills == ["hola mundo"]
     monkeypatch.setenv("OPENTRADUCTOR_MT_KV_PREFILL", "0")
     _, _, mt = _run_kv(mt_engine="qwen", mt_kv_prefill_on_pause=True)

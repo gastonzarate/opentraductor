@@ -231,8 +231,10 @@ class PipelineConfig:
     # T-58: en vez del forward de 1 token, prefill KV del prompt con el parcial sin su última palabra (mismo
     # momento, mismo silencio). Con el final solo se procesa la cola: sonda c7aec17 -52..-58 ms sobre el prewarm,
     # salida idéntica 9/9. Corre aunque la GPU esté caliente (no si está ocupada). Reemplaza al prewarm si están
-    # los dos. $OPENTRADUCTOR_MT_KV_PREFILL=1/0 lo fuerza.
-    mt_kv_prefill_on_pause: bool = False
+    # los dos. $OPENTRADUCTOR_MT_KV_PREFILL=1/0 lo fuerza. Encendido por defecto desde el A/B de @bench
+    # (d654025, n=21, artifacts/t58-kv2): MT p50 447 -> 288, end_to_first 1056 -> 929, mt_final idéntico 21/21.
+    # Solo actúa con mt_engine == "qwen"; con Marian no hace nada.
+    mt_kv_prefill_on_pause: bool = True
     end_stream_drain_timeout_s: float = 5.0  # espera máx. a drenar salidas al cerrar un stream; luego se abandona (y se descarta lo viejo)
     # Colas / backpressure
     max_pending_segments: int = 8
