@@ -243,7 +243,10 @@ struct EngineProfile {
         let validQwen = ModelManifest.qwenRepos[q] != nil
         var p = EngineProfile(asrBackend: validASR ? asr : "parakeet", mtEngine: (mt == "qwen" && validQwen) ? "qwen" : "marian",
                               qwenModel: validQwen ? q : "qwen3-4b-instruct-2507-4bit")
-        if (info["OTEngineMode"] as? String) == incremental && p.isStoreStack { p.engineMode = incremental }
+        // El incremental fija Moonshine tiny en el runtime: la descarga guiada tiene que bajar tiny aunque OTASRBackend diga small.
+        if (info["OTEngineMode"] as? String) == incremental && p.isStoreStack {
+            p = EngineProfile(asrBackend: "moonshine-tiny", mtEngine: p.mtEngine, qwenModel: p.qwenModel, engineMode: incremental)
+        }
         return p
     }
 }
