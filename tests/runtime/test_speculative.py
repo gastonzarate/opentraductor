@@ -67,7 +67,7 @@ class FakeTTS:
 
 
 async def run_segment(*, partial, final, spec=True, backend="moonshine-tiny", mt=None, tts=None, speech=10,
-                      stop_before_final=False, finish=True, **cfg_kw):
+                      stop_before_final=False, finish=True, settle=False, **cfg_kw):
     events = []
 
     async def emit(kind, f):
@@ -87,6 +87,10 @@ async def run_segment(*, partial, final, spec=True, backend="moonshine-tiny", mt
         await asyncio.sleep(0.03)
         if stop_before_final and e._spec and any(x.task and not x.task.done() for x in e._spec.values()):
             return e, events
+        if settle:  # determinista bajo carga: el endpoint espera a que la especulación termine
+            pend = [x.task for x in e._spec.values() if x.task]
+            if pend:
+                await asyncio.wait(pend, timeout=10)
     if finish:
         await e.end_stream("s")
     return e, events
@@ -101,7 +105,7 @@ def chunk_texts(events): return [f["pcm"].decode() for k, f in events if k == "t
 def test_exact_hit_uses_cache_and_loses_nothing():
     async def go():
         mt, tts = FakeMT(), FakeTTS()
-        e, ev = await run_segment(partial="hola mundo", final="hola mundo", mt=mt, tts=tts)
+        e, ev = await run_segment(partial="hola mundo", final="hola mundo", mt=mt, tts=tts, settle=True)
         # una sola MT (la especulativa) y la 1.ª cláusula se sintetizó una vez
         assert mt.calls == ["hola mundo"]
         assert tts.synth_calls == [(["EN hola mundo"], True)]
@@ -117,7 +121,7 @@ def test_exact_hit_uses_cache_and_loses_nothing():
 def test_multi_clause_no_loss_no_duplicates_and_same_as_normal_path():
     async def go():
         tts = FakeTTS()
-        e, ev = await run_segment(partial="a | b | c", final="a | b | c", tts=tts)
+        e, ev = await run_segment(partial="a | b | c", final="a | b | c", tts=tts, settle=True)
         spec_chunks = chunk_texts(ev)
         assert spec_chunks == ["EN a", "b", "c"]  # MT convierte 'a' solo en el 1.º; el resto va tal cual
         assert tts.synth_calls == [(["EN a", "b", "c"][:1], True), (["b", "c"], False)]
@@ -134,7 +138,7 @@ def test_multi_clause_no_loss_no_duplicates_and_same_as_normal_path():
 def test_changed_final_text_discards_cache_and_runs_normal_path():
     async def go():
         mt, tts = FakeMT(), FakeTTS()
-        e, ev = await run_segment(partial="hola", final="hola mundo", mt=mt, tts=tts)
+        e, ev = await run_segment(partial="hola", final="hola mundo", mt=mt, tts=tts, settle=True)
         assert mt.calls == ["hola", "hola mundo"]  # especulativa + real
         assert e.spec_stats["miss_text"] == 1 and e.spec_stats["hit"] == 0 and e.spec_stats["discarded_observed_ms"] > 0
         assert chunk_texts(ev) == ["EN hola mundo"]  # solo el texto final; nada del parcial
