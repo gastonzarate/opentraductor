@@ -43,12 +43,72 @@ def moonshine_model_dir(backend: str) -> Path:
     return base / name / MOONSHINE_REV
 
 
+# T-50/T-51: tamaño de Qwen según la RAM de la Mac (decisión 16/11: 4B si >=16 GB, 1.7B si menos; 0.6B descartado).
+# tamaño -> (repo mlx-community, carpeta bajo la raíz de Qwen)
+QWEN_MODELS = {
+    "4b": ("mlx-community/Qwen3-4B-Instruct-2507-4bit", "qwen3-4b-instruct-2507-4bit"),
+    "1.7b": ("mlx-community/Qwen3-1.7B-4bit", "qwen3-1.7b-4bit"),
+}
+QWEN_4B_MIN_RAM = 16 * 1024**3
+# Tope de la caché de buffers libres de MLX: sin tope crecía ~4 GB en 10 min (T-50). 256 MB no cambia la latencia.
+MLX_CACHE_LIMIT_MB_DEFAULT = 256
+
+
+def mac_memsize() -> int | None:
+    """RAM física (``hw.memsize``) sin subprocess (sirve en el sandbox). None si no se puede leer."""
+    try:
+        import ctypes
+        import ctypes.util
+
+        libc = ctypes.CDLL(ctypes.util.find_library("c"))
+        v = ctypes.c_uint64(0)
+        n = ctypes.c_size_t(ctypes.sizeof(v))
+        if libc.sysctlbyname(b"hw.memsize", ctypes.byref(v), ctypes.byref(n), None, ctypes.c_size_t(0)) == 0:
+            return int(v.value)
+    except Exception:
+        pass
+    return None
+
+
+def qwen_size_for_ram(memsize: int | None) -> str:
+    """'4b' con >=16 GB; '1.7b' con menos. Si no se sabe la RAM, '1.7b' (el que entra en 8 GB)."""
+    return "4b" if memsize is not None and memsize >= QWEN_4B_MIN_RAM else "1.7b"
+
+
+def qwen_size(memsize: int | None = None) -> str:
+    """Tamaño elegido: ``$OPENTRADUCTOR_QWEN_SIZE`` (4b|1.7b) o según ``hw.memsize``."""
+    s = os.environ.get("OPENTRADUCTOR_QWEN_SIZE")
+    if s:
+        if s not in QWEN_MODELS:
+            raise ValueError(f"OPENTRADUCTOR_QWEN_SIZE inválido: {s!r} ({'|'.join(QWEN_MODELS)})")
+        return s
+    return qwen_size_for_ram(mac_memsize() if memsize is None else memsize)
+
+
+def qwen_root() -> Path:
+    """Carpeta con los Qwen por tamaño: ``$OPENTRADUCTOR_QWEN_ROOT`` o ``models_dir()/qwen``."""
+    r = os.environ.get("OPENTRADUCTOR_QWEN_ROOT")
+    return Path(r).expanduser() if r else models_dir() / "qwen"
+
+
 def qwen_model_dir(cfg: "PipelineConfig") -> Path:
-    """T-51: pesos de Qwen en disco (sin descarga aquí): ``cfg.qwen_model_dir`` o ``$OPENTRADUCTOR_QWEN_DIR``."""
+    """T-51: pesos de Qwen en disco (sin descarga aquí).
+
+    Orden: ``cfg.qwen_model_dir``, ``$OPENTRADUCTOR_QWEN_DIR`` (carpeta exacta) y, si no hay ninguno,
+    ``qwen_root()/<carpeta del tamaño elegido por RAM>`` (ver ``qwen_size``)."""
     d = cfg.qwen_model_dir or os.environ.get("OPENTRADUCTOR_QWEN_DIR")
-    if not d:
-        raise FileNotFoundError("mt_engine=qwen sin carpeta del modelo (qwen_model_dir u OPENTRADUCTOR_QWEN_DIR)")
-    return Path(d).expanduser()
+    if d:
+        return Path(d).expanduser()
+    return qwen_root() / QWEN_MODELS[qwen_size()][1]
+
+
+def mlx_cache_limit_bytes(cfg: "PipelineConfig") -> int | None:
+    """Tope de caché MLX en bytes: ``$OPENTRADUCTOR_MLX_CACHE_MB`` o ``cfg.mlx_cache_limit_mb``; <0 o None = sin tope."""
+    v = os.environ.get("OPENTRADUCTOR_MLX_CACHE_MB")
+    mb = float(v) if v else cfg.mlx_cache_limit_mb
+    if mb is None or mb < 0:
+        return None
+    return int(mb * 1e6)  # igual que t50_pipeline_ram.py --cache-limit-mb (la config medida)
 
 
 def marian_ct2_dir() -> Path:
@@ -137,6 +197,8 @@ class PipelineConfig:
     mt_engine: str = "marian"
     # Carpeta del Qwen MLX (config.json + model.safetensors + tokenizer). None = $OPENTRADUCTOR_QWEN_DIR.
     qwen_model_dir: str | None = None
+    # T-50: tope de la caché de buffers libres de MLX (MB), para todo el proceso (Qwen + Kokoro + Parakeet). None = sin tope.
+    mlx_cache_limit_mb: float | None = MLX_CACHE_LIMIT_MB_DEFAULT
     # Primer fragmento del TTS: máx. de palabras (None = solo por puntuación). Ayuda con ASR sin puntuación.
     tts_first_chunk_max_words: int | None = None
     # Con el anterior: no cortar justo antes/después de and/or/but/nor/yet (conjunción dentro de su grupo).

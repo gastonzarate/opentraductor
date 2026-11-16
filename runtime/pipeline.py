@@ -33,6 +33,21 @@ SR = 16000
 Emit = Callable[[str, dict], Awaitable[None]]
 
 
+def _apply_mlx_cache_limit(cfg: PipelineConfig) -> int | None:
+    """T-50: ``mx.set_cache_limit`` (global del proceso). Sin MLX instalado no hace nada."""
+    from .config import mlx_cache_limit_bytes
+
+    b = mlx_cache_limit_bytes(cfg)
+    if b is None:
+        return None
+    try:
+        import mlx.core as mx
+    except ImportError:
+        return None
+    mx.set_cache_limit(b)
+    return b
+
+
 class ModelWorker:
     """Un hilo dedicado: MLX liga arrays/streams al hilo que los crea."""
 
@@ -178,6 +193,7 @@ class Engine:
 
         require_ready(self.cfg)
         c = self.cfg
+        await self.gpu.run(lambda: _apply_mlx_cache_limit(c))  # T-50: antes de cargar nada en MLX
         self.asr = await self.asr_worker.run(lambda: timed("asr", self._make_asr))
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
                                                    c.tts_first_chunk_max_words, c.tts_bind_conjunctions,

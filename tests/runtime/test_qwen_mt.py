@@ -68,11 +68,47 @@ def test_normalize_applies_bug7_numbers(fake_mlx):
 
 def test_qwen_dir_from_cfg_or_env(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENTRADUCTOR_QWEN_DIR", raising=False)
-    with pytest.raises(FileNotFoundError):
-        C.qwen_model_dir(C.PipelineConfig(mt_engine="qwen"))
+    monkeypatch.setenv("OPENTRADUCTOR_QWEN_ROOT", str(tmp_path / "root"))
+    monkeypatch.setenv("OPENTRADUCTOR_QWEN_SIZE", "1.7b")
+    assert C.qwen_model_dir(C.PipelineConfig(mt_engine="qwen")) == tmp_path / "root" / "qwen3-1.7b-4bit"
     monkeypatch.setenv("OPENTRADUCTOR_QWEN_DIR", str(tmp_path))
     assert C.qwen_model_dir(C.PipelineConfig(mt_engine="qwen")) == tmp_path
     assert C.qwen_model_dir(C.PipelineConfig(mt_engine="qwen", qwen_model_dir="/x")) == C.Path("/x")
+
+
+def test_qwen_size_by_ram(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_QWEN_SIZE", raising=False)
+    gb = 1024**3
+    assert C.qwen_size(8 * gb) == "1.7b"
+    assert C.qwen_size(16 * gb) == "4b"
+    assert C.qwen_size(48 * gb) == "4b"
+    assert C.qwen_size_for_ram(None) == "1.7b"
+    monkeypatch.setenv("OPENTRADUCTOR_QWEN_SIZE", "4b")
+    assert C.qwen_size(8 * gb) == "4b"
+    monkeypatch.setenv("OPENTRADUCTOR_QWEN_SIZE", "0.6b")
+    with pytest.raises(ValueError):
+        C.qwen_size(8 * gb)
+
+
+def test_mac_memsize_reads_hw_memsize():
+    m = C.mac_memsize()
+    assert m is None or m >= 4 * 1024**3
+
+
+def test_mlx_cache_limit_default_and_env(monkeypatch):
+    from runtime import pipeline as P
+
+    monkeypatch.delenv("OPENTRADUCTOR_MLX_CACHE_MB", raising=False)
+    assert C.mlx_cache_limit_bytes(C.PipelineConfig()) == 256_000_000
+    assert C.mlx_cache_limit_bytes(C.PipelineConfig(mlx_cache_limit_mb=None)) is None
+    monkeypatch.setenv("OPENTRADUCTOR_MLX_CACHE_MB", "-1")
+    assert C.mlx_cache_limit_bytes(C.PipelineConfig()) is None
+    monkeypatch.setenv("OPENTRADUCTOR_MLX_CACHE_MB", "128")
+    seen = {}
+    core = types.SimpleNamespace(set_cache_limit=lambda b: seen.setdefault("b", b))
+    monkeypatch.setitem(sys.modules, "mlx", types.SimpleNamespace(core=core))
+    monkeypatch.setitem(sys.modules, "mlx.core", core)
+    assert P._apply_mlx_cache_limit(C.PipelineConfig()) == 128_000_000 and seen["b"] == 128_000_000
 
 
 def test_preflight_checks_qwen_not_marian(monkeypatch, tmp_path):
