@@ -58,27 +58,15 @@ final class ModelSetup: NSObject {
 
     // MARK: Preparación del traductor
 
-    /// Deja el traductor (Marian CTranslate2 int8) en `Application Support/OpenTraductor/models`.
-    /// Con la copia ya convertida dentro del bundle solo se copia; si no, se convierte con el Python embebido (sin red).
+    /// Deja el traductor (Marian CTranslate2 int8) listo. Con la copia ya convertida dentro del bundle no hay nada que hacer
+    /// (el motor la lee de Resources con OPENTRADUCTOR_MARIAN_CT2); si no, se convierte con el Python embebido (sin red).
     /// Devuelve nil si salió bien, o el motivo del fallo.
     static func prepareTranslator() -> String? {
         let fm = FileManager.default
         let dest = ModelManifest.installedMarianDir()
         let required = ["model.bin", "source.spm", "target.spm"]
+        if ModelManifest.bundledMarianDir() != nil { return nil }
         if required.allSatisfy({ fm.fileExists(atPath: dest.appendingPathComponent($0).path) }) { return nil }
-        do {
-            try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if let src = ModelManifest.bundledMarianDir() {
-                let tmp = dest.appendingPathExtension("tmp")
-                try? fm.removeItem(at: tmp)
-                try? fm.removeItem(at: dest)
-                try fm.copyItem(at: src, to: tmp)
-                try fm.moveItem(at: tmp, to: dest)
-                return nil
-            }
-        } catch {
-            return "No se pudo copiar el traductor: \(error.localizedDescription)"
-        }
         // Sin copia en el bundle: conversión local con el Python embebido, sin red.
         let p = Process()
         p.executableURL = RuntimeProcess.pythonURL()

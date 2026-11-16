@@ -44,9 +44,10 @@ enum ModelManifest {
         RuntimeProcess.supportDir().appendingPathComponent("hf", isDirectory: true).appendingPathComponent("hub", isDirectory: true)
     }
 
-    /// Traductor ya convertido (CTranslate2 int8, ~80 MB) dentro del bundle: si está, no hace falta bajar ni convertir Marian.
+    /// Traductor ya convertido (CTranslate2 int8, ~80 MB) dentro del bundle (`Resources/marian_ct2`, lo arma build_app.sh).
+    /// Si está, no hace falta bajar ni convertir Marian: el motor lo lee de ahí con OPENTRADUCTOR_MARIAN_CT2.
     static func bundledMarianDir() -> URL? {
-        let d = Bundle.main.resourceURL?.appendingPathComponent("models/opus-mt-es-en-ct2-int8", isDirectory: true)
+        let d = Bundle.main.resourceURL?.appendingPathComponent("marian_ct2", isDirectory: true)
         guard let d, FileManager.default.fileExists(atPath: d.appendingPathComponent("model.bin").path) else { return nil }
         return d
     }
