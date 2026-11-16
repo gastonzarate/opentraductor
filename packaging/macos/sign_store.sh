@@ -28,14 +28,16 @@ rm -rf "$APP/Contents/_CodeSignature"
 # Herramientas de compilación que no se usan en ejecución.
 find "$APP/Contents/Resources/python" -type f \( -name 'protoc' -o -name 'protoc-*' \) -delete
 # T-49: Moonshine es el ASR de la tienda (libmoonshine pide macOS 15, por eso LSMinimumSystemVersion=15.0). Ya no se quita.
-# Guía 2.4.5(vi): sin código de licencia propio en la tienda. Solo se borra si el runtime ya lo importa
-# de forma condicional (edición store); con el import viejo, el motor no arrancaría.
+# Guía 2.4.5(vi): sin código de licencia propio en la tienda. Desde 2fe41de el runtime solo importa
+# license fuera de la edición store; si eso se pierde, el motor no arrancaría sin el archivo: se corta.
 RT="$APP/Contents/Resources/app/runtime"
-if grep -qE '^ +if not store:' "$RT/__main__.py" && grep -qE '^ {8,}from \.license import' "$RT/__main__.py"; then
+if grep -qE '^ +if not store:' "$RT/__main__.py" && grep -qE '^ {8,}from \.license import' "$RT/__main__.py" \
+   && ! grep -rqE '^\s*(from|import)\s+(\.|runtime\.)license' --include='*.py' --exclude='__main__.py' "$RT"; then
   rm -f "$RT/license.py"; find "$RT" -path '*__pycache__/license.*' -delete
   echo "sin runtime/license.py (edición tienda)"
 else
-  echo "AVISO: runtime/__main__.py todavía importa license sin condición; queda en el bundle" >&2
+  echo "ERROR: runtime importa license sin condición; la tienda no puede llevar license.py (2.4.5(vi))" >&2
+  exit 1
 fi
 # Apple rechaza symlinks que apuntan fuera del bundle.
 BAD="$(find "$APP" -type l -exec sh -c 'case "$(readlink "$1")" in /*) echo "$1";; esac' _ {} \;)"
