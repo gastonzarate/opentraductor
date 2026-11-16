@@ -77,6 +77,8 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--session-min", type=float, default=0.0,
                     help="tras la pasada de calidad, repetir clips y frases hasta N minutos (criterio 8 GB: 10)")
+    ap.add_argument("--cache-limit-mb", type=float, default=None,
+                    help="mx.set_cache_limit: tope de la caché de buffers libres de MLX (por defecto MLX no la limita)")
     a = ap.parse_args()
 
     import mlx.core as mx
@@ -85,6 +87,8 @@ def main() -> None:
     from runtime import components as K
     from runtime.config import MOONSHINE_MODELS, moonshine_model_dir
 
+    if a.cache_limit_mb is not None:
+        mx.set_cache_limit(int(a.cache_limit_mb * 1e6))
     before = sysmem()
     t0 = time.monotonic()
     vad = K.SileroVAD()
@@ -146,7 +150,7 @@ def main() -> None:
     after = sysmem()
     fp = phys_footprint()
     res = {
-        "qwen_dir": a.qwen_dir, "asr": a.asr, "load_s": round(load_s, 1),
+        "qwen_dir": a.qwen_dir, "asr": a.asr, "cache_limit_mb": a.cache_limit_mb, "load_s": round(load_s, 1),
         "rss_after_load_mb": round(rss_after_load), "rss_peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
         "metal_peak_mb": round(mx.get_peak_memory() / 1e6),
         "footprint_after_load_mb": fp_after_load["now_mb"], "footprint_peak_mb": fp["peak_mb"],
