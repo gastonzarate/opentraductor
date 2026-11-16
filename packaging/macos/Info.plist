@@ -13,7 +13,8 @@
   <!-- T-49: motores (EngineProfile en ModelManifest.swift). ASR lo fija T-48 y el tamaño de Qwen T-50. -->
   <key>OTASRBackend</key><string>moonshine-tiny</string>
   <key>OTMTEngine</key><string>qwen</string>
-  <key>OTQwenModel</key><string>qwen3-4b-instruct-2507-4bit</string>
+  <!-- T-50: auto = 4B con >=16 GiB de RAM, 1.7B con menos (mismo umbral que runtime/config.py). Un nombre fijo fuerza esa variante. -->
+  <key>OTQwenModel</key><string>auto</string>
   <!-- baseline | incremental_experimental (app diaria). Lo define la fila baseline+Qwen vs incremental de T-50 (@lead, #t-48). -->
   <key>OTEngineMode</key><string>baseline</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>

@@ -235,10 +235,26 @@ struct EngineProfile {
 
     static var current: EngineProfile { from(Bundle.main.infoDictionary ?? [:]) }
 
-    static func from(_ info: [String: Any]) -> EngineProfile {
+    /// T-50: "auto" elige por RAM física, igual que runtime/config.py (QWEN_4B_MIN_RAM = 16 GiB): 4B con ≥16 GiB, si no 1.7B.
+    static let qwenAuto = "auto"
+    static let qwen4BMinRAM: UInt64 = 16 * 1024 * 1024 * 1024
+
+    static func qwenModelForRAM(_ memsize: UInt64?) -> String {
+        if let m = memsize, m >= qwen4BMinRAM { return "qwen3-4b-instruct-2507-4bit" }
+        return "qwen3-1.7b-4bit"
+    }
+
+    static func macMemsize() -> UInt64? {
+        var v: UInt64 = 0
+        var n = MemoryLayout<UInt64>.size
+        return sysctlbyname("hw.memsize", &v, &n, nil, 0) == 0 ? v : nil
+    }
+
+    static func from(_ info: [String: Any], memsize: UInt64? = macMemsize()) -> EngineProfile {
         let asr = info["OTASRBackend"] as? String ?? "parakeet"
         let mt = info["OTMTEngine"] as? String ?? "marian"
-        let q = info["OTQwenModel"] as? String ?? "qwen3-4b-instruct-2507-4bit"
+        let raw = info["OTQwenModel"] as? String ?? "qwen3-4b-instruct-2507-4bit"
+        let q = raw == qwenAuto ? qwenModelForRAM(memsize) : raw
         let validASR = asr == "parakeet" || ModelManifest.moonshineFiles[asr] != nil
         let validQwen = ModelManifest.qwenRepos[q] != nil
         var p = EngineProfile(asrBackend: validASR ? asr : "parakeet", mtEngine: (mt == "qwen" && validQwen) ? "qwen" : "marian",
