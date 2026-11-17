@@ -297,6 +297,42 @@ QWEN_SENSE = (" Translate the meaning in the context of the conversation, not wo
               "luca = a thousand pesos, afano = rip-off/theft, al pedo = for nothing/pointless, "
               "fiaca = laziness). "
               "Earlier turns are context only: translate just the last Spanish message.")
+# T-58 opción acotada (17/11): QWEN_SENSE completo bajó el BLEU del gate 72,8 -> 64,6 (perdió «ni... ni», imperativos,
+# «gotta»). Con ``mt_sense_glossary`` solo las frases con un término de esta lista llevan, DESPUÉS del texto (así el
+# prefijo del prefill KV no cambia), el glosario de los términos que aparecen y QWEN_GUARD. Sin instrucción de parafrasear.
+QWEN_GLOSSARY = (
+    (r"\bplata\b", "plata = money"),
+    (r"\bguita\b", "guita = money"),
+    (r"\bun mango\b", "no tener un mango = to be broke, not a penny"),
+    (r"\blucas?\b", "luca = a thousand pesos (diez lucas = ten thousand)"),
+    (r"\blabur\w*", "laburo = work, job; laburar = to work"),
+    (r"\bsal(e|en|ió|dría|ía)\b", "'sale' with a price = it costs; '¿sale?' about a plan = is it on?"),
+    (r"\bre\b", "re + adjective = really"),
+    (r"\bbárbaro\b", "bárbaro = great"),
+    (r"\bdale\b", "dale = OK, sure"),
+    (r"\bche\b", "che = hey"),
+    (r"\bboludo\b", "boludo = dude"),
+    (r"\bquilombo\b", "quilombo = mess"),
+    (r"\bbanc(ar|ame|ate|ás|amos|ó|an|aste)\b", "bancar = to handle, withstand; bancame = hold on"),
+    (r"\bfiaca\b", "fiaca = laziness, not feeling like it"),
+    (r"\bal pedo\b", "al pedo = for nothing, pointless"),
+    (r"\bzaf(ar|amos|ó|é|aste|aron)\b", "zafar = to get by, get away with it"),
+    (r"\bchamuyo\b", "chamuyo = smooth talk, BS"),
+    (r"\bgarrón\b", "garrón = bummer"),
+    (r"\bcopad[oa]s?\b", "copado = cool"),
+    (r"\bpiola\b", "piola = cool, nice"),
+    (r"\bpate(ar|amos|ás|a|ó|o|emos|émos)\w*", "patear = to push back, postpone"),
+    (r"\bpila\b", "con toda la pila = full of energy; una pila de = a lot of"),
+    (r"\bafan\w*", "afano = rip-off; afanar = to steal"),
+)
+# 1.ª versión («Keep ... exactly as in the Spanish») hacía copiar el modismo (put more guita, ten lucas): 21/30.
+QWEN_GUARD = ("Do not copy those Argentine words into the English: write their meaning instead. "
+              "Translate the rest of the sentence as usual.")
+
+
+def qwen_glossary(text_es: str) -> list[str]:
+    """Entradas de QWEN_GLOSSARY cuyos términos aparecen en ``text_es`` (sin distinguir mayúsculas), en orden."""
+    return [g for pat, g in QWEN_GLOSSARY if re.search(pat, text_es, re.I)]
 
 
 class QwenMLX:
@@ -307,7 +343,7 @@ class QwenMLX:
     Qwen no omite la 2.ª oración y partirla costaría una llamada más)."""
 
     def __init__(self, model_dir, normalize: bool = False, sense_prompt: bool = False,
-                 session_kv: bool = False) -> None:
+                 session_kv: bool = False, sense_glossary: bool = False) -> None:
         from mlx_lm import load
 
         self.model, self.tok = load(str(model_dir))
@@ -315,6 +351,8 @@ class QwenMLX:
         v = os.environ.get("OPENTRADUCTOR_MT_SENSE")  # 1/0 fuerza el prompt por sentido (A/B y gate sin tocar configs)
         sense_prompt = (v == "1") if v in ("0", "1") else sense_prompt
         self.system = QWEN_SYSTEM + (QWEN_SENSE if sense_prompt else "")
+        v = os.environ.get("OPENTRADUCTOR_MT_GLOSSARY")  # 1/0 fuerza el glosario acotado (gate sin tocar configs)
+        self.glossary = (v == "1") if v in ("0", "1") else sense_glossary
         self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")
         self._kv = None  # (prompt_cache, tokens) del último prefill(); lo consume el próximo translate()
         # T-58 contexto largo: caché KV de sesión (system + historia) que sobrevive entre frases. 1/0 lo fuerza.
@@ -329,10 +367,19 @@ class QwenMLX:
         Van antes del turno actual, así que entran en el prefijo que carga ``prefill()``."""
         msgs = [{"role": "system", "content": getattr(self, "system", QWEN_SYSTEM)}]
         for es, en in context:
-            msgs += [{"role": "user", "content": f"Spanish:\n{es}"}, {"role": "assistant", "content": en}]
-        msgs.append({"role": "user", "content": f"Spanish:\n{text_es}"})
+            msgs += [{"role": "user", "content": self._user(es)}, {"role": "assistant", "content": en}]
+        msgs.append({"role": "user", "content": self._user(text_es)})
         kw = {"enable_thinking": False} if self._hybrid else {}
         return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
+
+    def _user(self, text_es: str) -> str:
+        """Turno de usuario. Con ``glossary`` y algún término de QWEN_GLOSSARY, el glosario y QWEN_GUARD van después
+        del texto: el prefijo «Spanish:\\n<texto>» que carga prefill() es el mismo con o sin glosario. Los turnos de
+        historia usan lo mismo, así la caché de sesión de la frase anterior sigue siendo prefijo de la siguiente."""
+        g = qwen_glossary(text_es) if getattr(self, "glossary", False) else []
+        if not g:
+            return f"Spanish:\n{text_es}"
+        return f"Spanish:\n{text_es}\n\nMeaning of the Argentine slang in it: {'; '.join(g)}.\n{QWEN_GUARD}"
 
     def translate(self, text_es: str, context: tuple = ()) -> str:
         from mlx_lm import generate
@@ -442,7 +489,8 @@ class QwenMLX:
             self.prewarm()
             return
         p = self.prompt(stable, context)
-        toks = self._enc(p[: p.rindex(stable) + len(stable)])
+        head = "Spanish:\n" + stable  # el glosario (después del texto) puede repetir el término: anclar al turno
+        toks = self._enc(p[: p.rindex(head) + len(head)])
         sess, n = (getattr(self, "_sess", None) if getattr(self, "session_kv", False) else None), 0
         if sess is not None:  # contexto largo: extender la caché de sesión en vez de rehacer system + historia
             self._sess = None

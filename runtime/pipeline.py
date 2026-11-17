@@ -241,6 +241,7 @@ class Engine:
 
             self.mt = await self.gpu.run(lambda: timed("mt", lambda: K.QwenMLX(qwen_model_dir(c), normalize=c.mt_normalize,
                                                                                          sense_prompt=c.mt_sense_prompt,
+                                                                                         sense_glossary=c.mt_sense_glossary,
                                                                                          session_kv=c.mt_session_kv)))
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))

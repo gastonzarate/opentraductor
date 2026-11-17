@@ -74,3 +74,31 @@ def test_prompt_with_sense_and_context_keeps_current_turn_last():
     # el contexto va antes del turno actual: el prefijo que carga prefill() lo incluye
     assert q.prompt("me sale", (("hablemos de pagos", "let's talk about payments"),)).startswith(
         p[: p.rindex("|user:")])
+
+
+def test_glossary_only_terms_present():
+    g = K.qwen_glossary("No hay PLATA y laburamos al pedo")
+    assert g == ["plata = money", "laburo = work, job; laburar = to work", "al pedo = for nothing, pointless"]
+    assert K.qwen_glossary("Ni Mariana ni Gonzalo revisaron el PR.") == []
+    assert K.qwen_glossary("Consiguió un laburo en un banco, pateamos la patente") == [
+        "laburo = work, job; laburar = to work", "patear = to push back, postpone"]
+
+
+def test_glossary_off_prompt_unchanged():
+    q = _qwen(False)
+    q.glossary = False
+    assert q.prompt("no hay plata") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nno hay plata"
+
+
+def test_glossary_on_goes_after_text_only_with_term():
+    q = _qwen(False)
+    q.glossary = True
+    assert q.prompt("Ni Mariana ni Gonzalo") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nNi Mariana ni Gonzalo"
+    p = q.prompt("Dale, no hay plata")
+    assert p.startswith(f"system:{K.QWEN_SYSTEM}|user:Spanish:\nDale, no hay plata\n\nMeaning of the Argentine slang in it: ")
+    assert "plata = money" in p and "dale = OK, sure" in p and p.endswith(K.QWEN_GUARD)
+    # historia con el mismo formato: el prompt de la frase anterior es prefijo de la siguiente (caché de sesión)
+    prev = q.prompt("Dale, no hay plata")
+    nxt = q.prompt("Seguimos", (("Dale, no hay plata", "OK, there's no money"),))
+    assert nxt.startswith(prev[: prev.rindex(K.QWEN_GUARD) + len(K.QWEN_GUARD)])
+

@@ -2,7 +2,7 @@
 """Aciertos de sentido de Qwen en frases ambiguas argentinas (scripts/eval/sets/mt_sentido_ar.jsonl).
 
 Brazos: base (prompt actual, sin contexto), sense (QWEN_SENSE), ctx (sin QWEN_SENSE, frase previa como turno),
-sense_ctx (ambos). Acierto = algún regex de ``must`` aparece y ninguno de ``must_not`` (sin distinguir mayúsculas).
+sense_ctx (ambos), gloss (glosario acotado + QWEN_GUARD solo si hay término). Acierto = algún regex de ``must`` aparece y ninguno de ``must_not`` (sin distinguir mayúsculas).
 También mide la MT de cada llamada (sin prefill KV, igual en todos los brazos) para ver cuánto suma el contexto.
 
 Uso:
@@ -22,7 +22,8 @@ sys.path.insert(0, str(ROOT))
 
 from runtime import components as K  # noqa: E402
 
-ARMS = {"base": (False, False), "sense": (True, False), "ctx": (False, True), "sense_ctx": (True, True)}
+ARMS = {"base": (False, False, False), "sense": (True, False, False), "ctx": (False, True, False),
+        "sense_ctx": (True, True, False), "gloss": (False, False, True)}  # gloss = QWEN_GLOSSARY acotado
 
 
 def score(en: str, item: dict) -> bool:
@@ -46,8 +47,9 @@ def main() -> int:
     summary = {}
     with open(out / "rows.jsonl", "w") as f:
         for arm in a.arms.split(","):
-            sense, ctx = ARMS[arm]
+            sense, ctx, gloss = ARMS[arm]
             q.system = K.QWEN_SYSTEM + (K.QWEN_SENSE if sense else "")
+            q.glossary = gloss
             hits, ms = 0, []
             for it in items:
                 context = ((it["prev_es"], it["prev_en"]),) if ctx else ()
