@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, os.environ.get("T69_CODE_ROOT", str(ROOT)))  # T69_CODE_ROOT: carpeta con el commit a medir (git archive)
 DEFAULT_MODEL = ROOT / "artifacts/analysis/llm-mp4-a/models/qwen3-4b-instruct-2507-4bit"
 
 
