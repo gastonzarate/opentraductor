@@ -207,8 +207,9 @@ class PipelineConfig:
     # MT p50 +20 ms máx.): prompt de traducción por sentido y N frases previas ES->EN de la sesión como contexto.
     mt_sense_prompt: bool = False
     # T-58 opción acotada: solo a las frases con un término de QWEN_GLOSSARY, glosario + «mantener negaciones, sujeto,
-    # tiempo, cifras y nombres» después del texto. Apagado hasta set de 30 + gate + MT p50 (+20 ms máx.).
-    mt_sense_glossary: bool = False
+    # tiempo, cifras y nombres» después del texto. Encendido por defecto desde el gate 2 de 70bb991 (sentido 20->28/30,
+    # sin must_not nuevos; BLEU 72.8->72.8, chrF 82.9). Reversible con env OPENTRADUCTOR_MT_GLOSSARY=0.
+    mt_sense_glossary: bool = True
     mt_context_turns: int = 0
     # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de
     # sus tokens nuevos. Con mt_context_turns > 0 la historia se recorta en bloque (n -> n/2) para no romper el prefijo.
