@@ -171,8 +171,23 @@ def _cfg(tmp_path, *extra):
     return cfg
 
 
+def test_store_edition_default_on_and_env_reverts(monkeypatch):
+    a = cli.build_parser().parse_args(["run"])
+    monkeypatch.delenv("OPENTRADUCTOR_TTS_TRIM_TAIL", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_EDITION", raising=False)
+    assert cli._tts_trim_tail(a) is False  # app diaria: sin cambios
+    monkeypatch.setenv("OPENTRADUCTOR_EDITION", "store")
+    assert cli._tts_trim_tail(a) is True  # T-47: on por defecto en la tienda
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_TRIM_TAIL", "0")
+    assert cli._tts_trim_tail(a) is False  # reversible sin rebuild del motor
+    b = cli.build_parser().parse_args(["run", "--tts-trim-tail", "off"])
+    monkeypatch.delenv("OPENTRADUCTOR_TTS_TRIM_TAIL")
+    assert cli._tts_trim_tail(b) is False
+
+
 def test_cli_flag_and_env(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_TTS_TRIM_TAIL", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_EDITION", raising=False)
     assert _cfg(tmp_path).tts_trim_tail is False
     assert _cfg(tmp_path, "--tts-trim-tail", "on").tts_trim_tail is True
     monkeypatch.setenv("OPENTRADUCTOR_TTS_TRIM_TAIL", "1")
