@@ -18,3 +18,27 @@ artifacts/
 # Builds y entornos locales
 dist/
 .venv-*/
+
+# Secretos y credenciales
+.env.*
+*.pem
+*.p12
+*.key
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.keychain*
+
+# Logs y artefactos locales
+*.log
+*.dmg
+*.pkg
+*.app/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Bases de datos locales (ya cubiertas arriba, por si cambian de nombre)
+*.sqlite3-wal
+*.sqlite3-shm

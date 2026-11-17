@@ -40,6 +40,14 @@ OUT_MANIFEST = REPO / "data" / "manifests" / "voice_controls.jsonl"
 GENDER = {0: "male", 1: "female", 2: "other"}
 
 
+def display_path(p: Path) -> str:
+    """Ruta con ~ en lugar del directorio personal (para manifiestos publicables)."""
+    try:
+        return "~/" + p.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return p.as_posix()
+
+
 def sha256_file(p: Path) -> str:
     h = hashlib.sha256()
     with p.open("rb") as fh:
@@ -91,7 +99,7 @@ def main() -> None:
             "source_url": "https://huggingface.co/datasets/google/fleurs",
             "attribution": "Conneau et al. (2022), FLEURS: Few-shot Learning Evaluation of Universal Representations of Speech, google/fleurs, CC-BY-4.0",
             "fleurs_id": fid,
-            "source_parquet": str(CACHE),
+            "source_parquet": display_path(CACHE),
             "source_parquet_sha256": sha256_file(CACHE),
             "source_audio_sha256": hashlib.sha256(src).hexdigest(),
             "conversion": "sf.read float32 -> mono -> PCM16 little-endian (igual que fetch_fleurs_sample.py)",

@@ -50,6 +50,14 @@ ATTRIBUTION = (
 )
 
 
+def display_path(p: Path) -> str:
+    """Ruta con ~ en lugar del directorio personal (para manifiestos publicables)."""
+    try:
+        return "~/" + p.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return p.as_posix()
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -112,11 +120,11 @@ def main() -> None:
     en_path = fetch_parquet("en_us")
     parquet_info = {
         "es_419_validation": {
-            "file": str(es_path),
+            "file": display_path(es_path),
             "sha256": sha256_file(es_path),
         },
         "en_us_validation": {
-            "file": str(en_path),
+            "file": display_path(en_path),
             "sha256": sha256_file(en_path),
         },
     }
