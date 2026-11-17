@@ -79,6 +79,8 @@ def main() -> None:
                     help="tras la pasada de calidad, repetir clips y frases hasta N minutos (criterio 8 GB: 10)")
     ap.add_argument("--cache-limit-mb", type=float, default=None,
                     help="mx.set_cache_limit: tope de la caché de buffers libres de MLX (por defecto MLX no la limita)")
+    ap.add_argument("--clear-between", action="store_true",
+                    help="T-51: mx.clear_cache() después de cada frase (en el silencio), en vez de un tope fijo")
     a = ap.parse_args()
 
     import mlx.core as mx
@@ -113,6 +115,14 @@ def main() -> None:
             first = first if first is not None else (time.monotonic() - t) * 1000
         return first or 0.0
 
+    clear_ms: list[float] = []
+
+    def idle() -> None:  # fin de frase: lo que el pipeline haría en el silencio
+        if a.clear_between:
+            t = time.monotonic()
+            mx.clear_cache()
+            clear_ms.append((time.monotonic() - t) * 1000)
+
     rows, mt_ms, tts_ms = [], [], []
     translate("Hola, ¿me escuchan?")  # warmup
     speak("Hello, can you hear me?")
@@ -130,6 +140,7 @@ def main() -> None:
             en, ms = translate(es) if es else ("", 0.0)
             mt_ms.append(ms)
             tts_ms.append(speak(en) if en else 0.0)
+            idle()
             if keep:
                 rows.append({"id": it["item_id"], "asr": es, "en": en})
         for line in TXT.read_text().splitlines():
@@ -137,6 +148,7 @@ def main() -> None:
             en, ms = translate(it["text_es"])
             mt_ms.append(ms)
             tts_ms.append(speak(en))
+            idle()
             if keep:
                 rows.append({"id": it["item_id"], "es": it["text_es"], "en": en})
 
@@ -150,7 +162,8 @@ def main() -> None:
     after = sysmem()
     fp = phys_footprint()
     res = {
-        "qwen_dir": a.qwen_dir, "asr": a.asr, "cache_limit_mb": a.cache_limit_mb, "load_s": round(load_s, 1),
+        "qwen_dir": a.qwen_dir, "asr": a.asr, "cache_limit_mb": a.cache_limit_mb, "clear_between": a.clear_between,
+        "clear_ms": {"p50": statistics.median(clear_ms), "p95": pct(clear_ms, 0.95)} if clear_ms else None, "load_s": round(load_s, 1),
         "rss_after_load_mb": round(rss_after_load), "rss_peak_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
         "metal_peak_mb": round(mx.get_peak_memory() / 1e6),
         "footprint_after_load_mb": fp_after_load["now_mb"], "footprint_peak_mb": fp["peak_mb"],
