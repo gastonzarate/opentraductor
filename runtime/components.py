@@ -6,6 +6,7 @@ un MISMO hilo dedicado (ver ``pipeline.ModelWorker``).
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 
@@ -308,6 +309,8 @@ class QwenMLX:
 
         self.model, self.tok = load(str(model_dir))
         self.normalize = normalize
+        v = os.environ.get("OPENTRADUCTOR_MT_SENSE")  # 1/0 fuerza el prompt por sentido (A/B y gate sin tocar configs)
+        sense_prompt = (v == "1") if v in ("0", "1") else sense_prompt
         self.system = QWEN_SYSTEM + (QWEN_SENSE if sense_prompt else "")
         self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")
         self._kv = None  # (prompt_cache, tokens) del último prefill(); lo consume el próximo translate()
