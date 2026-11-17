@@ -298,8 +298,8 @@ QWEN_SENSE = (" Translate the meaning in the context of the conversation, not wo
               "fiaca = laziness). "
               "Earlier turns are context only: translate just the last Spanish message.")
 # T-58 opción acotada (17/11): QWEN_SENSE completo bajó el BLEU del gate 72,8 -> 64,6 (perdió «ni... ni», imperativos,
-# «gotta»). Con ``mt_sense_glossary`` solo las frases con un término de esta lista llevan, DESPUÉS del texto (así el
-# prefijo del prefill KV no cambia), el glosario de los términos que aparecen y QWEN_GUARD. Sin instrucción de parafrasear.
+# «gotta»). Con ``mt_sense_glossary`` solo las frases con un término de esta lista llevan, ANTES del texto y dentro
+# del prefijo que cachea prefill() (ver QwenMLX._user), el glosario de los términos que aparecen y QWEN_GUARD. Sin instrucción de parafrasear.
 QWEN_GLOSSARY = (
     (r"\bplata\b", "plata = money"),
     (r"\bguita\b", "guita = money"),
@@ -372,13 +372,16 @@ class QwenMLX:
         return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
 
     def _user(self, text_es: str) -> str:
-        """Turno de usuario. Con ``glossary`` y algún término de QWEN_GLOSSARY, el glosario y QWEN_GUARD van después
-        del texto: el prefijo «Spanish:\\n<texto>» que carga prefill() es el mismo con o sin glosario. Los turnos de
-        historia usan lo mismo, así la caché de sesión de la frase anterior sigue siendo prefijo de la siguiente."""
+        """Turno de usuario. Con ``glossary`` y algún término de QWEN_GLOSSARY, el glosario y QWEN_GUARD van ANTES
+        del texto. prefill() arma el glosario con el parcial estable, así queda dentro de la caché KV y translate()
+        solo paga la cola (con el glosario después del texto, bench 70bb991 midió p95 +63 ms en las 28 frases con
+        modismo). Si la última palabra trae un término nuevo, el prefijo común se corta en el glosario y se
+        recalcula desde ahí: misma salida, más lento solo en ese caso. Los turnos de historia usan el mismo
+        formato, así la caché de sesión de la frase anterior sigue siendo prefijo de la siguiente."""
         g = qwen_glossary(text_es) if getattr(self, "glossary", False) else []
         if not g:
             return f"Spanish:\n{text_es}"
-        return f"Spanish:\n{text_es}\n\nMeaning of the Argentine slang in it: {'; '.join(g)}.\n{QWEN_GUARD}"
+        return f"Meaning of the Argentine slang below: {'; '.join(g)}.\n{QWEN_GUARD}\n\nSpanish:\n{text_es}"
 
     def translate(self, text_es: str, context: tuple = ()) -> str:
         from mlx_lm import generate
@@ -488,7 +491,7 @@ class QwenMLX:
             self.prewarm()
             return
         p = self.prompt(stable, context)
-        head = "Spanish:\n" + stable  # el glosario (después del texto) puede repetir el término: anclar al turno
+        head = "Spanish:\n" + stable  # anclar al texto del turno actual (el glosario, si hay, va antes y entra)
         toks = self._enc(p[: p.rindex(head) + len(head)])
         sess, n = (getattr(self, "_sess", None) if getattr(self, "session_kv", False) else None), 0
         if sess is not None:  # contexto largo: extender la caché de sesión en vez de rehacer system + historia

@@ -209,7 +209,8 @@ class PipelineConfig:
     # T-58 opción acotada: solo a las frases con un término de QWEN_GLOSSARY, glosario + «mantener negaciones, sujeto,
     # tiempo, cifras y nombres» después del texto. Gate 2 de 70bb991 pasa en sentido (20->28/30, sin must_not nuevos;
     # BLEU 72.8->72.8), pero NO en latencia: en frases con modismo MT p95 +63 ms (límite +30), porque el glosario queda
-    # fuera del prefijo del prefill KV. Apagado por defecto; se enciende con env OPENTRADUCTOR_MT_GLOSSARY=1.
+    # fuera del prefijo del prefill KV. Ahora el glosario va antes del texto, armado con el parcial estable (dentro de
+    # la caché); falta repetir gate 2 y latencia. Apagado por defecto; se enciende con env OPENTRADUCTOR_MT_GLOSSARY=1.
     mt_sense_glossary: bool = False
     mt_context_turns: int = 0
     # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de

@@ -90,16 +90,20 @@ def test_glossary_off_prompt_unchanged():
     assert q.prompt("no hay plata") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nno hay plata"
 
 
-def test_glossary_on_goes_after_text_only_with_term():
+def test_glossary_on_goes_before_text_only_with_term():
     q = _qwen(False)
     q.glossary = True
     assert q.prompt("Ni Mariana ni Gonzalo") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nNi Mariana ni Gonzalo"
     p = q.prompt("Dale, no hay plata")
-    assert p.startswith(f"system:{K.QWEN_SYSTEM}|user:Spanish:\nDale, no hay plata\n\nMeaning of the Argentine slang in it: ")
-    assert "plata = money" in p and "dale" not in p.split("slang in it: ")[1] and p.endswith(K.QWEN_GUARD)
+    assert p.startswith(f"system:{K.QWEN_SYSTEM}|user:Meaning of the Argentine slang below: ")
+    assert p.endswith(f"{K.QWEN_GUARD}\n\nSpanish:\nDale, no hay plata")
+    assert "plata = money" in p and "dale" not in p.split("slang below: ")[1].split("\n")[0]
     assert K.qwen_glossary("Che, dale, lo miro") == []
+    # el parcial estable con el mismo término comparte el prefijo con glosario (entra en la caché del prefill)
+    part = q.prompt("Dale, no hay plata y")
+    assert part.startswith(p)
     # historia con el mismo formato: el prompt de la frase anterior es prefijo de la siguiente (caché de sesión)
     prev = q.prompt("Dale, no hay plata")
     nxt = q.prompt("Seguimos", (("Dale, no hay plata", "OK, there's no money"),))
-    assert nxt.startswith(prev[: prev.rindex(K.QWEN_GUARD) + len(K.QWEN_GUARD)])
+    assert nxt.startswith(prev)
 
