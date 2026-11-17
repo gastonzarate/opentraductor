@@ -56,6 +56,11 @@ def _timed_call(fn, *a):
     return r, (time.perf_counter() - t) * 1000
 
 
+def _append_capped(xs: list, v, cap: int = 64) -> None:
+    xs.append(v)
+    del xs[:-cap]
+
+
 class ModelWorker:
     """Un hilo dedicado: MLX liga arrays/streams al hilo que los crea."""
 
@@ -137,6 +142,8 @@ class StreamState:
     prewarm_seg_id: int | None = None  # segmento para el que ya se evaluó el prewarm de MT
     kv_pause: tuple | None = None  # (seg_id, last_speech_end_s) de la última pausa evaluada para prefill KV
     kv_stable: tuple | None = None  # (seg_id, prefijo estable) ya cargado en la caché KV
+    asr_spec_pause: tuple | None = None  # (seg_id, last_speech_end_s) de la pausa con finish especulativo encolado
+    asr_spec_open: bool = False  # hay un finish especulativo vigente (stream del ASR cerrado) en el segmento actual
     gen: int = 0  # generación (cada start_stream incrementa; separa sesiones con el mismo id)
 
 
@@ -167,6 +174,11 @@ class Engine:
         }
         self.prewarm_stats: dict[str, Any] = {"started": 0, "skipped_hot": 0, "error": 0, "cost_ms": []}
         self._prewarm_tasks: set[asyncio.Future] = set()
+        self._mt_ctx: dict[str, list[tuple[str, str]]] = {}  # stream_id -> últimas frases (es, en) emitidas
+        # T-58 fin de frase especulativo: started = finish adelantados; hit = usados como final; discard_voice = volvió
+        # la voz (stream reabierto y re-alimentado); finish_ms / refeed_ms = cómputo medido en el hilo del ASR.
+        self.asr_spec_stats: dict[str, Any] = {"started": 0, "hit": 0, "discard_voice": 0, "finish_ms": [],
+                                               "refeed_ms": []}
         self._gen = 0
         self._live_gen: dict[str, int] = {}  # generación vigente por stream; lo de otras generaciones no se emite
         self.stale_dropped = 0  # emisiones/trabajos de sesiones cerradas descartados (medido)
@@ -222,7 +234,8 @@ class Engine:
         if c.mt_engine == "qwen":  # T-51: Qwen MLX comparte el hilo GPU con Kokoro
             from .config import qwen_model_dir
 
-            self.mt = await self.gpu.run(lambda: timed("mt", lambda: K.QwenMLX(qwen_model_dir(c), normalize=c.mt_normalize)))
+            self.mt = await self.gpu.run(lambda: timed("mt", lambda: K.QwenMLX(qwen_model_dir(c), normalize=c.mt_normalize,
+                                                                                         sense_prompt=c.mt_sense_prompt)))
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)
@@ -278,6 +291,7 @@ class Engine:
         vad = K.SileroVAD() if self._streams else self.vad_proto
         vad.reset()
         self._spec_drop(stream_id)
+        self._mt_ctx.pop(stream_id, None)  # sesión nueva: sin contexto de la anterior
         self._gen += 1
         self._live_gen[stream_id] = self._gen
         st = StreamState(stream_id=stream_id, vad=vad, gen=self._gen)
@@ -356,6 +370,9 @@ class Engine:
         for consumed, p in st.vad.probs(pcm):
             end_s = (base + consumed) / SR + st.t_base_s
             if p >= c.vad_threshold:
+                if st.asr_spec_open and st.in_speech:
+                    st.asr_spec_open = False  # volvió la voz: el finish especulativo no sirve
+                    await st.asr_q.put(("spec_resume", None))
                 st.silence_ms = 0.0
                 st.last_speech_end_s = end_s
                 if not st.in_speech:
@@ -381,6 +398,7 @@ class Engine:
                 await self._endpoint(st, end_s, forced=True)
                 appended = False
         st.pos_samples += len(pcm) // 2
+        await self._maybe_spec_finish(st)
         self._maybe_speculate(st)
         self._maybe_prewarm(st)
         if st.in_speech:
@@ -430,6 +448,7 @@ class Engine:
             else:
                 await self._queue_audio(st, pos_s)
         await st.asr_q.put(("end", seg))
+        st.asr_spec_open = False
         await self.emit(
             "endpoint",
             {"stream_id": st.stream_id, "audio_pos_s": pos_s, "forced": forced,
@@ -440,11 +459,54 @@ class Engine:
         st.silence_ms = 0.0
         st.vad.reset_states()
 
+    # ------------------------------------------------------- contexto de la MT (pedido 17/11)
+    def _mt_args(self, stream_id: str) -> tuple:
+        """Argumentos extra de translate()/prefill(): () sin contexto (Marian y Qwen por defecto)."""
+        if self.cfg.mt_engine != "qwen" or self.cfg.mt_context_turns <= 0:
+            return ()
+        return (tuple(self._mt_ctx.get(stream_id, ())),)
+
+    def _mt_remember(self, stream_id: str, es: str, en: str) -> None:
+        n = self.cfg.mt_context_turns
+        if self.cfg.mt_engine != "qwen" or n <= 0 or not es.strip() or not en.strip():
+            return
+        h = self._mt_ctx.setdefault(stream_id, [])
+        h.append((es.strip(), en.strip()))
+        del h[:-n]
+
+    # ------------------------------------------------------- fin de frase especulativo (T-58)
+    @property
+    def _asr_spec_enabled(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_ASR_SPEC_FINISH")
+        return (v == "1") if v in ("0", "1") else self.cfg.asr_spec_finish_on_pause
+
+    async def _maybe_spec_finish(self, st: StreamState) -> None:
+        """Una vez por pausa VAD: manda al ASR la voz pendiente y le pide el finish sin esperar al endpoint."""
+        c = self.cfg
+        seg = st.seg
+        if seg is None or not st.in_speech or st.asr_spec_open or not self._asr_spec_enabled:
+            return
+        if st.silence_ms < c.asr_spec_finish_silence_ms or st.silence_ms >= c.endpoint_silence_ms:
+            return
+        pause = (seg.seg_id, st.last_speech_end_s)
+        if pause == st.asr_spec_pause or not st.last_partial.strip():
+            return
+        if (st.last_speech_end_s - seg.start_s) * 1000 < c.min_speech_ms:
+            return
+        st.asr_spec_pause = pause
+        st.asr_spec_open = True
+        if st.asr_buf:
+            await self._queue_audio(st, st.buf_end_s)
+        await st.asr_q.put(("spec_end", pause))
+
     # ------------------------------------------------------------------ ASR
     async def _asr_loop(self, st: StreamState) -> None:
         """Serializa el ASR de un stream. Los parciales salen a medida que
         llega el audio; al final de segmento se entrega a la cola de salida."""
         cur: Segment | None = None
+        seg_pcm: list[bytes] = []  # audio del segmento ya pasado al ASR (para re-alimentar si vuelve la voz)
+        held: list[bytes] = []  # audio recibido con el stream cerrado por un finish especulativo
+        closed: tuple | None = None  # (pausa, texto) del finish especulativo vigente
         try:
             while True:
                 kind, payload = await st.asr_q.get()
@@ -452,16 +514,42 @@ class Engine:
                     return
                 if kind == "start":
                     cur, pre = payload
+                    seg_pcm, held, closed = [], [], None
                     await self.asr_worker.run(self.asr.start)
                     if pre:
                         await self.asr_worker.run(self.asr.add, pre)
+                        seg_pcm.append(pre)
                     st.last_partial = ""
+                elif kind == "spec_end":
+                    if closed is None:
+                        r = await self.asr_worker.run(_timed_call, self.asr.finish)
+                        closed = (payload, r[0])
+                        self.asr_spec_stats["started"] += 1
+                        _append_capped(self.asr_spec_stats["finish_ms"], round(r[1], 1))
+                elif kind == "spec_resume":
+                    if closed is not None:
+                        audio = b"".join(seg_pcm + held)
+                        seg_pcm, held, closed = ([audio] if audio else []), [], None
+
+                        def refeed(a=audio):
+                            self.asr.start()
+                            return self.asr.add(a) if a else ""
+
+                        r = await self.asr_worker.run(_timed_call, refeed)
+                        self.asr_spec_stats["discard_voice"] += 1
+                        _append_capped(self.asr_spec_stats["refeed_ms"], round(r[1], 1))
                 elif kind == "audio":
                     pcm, pos_s, dur = payload
+                    if closed is not None:
+                        held.append(pcm)
+                        st.asr_pending_s = max(0.0, st.asr_pending_s - dur)
+                        st.asr_done_pos_s = max(st.asr_done_pos_s, pos_s)
+                        continue
                     try:
                         text = await self.asr_worker.run(self.asr.add, pcm)
                     finally:
                         st.asr_pending_s = max(0.0, st.asr_pending_s - dur)
+                    seg_pcm.append(pcm)
                     st.asr_done_pos_s = max(st.asr_done_pos_s, pos_s)
                     if text and text != st.last_partial:
                         st.last_partial = text
@@ -473,7 +561,16 @@ class Engine:
                     self._maybe_speculate(st)
                 elif kind == "end":
                     seg = payload
-                    seg.text_es_raw = await self.asr_worker.run(self.asr.finish)
+                    if closed is not None and closed[0] == (seg.seg_id, seg.end_s):
+                        seg.text_es_raw = closed[1]  # sin voz nueva desde la pausa: el finish adelantado es el final
+                        self.asr_spec_stats["hit"] += 1
+                    else:
+                        if closed is not None:  # no debería pasar (la voz nueva reabre antes); camino normal
+                            audio = b"".join(seg_pcm + held)
+                            await self.asr_worker.run(lambda a=audio: (self.asr.start(), a and self.asr.add(a)))
+                            self.asr_spec_stats["miss"] = self.asr_spec_stats.get("miss", 0) + 1
+                        seg.text_es_raw = await self.asr_worker.run(self.asr.finish)
+                    seg_pcm, held, closed = [], [], None
                     seg.text_es = (
                         K.normalize_asr_text(seg.text_es_raw)
                         if self.cfg.asr_normalize_text else seg.text_es_raw
@@ -573,7 +670,7 @@ class Engine:
                 ws = self.prewarm_stats.setdefault("kv_words", [])
                 ws.append(len(text.split()))
                 del ws[:-64]
-                t = asyncio.ensure_future(g.run(_timed_call, self.mt.prefill, text))
+                t = asyncio.ensure_future(g.run(_timed_call, self.mt.prefill, text, *self._mt_args(st.stream_id)))
                 self._prewarm_tasks.add(t)
                 t.add_done_callback(self._prewarm_done)
                 return
@@ -639,7 +736,7 @@ class Engine:
     async def _spec_run(self, e: SpecEntry) -> None:
         try:
             t = time.perf_counter()
-            text_en = await self._mt_exec.run(self.mt.translate, e.text_es)
+            text_en = await self._mt_exec.run(self.mt.translate, e.text_es, *self._mt_args(e.stream_id))
             e.mt_ms = (time.perf_counter() - t) * 1000
             if e.cancelled:
                 return
@@ -722,7 +819,8 @@ class Engine:
                 if entry is not None:
                     text_en = entry.text_en
                 else:
-                    text_en, mt_compute_ms = await self._mt_exec.run(_timed_call, self.mt.translate, seg.text_es)
+                    text_en, mt_compute_ms = await self._mt_exec.run(_timed_call, self.mt.translate, seg.text_es,
+                                                                      *self._mt_args(stream_id))
                 mt_ms = (time.perf_counter() - t0) * 1000
                 if not self._is_live(stream_id, seg.gen):  # se cerró durante la MT: se descarta
                     self.stale_dropped += 1
@@ -733,6 +831,7 @@ class Engine:
                 if spec is not None:
                     ev["spec"] = spec
                 await self.emit("mt_final", ev)
+                self._mt_remember(stream_id, seg.text_es, text_en)
                 span = (seg.start_s, seg.end_s if seg.end_s is not None else seg.start_s)
                 await self._speak(stream_id, seg, text_en, span, entry)
             except asyncio.CancelledError:

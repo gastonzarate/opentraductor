@@ -203,6 +203,10 @@ class PipelineConfig:
     # BUG-7: antes de Marian, "120 mil" -> "120.000" y una llamada por oración (Marian omitía la 2.ª).
     # False = camino de hoy. Reversible por flag (--mt-normalize off) o env OPENTRADUCTOR_MT_NORMALIZE.
     mt_normalize: bool = False
+    # Pedido de la persona (17/11), solo Qwen, apagados hasta el A/B (set de frases ambiguas, BLEU -1 máx.,
+    # MT p50 +20 ms máx.): prompt de traducción por sentido y N frases previas ES->EN de la sesión como contexto.
+    mt_sense_prompt: bool = False
+    mt_context_turns: int = 0
     # T-51: traductor. "marian" (CTranslate2, CPU) = camino de hoy | "qwen" (Qwen3 4bit MLX, en el hilo GPU con Kokoro).
     mt_engine: str = "marian"
     # Carpeta del Qwen MLX (config.json + model.safetensors + tokenizer). None = $OPENTRADUCTOR_QWEN_DIR.
@@ -219,6 +223,12 @@ class PipelineConfig:
     # no usa el hilo MLX, el primer fragmento TTS) del parcial. Nada especulativo se emite jamás: el resultado
     # solo se usa si el texto final es EXACTAMENTE igual; si no, se descarta y corre la ruta normal.
     speculative_mt_tts: bool = False
+    # T-58: fin de frase especulativo. En la 1.ª ventana de cada pausa VAD >= asr_spec_finish_silence_ms (con parcial)
+    # se cierra el stream del ASR (finish) sin esperar al endpoint. Si el endpoint llega sin voz nueva, ese texto ES el
+    # final; si vuelve la voz, se reabre el stream y se le re-pasa el audio del segmento. Sonda 7b1b37b (Moonshine,
+    # tiempo real): hit 9/9, finish 153-201 ms desde la pausa. $OPENTRADUCTOR_ASR_SPEC_FINISH=1/0 lo fuerza.
+    asr_spec_finish_on_pause: bool = False
+    asr_spec_finish_silence_ms: float = 80.0
     spec_silence_ms: float = 64.0  # silencio VAD mínimo para especular (< endpoint_silence_ms)
     spec_max_entries: int = 4  # entradas en caché simultáneas (acotado)
     # T-58 GPU fría: tras >=1 s de GPU ociosa la 1.ª generación de Qwen tarda ~170 ms más (sonda t58_mt_gpu_probe:

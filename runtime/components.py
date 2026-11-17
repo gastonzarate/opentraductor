@@ -287,6 +287,13 @@ _CONJ = frozenset({"and", "or", "but", "nor", "yet"})
 QWEN_SYSTEM = ("You translate Argentine Spanish speech from software team meetings into natural US English. "
                "Output only the English translation, with no notes, quotes or explanations. "
                "Keep numbers, negations, names and technical terms exact.")
+# Pedido de la persona (17/11): traducir por el sentido según el tema de la charla, no palabra por palabra.
+# Se agrega a QWEN_SYSTEM con ``mt_sense_prompt`` (apagado hasta el A/B de frases ambiguas argentinas).
+QWEN_SENSE = (" Translate the meaning in the context of the conversation, not word by word: pick the sense that "
+              "fits the topic being discussed (e.g. 'plata' in a talk about payments is money, never silver). "
+              "Render Argentine slang and idioms with natural English equivalents (plata/guita = money, "
+              "laburo = work/job, re = really, bárbaro = great, 'salir' a price = to cost, 'dale' = OK/sure). "
+              "Earlier turns are context only: translate just the last Spanish message.")
 
 
 class QwenMLX:
@@ -296,21 +303,27 @@ class QwenMLX:
     ``normalize`` aplica el mismo preproceso de BUG-7 que Marian (cifras y horas, sin partir oraciones:
     Qwen no omite la 2.ª oración y partirla costaría una llamada más)."""
 
-    def __init__(self, model_dir, normalize: bool = False) -> None:
+    def __init__(self, model_dir, normalize: bool = False, sense_prompt: bool = False) -> None:
         from mlx_lm import load
 
         self.model, self.tok = load(str(model_dir))
         self.normalize = normalize
+        self.system = QWEN_SYSTEM + (QWEN_SENSE if sense_prompt else "")
         self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")
         self._kv = None  # (prompt_cache, tokens) del último prefill(); lo consume el próximo translate()
         self.kv_stats = {"used": 0, "tail_tokens": []}
 
-    def prompt(self, text_es: str) -> str:
-        msgs = [{"role": "system", "content": QWEN_SYSTEM}, {"role": "user", "content": f"Spanish:\n{text_es}"}]
+    def prompt(self, text_es: str, context: tuple = ()) -> str:
+        """``context``: pares (es, en) de las frases anteriores de la sesión, como turnos previos del chat.
+        Van antes del turno actual, así que entran en el prefijo que carga ``prefill()``."""
+        msgs = [{"role": "system", "content": getattr(self, "system", QWEN_SYSTEM)}]
+        for es, en in context:
+            msgs += [{"role": "user", "content": f"Spanish:\n{es}"}, {"role": "assistant", "content": en}]
+        msgs.append({"role": "user", "content": f"Spanish:\n{text_es}"})
         kw = {"enable_thinking": False} if self._hybrid else {}
         return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
 
-    def translate(self, text_es: str) -> str:
+    def translate(self, text_es: str, context: tuple = ()) -> str:
         from mlx_lm import generate
 
         text_es = text_es.strip()
@@ -318,7 +331,7 @@ class QwenMLX:
             return ""
         if self.normalize:
             text_es = mt_normalize_numbers(text_es)
-        prompt, kw = self.prompt(text_es), {}
+        prompt, kw = self.prompt(text_es, context), {}
         kv, self._kv = self._kv, None  # un solo uso, sea de esta frase o no
         if kv is not None:
             from mlx_lm.models.cache import trim_prompt_cache
@@ -342,7 +355,7 @@ class QwenMLX:
     def _enc(self, s: str) -> list[int]:
         return list(self.tok.encode(s, add_special_tokens=False))
 
-    def prefill(self, partial_es: str) -> None:
+    def prefill(self, partial_es: str, context: tuple = ()) -> None:
         """T-58: carga en una caché KV el prompt con el parcial SIN su última palabra (suele cambiar); el
         translate() siguiente solo procesa la cola y el decode. También despierta la GPU, como prewarm().
         Salida idéntica a translate() sin caché (greedy; sonda c7aec17, 9/9 en 3 frases)."""
@@ -357,7 +370,7 @@ class QwenMLX:
             self._kv = None
             self.prewarm()
             return
-        p = self.prompt(stable)
+        p = self.prompt(stable, context)
         toks = self._enc(p[: p.rindex(stable) + len(stable)])
         cache = make_prompt_cache(self.model)
         if not can_trim_prompt_cache(cache):

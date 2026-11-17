@@ -82,6 +82,8 @@ class BaselineAdapter(Adapter):
             "mt_prewarm": dict(self.engine.prewarm_stats, enabled=self.engine._prewarm_enabled,
                                kv_enabled=self.engine._kv_prefill_enabled,
                                kv_used=dict(getattr(self.engine.mt, "kv_stats", {}) or {})) if self.engine else {},
+            "asr_spec_finish": dict(self.engine.asr_spec_stats, enabled=self.engine._asr_spec_enabled)
+            if self.engine else {},
         }
 
     @staticmethod
