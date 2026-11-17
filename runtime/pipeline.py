@@ -29,6 +29,7 @@ from typing import Any, Awaitable, Callable
 
 from . import components as K
 from .config import PipelineConfig
+from .simul import ClauseCommitter
 
 SR = 16000
 Emit = Callable[[str, dict], Awaitable[None]]
@@ -91,6 +92,10 @@ class Segment:
     text_es: str = ""  # texto usado por MT (normalizado si asr_normalize_text)
     text_es_raw: str = ""  # salida cruda del ASR
     gen: int = 0  # generación del stream que creó el segmento
+    # T-67 paso 2 (mt_simul_clauses): >0 = n.º de cláusula confirmada antes del fin de frase (text_es = la cláusula);
+    # -1 = resto de una frase con cláusulas ya habladas (text_es = frase entera, mt_text = lo que falta traducir).
+    clause: int = 0
+    mt_text: str | None = None
 
 
 @dataclass
@@ -147,6 +152,7 @@ class StreamState:
     ep_flush_pause: tuple | None = None  # T-67: (seg_id, last_speech_end_s) de la pausa ya mandada entera al ASR
     ep_wait: tuple = (0.0, "")  # T-67: (espera ms, motivo) elegida en la última ventana de silencio
     gen: int = 0  # generación (cada start_stream incrementa; separa sesiones con el mismo id)
+    clauser: object | None = None  # T-67 paso 2: simul.ClauseCommitter del segmento actual (None = flag off)
 
 
 class Engine:
@@ -189,6 +195,10 @@ class Engine:
         self._gen = 0
         self._live_gen: dict[str, int] = {}  # generación vigente por stream; lo de otras generaciones no se emite
         self.stale_dropped = 0  # emisiones/trabajos de sesiones cerradas descartados (medido)
+        # T-67 paso 2: cláusulas habladas antes del fin de frase, frases con cláusulas, ASR que reescribió lo
+        # confirmado, frases sin resto que traducir. _clause_en: traducciones por (stream, gen, seg_id) hasta su resto.
+        self.simul_stats = {"clauses": 0, "segments": 0, "rewrite": 0, "rest_empty": 0}
+        self._clause_en: dict[tuple, list[str]] = {}
 
     def spec_metrics(self) -> dict:
         """Contadores de especulación.
@@ -570,6 +580,7 @@ class Engine:
                         await self.asr_worker.run(self.asr.add, pre)
                         seg_pcm.append(pre)
                     st.last_partial = ""
+                    st.clauser = ClauseCommitter() if self._simul_enabled else None
                 elif kind == "spec_end":
                     if closed is None:
                         r = await self.asr_worker.run(_timed_call, self.asr.finish)
@@ -608,6 +619,9 @@ class Engine:
                             {"stream_id": st.stream_id, "text": text, "audio_pos_s": pos_s,
                              "seg_id": cur.seg_id if cur else None},
                         )
+                        if st.clauser is not None and cur is not None:
+                            for c in st.clauser.update(text):
+                                await self._enqueue_clause(st, cur, c)
                     self._maybe_speculate(st)
                 elif kind == "end":
                     seg = payload
@@ -648,6 +662,7 @@ class Engine:
                         {"stream_id": st.stream_id, "text": seg.text_es, "text_raw": seg.text_es_raw,
                          "seg_id": seg.seg_id},
                     )
+                    self._simul_rest(st, seg)
                     await self._enqueue_segment(st, seg)
                     cur = None
         except asyncio.CancelledError:
@@ -864,6 +879,9 @@ class Engine:
                 continue
             self._speaking = True
             try:
+                if seg.clause:
+                    await self._simul_speak(stream_id, seg)
+                    continue
                 t0 = time.perf_counter()
                 entry, spec = await self._spec_claim(stream_id, seg)
                 if entry is not None:
@@ -898,6 +916,70 @@ class Engine:
             finally:
                 self._speaking = False
                 self._out_q.task_done()
+
+    # ------------------------------------------- T-67 paso 2: cláusulas simultáneas
+    @property
+    def _simul_enabled(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_MT_SIMUL")
+        return (v == "1") if v in ("0", "1") else self.cfg.mt_simul_clauses
+
+    async def _enqueue_clause(self, st: StreamState, cur: Segment, text: str) -> None:
+        """Cláusula confirmada por local agreement: a la cola de salida como pieza de la frase ``cur`` (mismo
+        seg_id). Se traduce y se habla mientras la persona sigue hablando; no emite mt_final."""
+        n = st.clauser.n_clauses = getattr(st.clauser, "n_clauses", 0) + 1
+        es = K.normalize_asr_text(text) if self.cfg.asr_normalize_text else text
+        self.simul_stats["clauses"] += 1
+        await self.emit("simul_clause", {"stream_id": st.stream_id, "seg_id": cur.seg_id, "clause": n, "text_es": es})
+        await self._enqueue_segment(st, Segment(seg_id=cur.seg_id, start_s=cur.start_s, text_es=es, gen=cur.gen,
+                                                clause=n))
+
+    def _simul_rest(self, st: StreamState, seg: Segment) -> None:
+        """Al fin de frase: si ya se hablaron cláusulas, marca el segmento como resto (solo se traduce lo que falta).
+        Si el ASR reescribió lo confirmado, igual se toman las palabras siguientes (lo hablado no se puede deshacer)."""
+        c, st.clauser = st.clauser, None
+        if c is None or not c.committed:
+            return
+        raw = seg.text_es_raw or seg.text_es
+        rest = c.rest(raw)
+        if rest is None:
+            self.simul_stats["rewrite"] += 1
+            rest = " ".join(raw.split()[c.committed:])
+        self.simul_stats["segments"] += 1
+        seg.clause = -1
+        seg.mt_text = K.normalize_asr_text(rest) if (self.cfg.asr_normalize_text and rest.strip()) else rest
+        self._spec_drop(st.stream_id, seg.seg_id, st.gen)  # la especulación es de la frase entera: ya no sirve
+
+    async def _simul_speak(self, stream_id, seg: Segment) -> None:
+        """Traduce y habla una cláusula (clause > 0) o el resto de su frase (clause = -1). El resto emite el
+        mt_final único de la frase con las traducciones de todas sus piezas unidas (contrato de la UI: un seg_id,
+        un segment)."""
+        key = (stream_id, seg.gen, seg.seg_id)
+        src = seg.text_es if seg.clause > 0 else (seg.mt_text or "")
+        t0 = time.perf_counter()
+        en, comp = "", 0.0
+        if src.strip():
+            en, comp = await self._mt_exec.run(_timed_call, self.mt.translate, src, *self._mt_args(stream_id))
+        mt_ms = (time.perf_counter() - t0) * 1000
+        if not self._is_live(stream_id, seg.gen):
+            self.stale_dropped += 1
+            self._clause_en.pop(key, None)
+            return
+        if seg.clause > 0:
+            self._clause_en.setdefault(key, []).append(en)
+            await self.emit("simul_clause_mt", {"stream_id": stream_id, "seg_id": seg.seg_id, "clause": seg.clause,
+                                                "text": en, "mt_ms": round(mt_ms, 1), "mt_compute_ms": round(comp, 1)})
+        else:
+            parts = self._clause_en.pop(key, [])
+            if not src.strip():
+                self.simul_stats["rest_empty"] += 1
+            full = " ".join(p.strip() for p in parts + [en] if p and p.strip())
+            await self.emit("mt_final", {"stream_id": stream_id, "text": full, "seg_id": seg.seg_id,
+                                         "mt_ms": round(mt_ms, 1), "mt_compute_ms": round(comp, 1),
+                                         "simul_clauses": len(parts)})
+        self._mt_remember(stream_id, src, en)
+        if en.strip():
+            span = (seg.start_s, seg.end_s if seg.end_s is not None else seg.start_s)
+            await self._speak(stream_id, seg, en, span)
 
     @property
     def _mt_stream_enabled(self) -> bool:

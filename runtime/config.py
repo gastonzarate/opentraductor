@@ -185,6 +185,10 @@ class PipelineConfig:
     # conector/preposición/artículo/muletilla/coma ("y", "que", "pero", "o sea", "de", "este"...);
     # endpoint_short_ms si el ASR ya procesó toda la voz y el parcial puede cerrar frase; si no, endpoint_silence_ms.
     endpoint_adaptive: bool = False
+    # T-67 paso 2: traducción simultánea por cláusulas (runtime/simul.py). Una cláusula confirmada por dos parciales
+    # seguidos del ASR y cerrada por coma/"pero"/"porque"/"o sea"... (mín. 5 palabras) se traduce y se habla antes del
+    # fin de frase; en el endpoint solo se traduce el resto. Env OPENTRADUCTOR_MT_SIMUL=1/0 manda. Off = camino de hoy.
+    mt_simul_clauses: bool = False
     endpoint_short_ms: float = 96.0
     endpoint_long_ms: float = 480.0
     vad_threshold: float = 0.5
