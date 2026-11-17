@@ -179,6 +179,11 @@ class Engine:
         # la voz (stream reabierto y re-alimentado); finish_ms / refeed_ms = cómputo medido en el hilo del ASR.
         self.asr_spec_stats: dict[str, Any] = {"started": 0, "hit": 0, "discard_voice": 0, "finish_ms": [],
                                                "refeed_ms": []}
+        # T-58 MT en streaming hacia Kokoro: segments = frases por este camino; head_early = 1.er fragmento sintetizado
+        # antes de terminar la MT; mismatch = plan(final)[0] != fragmento adelantado (debe ser 0); lead_ms = cuánto
+        # antes del fin de la MT quedó listo el 1.er audio; tts_in_mt_ms = Kokoro intercalado en el decode.
+        self.mt_stream_stats: dict[str, Any] = {"segments": 0, "head_early": 0, "mismatch": 0, "head_only": 0, "lead_ms": [],
+                                                "tts_in_mt_ms": []}
         self._gen = 0
         self._live_gen: dict[str, int] = {}  # generación vigente por stream; lo de otras generaciones no se emite
         self.stale_dropped = 0  # emisiones/trabajos de sesiones cerradas descartados (medido)
@@ -235,7 +240,8 @@ class Engine:
             from .config import qwen_model_dir
 
             self.mt = await self.gpu.run(lambda: timed("mt", lambda: K.QwenMLX(qwen_model_dir(c), normalize=c.mt_normalize,
-                                                                                         sense_prompt=c.mt_sense_prompt)))
+                                                                                         sense_prompt=c.mt_sense_prompt,
+                                                                                         session_kv=c.mt_session_kv)))
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)
@@ -472,7 +478,11 @@ class Engine:
             return
         h = self._mt_ctx.setdefault(stream_id, [])
         h.append((es.strip(), en.strip()))
-        del h[:-n]
+        if self.cfg.mt_session_kv:  # recorte en bloque: el prefijo (y la caché KV de sesión) cambia solo cada n/2 frases
+            if len(h) > n:
+                del h[: len(h) - max(1, n // 2)]
+        else:
+            del h[:-n]
 
     # ------------------------------------------------------- fin de frase especulativo (T-58)
     @property
@@ -818,6 +828,9 @@ class Engine:
                 entry, spec = await self._spec_claim(stream_id, seg)
                 if entry is not None:
                     text_en = entry.text_en
+                elif self._mt_stream_enabled:
+                    await self._mt_stream_speak(stream_id, seg, t0)
+                    continue
                 else:
                     text_en, mt_compute_ms = await self._mt_exec.run(_timed_call, self.mt.translate, seg.text_es,
                                                                       *self._mt_args(stream_id))
@@ -845,6 +858,104 @@ class Engine:
             finally:
                 self._speaking = False
                 self._out_q.task_done()
+
+    @property
+    def _mt_stream_enabled(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK")
+        on = (v == "1") if v in ("0", "1") else self.cfg.mt_stream_first_chunk
+        return bool(on) and self.cfg.mt_engine == "qwen" and hasattr(self.mt, "translate_stream")
+
+    async def _mt_stream_speak(self, stream_id, seg, t0: float) -> None:
+        """T-58 mt_stream_first_chunk: decode de Qwen token a token y, apenas el prefijo fija ``plan(final)[0]``
+        (first_clause_final), Kokoro sintetiza ese 1.er fragmento en el mismo hilo GPU, entre dos pasos del decode,
+        y se emite sin esperar el resto de la MT. Después del mt_final, el resto con synth_clauses(plan[1:], False):
+        mismos cortes y mismo audio que el camino normal. Con el flag, el tts_chunk del 1.er fragmento puede llegar
+        antes que el mt_final de su frase (con planned_text_en=None; los fragmentos siguientes traen el texto
+        completo, como en el camino normal)."""
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue()
+        stats = self.mt_stream_stats
+        stats["segments"] += 1
+
+        def put(item) -> None:
+            loop.call_soon_threadsafe(q.put_nowait, item)
+
+        def produce():
+            head: str | None = None
+            head_t = None
+            tts_ms = 0.0
+
+            def on_text(prefix: str) -> None:
+                nonlocal head, head_t, tts_ms
+                if head is not None or not self._is_live(stream_id, seg.gen):
+                    return
+                h = self.tts.first_clause_final(prefix)
+                if h is None:
+                    return
+                head = h
+                ts = time.perf_counter()
+                # planned_text_en=None: el benchmark (metrics.commit_texts) se queda con el 1.er texto no vacío de
+                # cada seg_id; si fuera h, el texto planeado de la frase quedaría recortado al fragmento.
+                for ch in self.tts.synth_clauses([h], True):
+                    put(("chunk", ch, None))
+                head_t = time.perf_counter()
+                tts_ms += (head_t - ts) * 1000
+
+            try:
+                tm = time.perf_counter()
+                text_en = self.mt.translate_stream(seg.text_es, *self._mt_args(stream_id), on_text=on_text)
+                t_end = time.perf_counter()
+                put(("mt", text_en, (t_end - tm) * 1000 - tts_ms))
+                clauses = self.tts.plan(text_en) if text_en else []
+                if head is None:
+                    gen = self.tts.synth_clauses(clauses, True)
+                else:
+                    stats["head_early"] += 1
+                    _append_capped(stats["lead_ms"], round((t_end - head_t) * 1000, 1))
+                    _append_capped(stats["tts_in_mt_ms"], round(tts_ms, 1))
+                    if clauses[:1] != [head]:
+                        stats["mismatch"] += 1
+                    if len(clauses) < 2:  # no debería pasar (first_clause_final exige cola): sin texto planeado
+                        stats["head_only"] += 1
+                    gen = self.tts.synth_clauses(clauses[1:], first=False)
+                for ch in gen:
+                    if not self._is_live(stream_id, seg.gen):
+                        self.stale_dropped += 1
+                        break
+                    put(("chunk", ch, text_en))
+            except Exception as exc:  # noqa: BLE001
+                put(("error", exc, None))
+            finally:
+                put(("done", None, None))
+
+        fut = asyncio.ensure_future(self.gpu.run(produce))
+        span = (seg.start_s, seg.end_s if seg.end_s is not None else seg.start_s)
+        try:
+            while True:
+                kind, v, extra = await q.get()
+                if kind == "done":
+                    break
+                if not self._is_live(stream_id, seg.gen):
+                    self.stale_dropped += 1
+                    continue
+                if kind == "error":
+                    await self.emit("error", {"stream_id": stream_id, "error_kind": f"{type(v).__name__}: {v}"})
+                elif kind == "mt":
+                    ev = {"stream_id": stream_id, "text": v, "seg_id": seg.seg_id,
+                          "mt_ms": round((time.perf_counter() - t0) * 1000, 1), "mt_compute_ms": round(extra, 1),
+                          "mt_stream": True}
+                    await self.emit("mt_final", ev)
+                    self._mt_remember(stream_id, seg.text_es, v)
+                else:
+                    await self.emit(
+                        "tts_chunk",
+                        {"stream_id": stream_id, "pcm": v.pcm, "sample_rate": v.sample_rate,
+                         "planned_text_en": extra, "source_span_s": span, "seg_id": seg.seg_id},
+                    )
+            await fut
+        finally:
+            if not fut.done():
+                fut.cancel()
 
     async def _speak(self, stream_id, seg, text_en, span, entry: SpecEntry | None = None) -> None:
         loop = asyncio.get_running_loop()

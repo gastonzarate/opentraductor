@@ -293,7 +293,9 @@ QWEN_SYSTEM = ("You translate Argentine Spanish speech from software team meetin
 QWEN_SENSE = (" Translate the meaning in the context of the conversation, not word by word: pick the sense that "
               "fits the topic being discussed (e.g. 'plata' in a talk about payments is money, never silver). "
               "Render Argentine slang and idioms with natural English equivalents (plata/guita = money, "
-              "laburo = work/job, re = really, bárbaro = great, 'salir' a price = to cost, 'dale' = OK/sure). "
+              "laburo = work/job, re = really, bárbaro = great, 'salir' a price = to cost, 'dale' = OK/sure, "
+              "luca = a thousand pesos, afano = rip-off/theft, al pedo = for nothing/pointless, "
+              "fiaca = laziness). "
               "Earlier turns are context only: translate just the last Spanish message.")
 
 
@@ -304,7 +306,8 @@ class QwenMLX:
     ``normalize`` aplica el mismo preproceso de BUG-7 que Marian (cifras y horas, sin partir oraciones:
     Qwen no omite la 2.ª oración y partirla costaría una llamada más)."""
 
-    def __init__(self, model_dir, normalize: bool = False, sense_prompt: bool = False) -> None:
+    def __init__(self, model_dir, normalize: bool = False, sense_prompt: bool = False,
+                 session_kv: bool = False) -> None:
         from mlx_lm import load
 
         self.model, self.tok = load(str(model_dir))
@@ -314,6 +317,11 @@ class QwenMLX:
         self.system = QWEN_SYSTEM + (QWEN_SENSE if sense_prompt else "")
         self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")
         self._kv = None  # (prompt_cache, tokens) del último prefill(); lo consume el próximo translate()
+        # T-58 contexto largo: caché KV de sesión (system + historia) que sobrevive entre frases. 1/0 lo fuerza.
+        v = os.environ.get("OPENTRADUCTOR_MT_SESSION_KV")
+        self.session_kv = (v == "1") if v in ("0", "1") else session_kv
+        self._sess = None  # (prompt_cache, tokens): prompt exacto de la última frase, sin lo generado
+        self._post = None
         self.kv_stats = {"used": 0, "tail_tokens": []}
 
     def prompt(self, text_es: str, context: tuple = ()) -> str:
@@ -329,13 +337,46 @@ class QwenMLX:
     def translate(self, text_es: str, context: tuple = ()) -> str:
         from mlx_lm import generate
 
+        args = self._gen_args(text_es, context)
+        if args is None:
+            return ""
+        prompt, kw = args
+        out = generate(self.model, self.tok, prompt=prompt, verbose=False, **kw)
+        self._after_gen()
+        return out.strip().split("\n")[0].strip()
+
+    def translate_stream(self, text_es: str, context: tuple = (), on_text=None) -> str:
+        """T-58 (mt_stream_first_chunk): igual que translate() (mismo prompt, caché KV y greedy), pero llama
+        ``on_text(prefijo)`` tras cada token con la 1.ª línea decodificada hasta ahora, y corta al primer salto
+        de línea (translate() se queda con esa línea, así que el resultado es el mismo)."""
+        from mlx_lm import stream_generate
+
+        args = self._gen_args(text_es, context)
+        if args is None:
+            return ""
+        prompt, kw = args
+        acc = ""
+        for r in stream_generate(self.model, self.tok, prompt, **kw):
+            acc += r.text
+            if "\n" in acc.lstrip():
+                break
+            if on_text is not None:
+                on_text(acc.lstrip())
+        self._after_gen()
+        return acc.strip().split("\n")[0].strip()
+
+    def _gen_args(self, text_es: str, context: tuple = ()):
         text_es = text_es.strip()
         if not text_es:
-            return ""
+            return None
         if self.normalize:
             text_es = mt_normalize_numbers(text_es)
-        prompt, kw = self.prompt(text_es, context), {}
+        prompt, kw = self.prompt(text_es, context), {"max_tokens": 3 * len(text_es.split()) + 16}
         kv, self._kv = self._kv, None  # un solo uso, sea de esta frase o no
+        session = getattr(self, "session_kv", False)
+        if kv is None and session:
+            kv, self._sess = getattr(self, "_sess", None), None
+        self._post, full, used = None, None, None
         if kv is not None:
             from mlx_lm.models.cache import trim_prompt_cache
 
@@ -347,13 +388,40 @@ class QwenMLX:
             if n > 0:
                 if len(cached) > n:
                     trim_prompt_cache(cache, len(cached) - n)
-                prompt, kw = full[n:], {"prompt_cache": cache}
+                prompt, kw = full[n:], {**kw, "prompt_cache": cache}
+                used = cache
                 self.kv_stats["used"] += 1
                 self.kv_stats["tail_tokens"].append(len(full) - n)
                 del self.kv_stats["tail_tokens"][:-64]
-        out = generate(self.model, self.tok, prompt=prompt, max_tokens=3 * len(text_es.split()) + 16,
-                       verbose=False, **kw)
-        return out.strip().split("\n")[0].strip()
+        if session:  # T-58 contexto largo: la caché sobrevive a la frase (prompt + historia), ver _after_gen()
+            from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache
+
+            if used is None:
+                cache = make_prompt_cache(self.model)
+                if can_trim_prompt_cache(cache):
+                    full = self._enc(prompt) if isinstance(prompt, str) else full
+                    prompt, kw, used = full, {**kw, "prompt_cache": cache}, cache
+            if used is not None:
+                self._post = (used, full)
+        return prompt, kw
+
+    def _after_gen(self) -> None:
+        """Modo sesión: saca de la caché los tokens generados y la deja con el prompt exacto de esta frase. La
+        frase siguiente (historia + esta frase + nueva) comparte ese prefijo y solo paga sus tokens nuevos."""
+        post, self._post = getattr(self, "_post", None), None
+        if post is None:
+            return
+        from mlx_lm.models.cache import trim_prompt_cache
+
+        cache, full = post
+        off = getattr(cache[0], "offset", None)
+        if not isinstance(off, int) or off < len(full):
+            self._sess = None
+            return
+        if off > len(full):
+            trim_prompt_cache(cache, off - len(full))
+        self._sess = (cache, full)
+        self.kv_stats["session_tokens"] = len(full)
 
     def _enc(self, s: str) -> list[int]:
         return list(self.tok.encode(s, add_special_tokens=False))
@@ -375,12 +443,25 @@ class QwenMLX:
             return
         p = self.prompt(stable, context)
         toks = self._enc(p[: p.rindex(stable) + len(stable)])
-        cache = make_prompt_cache(self.model)
+        sess, n = (getattr(self, "_sess", None) if getattr(self, "session_kv", False) else None), 0
+        if sess is not None:  # contexto largo: extender la caché de sesión en vez de rehacer system + historia
+            self._sess = None
+            from mlx_lm.models.cache import trim_prompt_cache
+
+            cache, cached = sess
+            while n < min(len(cached), len(toks) - 1) and cached[n] == toks[n]:
+                n += 1
+            if n == 0:
+                cache = make_prompt_cache(self.model)
+            elif len(cached) > n:
+                trim_prompt_cache(cache, len(cached) - n)
+        else:
+            cache = make_prompt_cache(self.model)
         if not can_trim_prompt_cache(cache):
             self._kv = None
             self.prewarm()
             return
-        self.model(mx.array(toks)[None], cache=cache)
+        self.model(mx.array(toks[n:])[None], cache=cache)
         mx.eval([c.state for c in cache])
         self._kv = (cache, toks)
 
@@ -459,6 +540,42 @@ def normalize_asr_text(text: str) -> str:
     if t[-1] not in ".!?…":
         t += "."
     return t
+
+
+def first_clause_final(prefix: str, min_chars: int = 24, first_max_words: int | None = None,
+                       bind_conjunctions: bool = False) -> str | None:
+    """T-58 (mt_stream_first_chunk): primera cláusula de ``split_clauses(texto)`` si ya queda fija con solo
+    ``prefix`` (lo decodificado hasta ahora), para cualquier continuación. None si todavía puede cambiar.
+
+    Garantía: si devuelve ``h``, entonces ``split_clauses(prefix + resto, ...)[0] == h`` para todo ``resto``.
+    - Caso A: las partes cerradas (seguidas de puntuación + espacio ya visto) suman >= min_chars -> out[0] fijo,
+      siempre que lo que viene después ya mida >= min_chars (si no, la cola corta final se le pega a out[0]).
+    - Caso B (con first_max_words): todavía no hay out[0] cerrado, pero out[0] tiene ya >= first_max_words + 1
+      palabras completas y la búsqueda hacia atrás de split_first_by_words encuentra corte con ellas.
+    Conservadora: ante la duda devuelve None (se cae al camino normal)."""
+    t = prefix.lstrip()
+    if not t:
+        return None
+    parts = _CLAUSE.split(t)
+    closed = [p.strip() for p in parts[:-1] if p.strip()]
+    tail = parts[-1].strip()
+    buf = ""
+    for i, p in enumerate(closed):
+        buf = f"{buf} {p}".strip()
+        if len(buf) >= min_chars:
+            rest = " ".join([q for q in closed[i + 1:]] + ([tail] if tail else []))
+            if len(rest) < min_chars:
+                return None
+            return split_first_by_words(buf, first_max_words, bind_conjunctions)[0] if first_max_words else buf
+    if not first_max_words:
+        return None
+    words = " ".join(closed + [parts[-1]]).split()
+    if parts[-1] and not parts[-1][-1].isspace():
+        words = words[:-1]  # la última palabra puede seguir creciendo
+    if len(words) < first_max_words + 1:
+        return None
+    r = split_first_by_words(" ".join(words[: first_max_words + 1]), first_max_words, bind_conjunctions)
+    return r[0] if len(r) == 2 else None
 
 
 def split_clauses(text: str, min_chars: int = 24, first_max_words: int | None = None,
@@ -580,6 +697,11 @@ class KokoroTTS:
         """Cláusulas que se sintetizarán (determinista para un mismo texto y config)."""
         return split_clauses(text_en, first_max_words=self.first_chunk_max_words,
                              bind_conjunctions=self.bind_conjunctions)
+
+    def first_clause_final(self, prefix_en: str) -> str | None:
+        """Lo mismo que ``plan(texto)[0]`` si ``prefix_en`` ya lo fija (MT en streaming); si no, None."""
+        return first_clause_final(prefix_en, first_max_words=self.first_chunk_max_words,
+                                  bind_conjunctions=self.bind_conjunctions)
 
     def synth(self, text_en: str):
         """Genera TTSChunk por cláusula (generador: el primer chunk sale en

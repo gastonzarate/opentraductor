@@ -84,6 +84,8 @@ class BaselineAdapter(Adapter):
                                kv_used=dict(getattr(self.engine.mt, "kv_stats", {}) or {})) if self.engine else {},
             "asr_spec_finish": dict(self.engine.asr_spec_stats, enabled=self.engine._asr_spec_enabled)
             if self.engine else {},
+            "mt_stream": dict(self.engine.mt_stream_stats, enabled=self.engine._mt_stream_enabled)
+            if self.engine else {},
         }
 
     @staticmethod

@@ -207,6 +207,9 @@ class PipelineConfig:
     # MT p50 +20 ms máx.): prompt de traducción por sentido y N frases previas ES->EN de la sesión como contexto.
     mt_sense_prompt: bool = False
     mt_context_turns: int = 0
+    # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de
+    # sus tokens nuevos. Con mt_context_turns > 0 la historia se recorta en bloque (n -> n/2) para no romper el prefijo.
+    mt_session_kv: bool = False
     # T-51: traductor. "marian" (CTranslate2, CPU) = camino de hoy | "qwen" (Qwen3 4bit MLX, en el hilo GPU con Kokoro).
     mt_engine: str = "marian"
     # Carpeta del Qwen MLX (config.json + model.safetensors + tokenizer). None = $OPENTRADUCTOR_QWEN_DIR.
@@ -228,6 +231,10 @@ class PipelineConfig:
     # final; si vuelve la voz, se reabre el stream y se le re-pasa el audio del segmento. Sonda 7b1b37b (Moonshine,
     # tiempo real): hit 9/9, finish 153-201 ms desde la pausa. $OPENTRADUCTOR_ASR_SPEC_FINISH=1/0 lo fuerza.
     asr_spec_finish_on_pause: bool = False
+    # T-58: MT en streaming hacia Kokoro (solo Qwen). El 1.er fragmento se sintetiza entre pasos del decode apenas el
+    # prefijo lo fija (components.first_clause_final) y sale antes del mt_final. Mismos cortes y texto que el camino
+    # normal. Apagado hasta el A/B de @bench. $OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK=1/0 lo fuerza.
+    mt_stream_first_chunk: bool = False
     asr_spec_finish_silence_ms: float = 80.0
     spec_silence_ms: float = 64.0  # silencio VAD mínimo para especular (< endpoint_silence_ms)
     spec_max_entries: int = 4  # entradas en caché simultáneas (acotado)
