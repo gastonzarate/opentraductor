@@ -96,7 +96,8 @@ def test_glossary_on_goes_after_text_only_with_term():
     assert q.prompt("Ni Mariana ni Gonzalo") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nNi Mariana ni Gonzalo"
     p = q.prompt("Dale, no hay plata")
     assert p.startswith(f"system:{K.QWEN_SYSTEM}|user:Spanish:\nDale, no hay plata\n\nMeaning of the Argentine slang in it: ")
-    assert "plata = money" in p and "dale = OK, sure" in p and p.endswith(K.QWEN_GUARD)
+    assert "plata = money" in p and "dale" not in p.split("slang in it: ")[1] and p.endswith(K.QWEN_GUARD)
+    assert K.qwen_glossary("Che, dale, lo miro") == []
     # historia con el mismo formato: el prompt de la frase anterior es prefijo de la siguiente (caché de sesión)
     prev = q.prompt("Dale, no hay plata")
     nxt = q.prompt("Seguimos", (("Dale, no hay plata", "OK, there's no money"),))

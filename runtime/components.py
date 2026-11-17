@@ -309,8 +309,7 @@ QWEN_GLOSSARY = (
     (r"\bsal(e|en|ió|dría|ía)\b", "'sale' with a price = it costs; '¿sale?' about a plan = is it on?"),
     (r"\bre\b", "re + adjective = really"),
     (r"\bbárbaro\b", "bárbaro = great"),
-    (r"\bdale\b", "dale = OK, sure"),
-    (r"\bche\b", "che = hey"),
+    # dale y che fuera: Qwen ya los traduce bien y la glosa cambiaba el registro (gate 6f57a1a: -1,4 BLEU solo por dev-03/dev-13)
     (r"\bboludo\b", "boludo = dude"),
     (r"\bquilombo\b", "quilombo = mess"),
     (r"\bbanc(ar|ame|ate|ás|amos|ó|an|aste)\b", "bancar = to handle, withstand; bancame = hold on"),
