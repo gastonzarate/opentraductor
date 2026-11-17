@@ -87,7 +87,7 @@ uv sync --extra runtime --extra moonshine
 Arranque del perfil:
 
 ```bash
-.venv/bin/python -m runtime run --port 8877 --asr-backend moonshine-tiny --endpoint-ms 160 --tts-trim-lead-ms 30 --skip-silent-tail --tts-first-chunk-max-words 8 --tts-bind-conjunctions
+.venv/bin/python -m runtime run --port 8877 --asr-backend moonshine-tiny --endpoint-ms 160 --tts-trim-lead-ms 30 --skip-silent-tail --tts-first-chunk-max-words 8 --tts-bind-conjunctions --tts-trim-tail off
 ```
 
 Con uv, equivalente: `uv run --extra runtime --extra moonshine python -m runtime run ...` (mismos flags).
@@ -102,6 +102,7 @@ Luego abrí http://127.0.0.1:8877/ en el navegador.
 | `--asr-backend` | `parakeet` | `moonshine-tiny` |
 | `--endpoint-ms` | sin flag: rige el valor guardado en la base, o 250 | 160 (prevalece sobre el guardado) |
 | `--tts-trim-lead-ms` | sin recorte | 30 |
+| `--tts-trim-tail` | on desde T-47 (recorta el silencio final de la frase, deja 80 ms) | off (camino anterior; también `OPENTRADUCTOR_TTS_TRIM_TAIL=0`) |
 | `--skip-silent-tail` | apagado | encendido |
 | `--tts-first-chunk-max-words` | sin límite | 8 (objetivo heurístico, no límite duro) |
 | `--tts-bind-conjunctions` | apagado | encendido |

@@ -57,15 +57,16 @@ def _inc_options(a):
 
 
 def _tts_trim_tail(a) -> bool:
-    """T-47: el flag explícito manda; sin flag, OPENTRADUCTOR_TTS_TRIM_TAIL (1/0) manda; sin env, on solo en la
-    edición tienda (OPENTRADUCTOR_EDITION=store, bench artifacts/t47-tail-3 aprobado) y off en la app diaria."""
+    """T-47: el flag explícito manda; sin flag, OPENTRADUCTOR_TTS_TRIM_TAIL (1/0) manda; sin env, on en las dos .app
+    (Developer ID y tienda; bench artifacts/t47-tail-3 aprobado). El modo dev (python -m runtime run) que quiera el
+    camino anterior pasa --tts-trim-tail off u OPENTRADUCTOR_TTS_TRIM_TAIL=0."""
     v = getattr(a, "tts_trim_tail", None)
     if v is not None:
         return v == "on"
     env = os.environ.get("OPENTRADUCTOR_TTS_TRIM_TAIL", "").strip().lower()
     if env:
         return env in ("1", "on", "true")
-    return os.environ.get("OPENTRADUCTOR_EDITION") == "store"
+    return True
 
 
 def _mt_normalize(a) -> bool:
@@ -261,7 +262,7 @@ def build_parser():
                         "Sin el flag: default de PipelineConfig (30)")
     r.add_argument("--tts-trim-tail", choices=("on", "off"), default=None,
                    help="recorta el silencio final de cada fragmento TTS (-60 dBFS, conserva 80 ms). "
-                        "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1/0; sin env, on en la edición tienda y off en la diaria")
+                        "Sin el flag: OPENTRADUCTOR_TTS_TRIM_TAIL=1/0; sin env, on (modo dev: --tts-trim-tail off)")
     _add_mt_args(r)
     r.add_argument("--mt-normalize", choices=("on", "off"), default=None,
                    help="antes de Marian: '120 mil' -> '120.000' y traduce oración por oración. "
