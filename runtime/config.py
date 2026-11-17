@@ -50,7 +50,9 @@ QWEN_MODELS = {
     "1.7b": ("mlx-community/Qwen3-1.7B-4bit", "qwen3-1.7b-4bit"),
 }
 QWEN_4B_MIN_RAM = 16 * 1024**3
-# Tope de la caché de buffers libres de MLX: sin tope crecía ~4 GB en 10 min (T-50). 256 MB no cambia la latencia.
+# Tope de la caché de buffers libres de MLX: sin tope crecía ~4 GB en 10 min (T-50). Ojo: el tope SÍ cuesta
+# latencia de TTS (Kokoro MLX vuelve a reservar buffers): 1er audio p50 +27..+69 ms en 4B/1.7B (soak 17/11,
+# memory dato/t51-mlx-cache-limit-soak.md). 768/1536 MB no lo arreglan y pasan los 3,5 GB del 1.7B.
 MLX_CACHE_LIMIT_MB_DEFAULT = 256
 
 
