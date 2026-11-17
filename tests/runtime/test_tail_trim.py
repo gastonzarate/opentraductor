@@ -83,18 +83,80 @@ def test_matches_reference_rule_on_random_chunks():
         assert K.tail_keep_samples(x, SR) == expected
 
 
-def test_kokoro_chunk_applies_flag_only_when_on():
+def test_kokoro_chunk_never_trims():
+    """El recorte ya no va por chunk (cada chunk es una cláusula): _chunk devuelve el PCM tal cual."""
     tts = object.__new__(K.KokoroTTS)
-    tts.tail_trimmed_ms_total = 0.0
     pcm = _pcm(np.concatenate([_tone(200), _silence(500)]))
-    tts.trim_tail = False
-    assert tts._chunk(pcm, "hi").pcm is pcm
-    assert tts.tail_trimmed_ms_total == 0.0
-    tts.trim_tail = True
-    ch = tts._chunk(pcm, "hi")
-    assert pcm.startswith(ch.pcm) and len(ch.pcm) < len(pcm)
-    assert ch.sample_rate == SR and ch.text == "hi"
-    assert tts.tail_trimmed_ms_total == pytest.approx((len(pcm) - len(ch.pcm)) / 2 / SR * 1000)
+    for flag in (False, True):
+        tts.trim_tail = flag
+        assert tts._chunk(pcm, "hi").pcm is pcm
+
+
+class _Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def test_tailhold_keeps_internal_pauses_and_trims_only_phrase_tail():
+    c1 = _pcm(np.concatenate([_tone(300), _silence(600)]))
+    c2 = _pcm(np.concatenate([_tone(300), _silence(600)]))
+    clk = _Clock()
+    h = K.TailHold(SR, clock=clk)
+    o1 = h.feed(c1)
+    assert c1.startswith(o1) and len(o1) == 2 * int(SR * 0.380)  # sale ya, sin la cola
+    clk.t = 0.1  # el 2.º chunk llega mientras suena el 1.º: la pausa interna queda entera
+    o2 = h.feed(c2)
+    assert len(o1) + len(o2) == len(c1) + 2 * int(SR * 0.380)
+    assert (o1 + o2).startswith(c1)  # pausa interna de 600 ms intacta, PCM exacto
+    assert h.finish() == pytest.approx(520.0)
+
+
+def test_tailhold_late_chunk_does_not_lengthen_pause():
+    c1 = _pcm(np.concatenate([_tone(300), _silence(600)]))
+    c2 = _pcm(_tone(300))
+    clk = _Clock()
+    h = K.TailHold(SR, clock=clk)
+    o1 = h.feed(c1)  # suena hasta 0.38 s
+    clk.t = 0.58  # 200 ms de player sin audio: la pausa guardada (520 ms) se descuenta en 200
+    o2 = h.feed(c2)
+    assert len(o2) == len(c2) + 2 * int(SR * 0.320)
+    assert o2.endswith(c2)
+    assert h.finish() == 0.0
+    assert len(o1) == 2 * int(SR * 0.380)
+
+
+def test_pipeline_drain_trims_only_last_chunk():
+    import asyncio
+    from types import SimpleNamespace
+
+    from runtime import pipeline as P
+
+    out = []
+    pipe = object.__new__(P.Engine)
+    pipe.tts = SimpleNamespace(trim_tail=True, tail_trimmed_ms_total=0.0)
+    pipe._is_live = lambda sid, gen: True
+
+    async def emit(kind, ev):
+        out.append(ev["pcm"])
+
+    pipe.emit = emit
+    c = _pcm(np.concatenate([_tone(300), _silence(600)]))
+
+    async def run():
+        q = asyncio.Queue()
+        for _ in range(3):
+            q.put_nowait(("chunk", K.TTSChunk(c, SR, "x")))
+        q.put_nowait(("done", None))
+        await pipe._drain_tts(q, 1, SimpleNamespace(gen=0, seg_id=0), "x", (0, 0))
+
+    asyncio.run(run())
+    total = b"".join(out)
+    assert total.startswith(c + c)  # las dos pausas internas enteras
+    assert len(total) == 3 * len(c) - 2 * int(SR * 0.520)
+    assert pipe.tts.tail_trimmed_ms_total == pytest.approx(520.0)
 
 
 def test_config_default_off_and_from_dict():

@@ -931,10 +931,12 @@ class Engine:
 
         fut = asyncio.ensure_future(self.gpu.run(produce))
         span = (seg.start_s, seg.end_s if seg.end_s is not None else seg.start_s)
+        hold = self._tail_hold()
         try:
             while True:
                 kind, v, extra = await q.get()
                 if kind == "done":
+                    self._tail_done(hold)
                     break
                 if not self._is_live(stream_id, seg.gen):
                     self.stale_dropped += 1
@@ -950,7 +952,7 @@ class Engine:
                 else:
                     await self.emit(
                         "tts_chunk",
-                        {"stream_id": stream_id, "pcm": v.pcm, "sample_rate": v.sample_rate,
+                        {"stream_id": stream_id, "pcm": hold.feed(v.pcm) if hold else v.pcm, "sample_rate": v.sample_rate,
                          "planned_text_en": extra, "source_span_s": span, "seg_id": seg.seg_id},
                     )
             await fut
@@ -989,10 +991,20 @@ class Engine:
             if not fut.done():
                 fut.cancel()
 
+    def _tail_hold(self):
+        """T-47: TailHold por frase si el tail trim está activo (solo la cola de la frase; ver K.TailHold)."""
+        return K.TailHold(K.KokoroTTS.SAMPLE_RATE) if getattr(self.tts, "trim_tail", False) else None
+
+    def _tail_done(self, hold) -> None:
+        if hold is not None:
+            self.tts.tail_trimmed_ms_total = getattr(self.tts, "tail_trimmed_ms_total", 0.0) + hold.finish()
+
     async def _drain_tts(self, q, stream_id, seg, text_en, span) -> None:
+        hold = self._tail_hold()
         while True:
             kind, v = await q.get()
             if kind == "done":
+                self._tail_done(hold)
                 break
             if not self._is_live(stream_id, seg.gen):  # sesión cerrada: se descarta lo que llegue
                 self.stale_dropped += 1
@@ -1005,6 +1017,6 @@ class Engine:
                 continue
             await self.emit(
                 "tts_chunk",
-                {"stream_id": stream_id, "pcm": v.pcm, "sample_rate": v.sample_rate,
+                {"stream_id": stream_id, "pcm": hold.feed(v.pcm) if hold else v.pcm, "sample_rate": v.sample_rate,
                  "planned_text_en": text_en, "source_span_s": span, "seg_id": seg.seg_id},
             )

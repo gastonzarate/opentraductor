@@ -791,8 +791,43 @@ class KokoroTTS:
                     yield self._chunk(float_to_pcm(x), clause)
 
     def _chunk(self, pcm: bytes, clause: str) -> "TTSChunk":
-        if self.trim_tail:
-            out = trim_tail_pcm(pcm, self.SAMPLE_RATE)
-            self.tail_trimmed_ms_total += (len(pcm) - len(out)) / 2 / self.SAMPLE_RATE * 1000
-            pcm = out
+        # T-47: el tail trim NO va acá (cada chunk es una cláusula: recortarlo acortaba las pausas entre frases).
+        # Se aplica al final de la frase con TailHold, en el pipeline.
         return TTSChunk(pcm, self.SAMPLE_RATE, clause)
+
+
+class TailHold:
+    """T-47: recorte del silencio final de la FRASE, sin tocar las pausas entre cláusulas ni atrasar el audio.
+
+    ``feed(pcm)`` devuelve el chunk sin su silencio final (sale ya) y guarda ese silencio. Si llega otro chunk de la
+    misma frase, el silencio guardado va delante de él: la pausa interna queda igual, menos el tiempo que el player
+    ya estuvo sin audio esperando a la síntesis (así no se suma a la pausa de hoy). ``finish()`` descarta el
+    silencio pendiente (la cola de la frase) y devuelve cuántos ms recortó."""
+
+    def __init__(self, sr: int, clock=None) -> None:
+        import time
+
+        self.sr = sr
+        self.clock = clock or time.perf_counter
+        self.pending = b""
+        self.play_end: float | None = None  # estimación de cuándo termina de sonar lo ya emitido
+
+    def feed(self, pcm: bytes) -> bytes:
+        now = self.clock()
+        if self.pending:
+            rest = self.pending
+            idle = now - self.play_end if self.play_end is not None else 0.0
+            if idle > 0:
+                rest = rest[min(len(rest) // 2, round(idle * self.sr)) * 2:]
+            pcm = rest + pcm
+            self.pending = b""
+        keep = trim_tail_pcm(pcm, self.sr)
+        self.pending = pcm[len(keep):]
+        start = now if self.play_end is None else max(now, self.play_end)
+        self.play_end = start + len(keep) / 2 / self.sr
+        return keep
+
+    def finish(self) -> float:
+        ms = len(self.pending) / 2 / self.sr * 1000
+        self.pending = b""
+        return ms
