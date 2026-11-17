@@ -1,0 +1,130 @@
+"""T-67 fin de frase adaptativo: espera corta si el parcial cierra frase, larga si termina en conector."""
+import asyncio
+
+import pytest
+
+from runtime import components as K
+from runtime.config import PipelineConfig
+from runtime.pipeline import Engine
+
+from test_asr_spec_finish import PatternVAD
+from test_speculative import WIN, FakeMT, FakeTTS
+
+
+@pytest.mark.parametrize("text,kind", [
+    ("", "unknown"),
+    ("   ", "unknown"),
+    ("el granizo destruyó toda la plantación", "complete"),
+    ("el granizo destruyó toda la", "continue"),
+    ("fuimos al centro y", "continue"),
+    ("me dijo que", "continue"),
+    ("está bien pero", "continue"),
+    ("no sé o sea", "continue"),
+    ("es lo que hay, es decir", "continue"),
+    ("bueno este", "continue"),
+    ("lo hacemos mañana,", "continue"),
+    ("¿vamos o no?", "complete"),
+    ("creo que si", "complete"),  # "si"/"sí" sin tilde: puede cerrar
+    ("ya está.", "complete"),
+    ("terminamos y.", "complete"),  # la puntuación final manda
+    ("Pero", "continue"),
+])
+def test_phrase_endpoint_kind(text, kind):
+    assert K.phrase_endpoint_kind(text) == kind
+
+
+class TextASR:
+    """Parcial fijo; el final agrega cuántos bytes de voz recibió (para contar segmentos y voz)."""
+
+    def __init__(self, partial):
+        self.partial, self.n, self.finishes = partial, 0, []
+
+    def start(self):
+        self.n = 0
+
+    def add(self, pcm):
+        self.n += len(pcm) - pcm.count(0)
+        return self.partial
+
+    def finish(self):
+        self.finishes.append(self.n)
+        return f"{self.partial} b{self.n}"
+
+
+async def _run(pattern, partial, **cfg_kw):
+    events = []
+
+    async def emit(kind, f):
+        events.append((kind, f))
+
+    cfg = PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=False, endpoint_silence_ms=160,
+                         asr_chunk_ms=160, min_speech_ms=0, mt_kv_prefill_on_pause=False, **cfg_kw)
+    e = Engine(cfg, emit)
+    e.asr, e.mt, e.tts = TextASR(partial), FakeMT(), FakeTTS()
+    e.vad_proto = PatternVAD(pattern)
+    e._out_q = asyncio.Queue(maxsize=8)
+    e._out_task = asyncio.ensure_future(e._speaker_loop())
+    await e.start_stream("s")
+    for i in range(len(pattern) + 20):
+        voice = i < len(pattern) and pattern[i]
+        await e.push("s", (b"\x01" if voice else b"\x00") * (2 * WIN), 0.0)
+        await asyncio.sleep(0.02)
+    await e.end_stream("s")
+    await e.close()
+    return e, events
+
+
+def _go(pattern, partial, **kw):
+    return asyncio.run(_run(pattern, partial, **kw))
+
+
+def _endpoints(ev):
+    return [f for k, f in ev if k == "endpoint"]
+
+
+# voz, pausa de 6 ventanas (192 ms: > corta 96, > base 160, < larga 480), voz otra vez
+PAUSE = [1] * 10 + [0] * 6 + [1] * 6
+
+
+@pytest.fixture(autouse=True)
+def _no_env(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_ASR_SPEC_FINISH", raising=False)
+
+
+def test_off_by_default_is_fixed():
+    e, ev = _go(PAUSE, "fuimos al centro y")
+    eps = _endpoints(ev)
+    assert len(eps) == 2 and all(f["wait_reason"] == "fixed" and f["wait_ms"] == 160 for f in eps)
+
+
+def test_continue_waits_long_and_keeps_one_segment():
+    e, ev = _go(PAUSE, "fuimos al centro y", endpoint_adaptive=True)
+    eps = _endpoints(ev)
+    assert len(eps) == 1 and eps[0]["wait_reason"] == "continue" and eps[0]["wait_ms"] == 480
+    assert e.asr.finishes == [16 * 2 * WIN]  # toda la voz en un solo segmento
+
+
+def test_complete_closes_short():
+    e, ev = _go([1] * 10, "el granizo destruyó la plantación", endpoint_adaptive=True)
+    eps = _endpoints(ev)
+    assert len(eps) == 1 and eps[0]["wait_reason"] == "complete" and eps[0]["wait_ms"] == 96
+    assert e.asr.finishes == [10 * 2 * WIN]  # no se pierde voz al cerrar antes
+    # cierra 3 ventanas de silencio (96 ms) después de la voz, no 5 (160 ms)
+    assert eps[0]["audio_pos_s"] == pytest.approx(13 * WIN / 16000)
+
+
+def test_short_never_above_base_nor_long_below():
+    e, ev = _go([1] * 10, "la plantación", endpoint_adaptive=True, endpoint_short_ms=320)
+    assert _endpoints(ev)[0]["wait_ms"] == 160
+    e, ev = _go(PAUSE, "fuimos al centro y", endpoint_adaptive=True, endpoint_long_ms=64)
+    assert {f["wait_ms"] for f in _endpoints(ev)} == {160}
+
+
+def test_env_forces_on_and_off(monkeypatch):
+    monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", "1")
+    _, ev = _go(PAUSE, "fuimos al centro y")
+    assert len(_endpoints(ev)) == 1
+    monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", "0")
+    _, ev = _go(PAUSE, "fuimos al centro y", endpoint_adaptive=True)
+    assert len(_endpoints(ev)) == 2

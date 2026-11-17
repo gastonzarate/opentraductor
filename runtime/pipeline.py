@@ -144,6 +144,8 @@ class StreamState:
     kv_stable: tuple | None = None  # (seg_id, prefijo estable) ya cargado en la caché KV
     asr_spec_pause: tuple | None = None  # (seg_id, last_speech_end_s) de la pausa con finish especulativo encolado
     asr_spec_open: bool = False  # hay un finish especulativo vigente (stream del ASR cerrado) en el segmento actual
+    ep_flush_pause: tuple | None = None  # T-67: (seg_id, last_speech_end_s) de la pausa ya mandada entera al ASR
+    ep_wait: tuple = (0.0, "")  # T-67: (espera ms, motivo) elegida en la última ventana de silencio
     gen: int = 0  # generación (cada start_stream incrementa; separa sesiones con el mismo id)
 
 
@@ -394,7 +396,7 @@ class Engine:
                         appended = True
             elif st.in_speech:
                 st.silence_ms += win_s * 1000
-                if st.silence_ms >= c.endpoint_silence_ms:
+                if st.silence_ms >= self._endpoint_wait_ms(st):
                     await self._endpoint(st, end_s, forced=False)
                     appended = False
             if (
@@ -405,6 +407,7 @@ class Engine:
                 await self._endpoint(st, end_s, forced=True)
                 appended = False
         st.pos_samples += len(pcm) // 2
+        await self._maybe_ep_flush(st)
         await self._maybe_spec_finish(st)
         self._maybe_speculate(st)
         self._maybe_prewarm(st)
@@ -433,6 +436,42 @@ class Engine:
         st.asr_pending_s += dur
         await st.asr_q.put(("audio", (pcm, pos_s, dur)))
 
+    # ------------------------------------------------- T-67 fin de frase adaptativo
+    @property
+    def _endpoint_adaptive(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_ENDPOINT_ADAPTIVE")
+        return (v == "1") if v in ("0", "1") else self.cfg.endpoint_adaptive
+
+    def _endpoint_wait_ms(self, st: StreamState) -> float:
+        """Silencio VAD que cierra la frase. Sin el flag, endpoint_silence_ms fijo. Con el flag: larga si el
+        parcial termina en conector (aunque esté atrasado: solo cuesta espera), corta si el ASR ya procesó toda
+        la voz y el parcial puede cerrar frase, base en otro caso. Se reevalúa en cada ventana."""
+        c = self.cfg
+        if not self._endpoint_adaptive:
+            st.ep_wait = (c.endpoint_silence_ms, "fixed")
+            return c.endpoint_silence_ms
+        kind = K.phrase_endpoint_kind(st.last_partial)
+        caught_up = st.asr_pending_s <= 1e-9 and st.asr_done_pos_s >= st.last_speech_end_s
+        if kind == "continue":
+            st.ep_wait = (max(c.endpoint_long_ms, c.endpoint_silence_ms), "continue")
+        elif kind == "complete" and caught_up:
+            st.ep_wait = (min(c.endpoint_short_ms, c.endpoint_silence_ms), "complete")
+        else:
+            st.ep_wait = (c.endpoint_silence_ms, "base")
+        return st.ep_wait[0]
+
+    async def _maybe_ep_flush(self, st: StreamState) -> None:
+        """T-67: una vez por pausa (>= 1 ventana VAD de silencio) manda al ASR la voz que quedó en el buffer, para
+        que el parcial llegue al fin de habla y la espera corta pueda aplicarse."""
+        if not self._endpoint_adaptive or not st.in_speech or st.seg is None or st.silence_ms <= 0:
+            return
+        pause = (st.seg.seg_id, st.last_speech_end_s)
+        if pause == st.ep_flush_pause:
+            return
+        st.ep_flush_pause = pause
+        if st.asr_buf:
+            await self._queue_audio(st, st.buf_end_s)
+
     async def _endpoint(self, st: StreamState, pos_s: float, forced: bool) -> None:
         seg = st.seg
         if seg is None:
@@ -459,7 +498,7 @@ class Engine:
         await self.emit(
             "endpoint",
             {"stream_id": st.stream_id, "audio_pos_s": pos_s, "forced": forced,
-             "seg_id": seg.seg_id},
+             "seg_id": seg.seg_id, "wait_ms": st.ep_wait[0], "wait_reason": st.ep_wait[1]},
         )
         st.in_speech = False
         st.seg = None

@@ -180,6 +180,13 @@ class PipelineConfig:
     # Endpoint
     # T-58: 160 (antes 250). Brazo store-tuned del A/B T-58: p50 1063 vs 1234 ms, mismo WER 0,047.
     endpoint_silence_ms: float = 160.0
+    # T-67 fin de frase adaptativo (apagado hasta el A/B de @bench; env OPENTRADUCTOR_ENDPOINT_ADAPTIVE=1/0 lo fuerza).
+    # En cada ventana de silencio se elige la espera según el último parcial del ASR: endpoint_long_ms si termina en
+    # conector/preposición/artículo/muletilla/coma ("y", "que", "pero", "o sea", "de", "este"...);
+    # endpoint_short_ms si el ASR ya procesó toda la voz y el parcial puede cerrar frase; si no, endpoint_silence_ms.
+    endpoint_adaptive: bool = False
+    endpoint_short_ms: float = 96.0
+    endpoint_long_ms: float = 480.0
     vad_threshold: float = 0.5
     min_speech_ms: float = 120.0
     max_segment_s: float = 20.0  # corte forzado de seguridad

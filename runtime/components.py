@@ -580,6 +580,42 @@ def split_first_by_words(clause: str, max_words: int, bind_conjunctions: bool = 
     return [clause]
 
 
+# T-67 fin de frase adaptativo: palabras con las que una frase hablada en español casi nunca termina (conectores,
+# preposiciones, artículos, muletillas). Sin las ambiguas que el ASR escribe sin tilde y sí cierran ("si"/"sí",
+# "se"/"sé", "no", "más", "bueno", "tipo").
+ES_CONTINUE_WORDS = frozenset({
+    "y", "e", "o", "u", "ni", "que", "pero", "porque", "pues", "entonces", "sino", "aunque", "cuando", "donde",
+    "mientras", "como", "de", "del", "a", "al", "en", "con", "por", "para", "sin", "sobre", "entre", "hacia", "hasta",
+    "desde", "según", "segun", "el", "la", "los", "las", "un", "una", "unos", "unas", "lo", "mi", "mis", "tus", "su",
+    "sus", "nuestro", "nuestra", "nuestros", "nuestras", "este", "esta", "ese", "esa", "eh", "em", "mm", "ehh",
+    "osea", "digamos", "me", "te", "le", "les", "nos", "muy",
+})
+ES_CONTINUE_PAIRS = frozenset({("o", "sea"), ("es", "decir"), ("o", "bien")})
+_WORD_STRIP = ".,;:!?¿¡…\"'()«»-—"
+
+
+def phrase_endpoint_kind(partial: str) -> str:
+    """T-67: ``"complete"`` si el parcial del ASR puede cerrar una frase, ``"continue"`` si termina en conector,
+    preposición, artículo, muletilla o coma (el hablante sigue), ``"unknown"`` si está vacío.
+    Puntuación final ``. ? ! …`` = complete aunque la palabra sea de la lista."""
+    t = (partial or "").strip()
+    if not t:
+        return "unknown"
+    if t[-1] in ".!?…":
+        return "complete"
+    if t[-1] in ",;:":
+        return "continue"
+    words = [w.strip(_WORD_STRIP).lower() for w in t.split()]
+    words = [w for w in words if w]
+    if not words:
+        return "unknown"
+    if words[-1] in ES_CONTINUE_WORDS:
+        return "continue"
+    if len(words) >= 2 and (words[-2], words[-1]) in ES_CONTINUE_PAIRS:
+        return "continue"
+    return "complete"
+
+
 def normalize_asr_text(text: str) -> str:
     """Mayúscula inicial y punto final si faltan. No inventa comas ni toca el resto."""
     t = text.strip()
