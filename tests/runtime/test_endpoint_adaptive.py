@@ -146,3 +146,25 @@ def test_adapter_endpoint_lleva_wait_reason_en_unit_reason():
     ep, fin = asyncio.run(go())
     assert ep.unit_reason == "ep:complete:96"
     assert fin.unit_reason is None
+
+
+def test_adapter_no_rompe_con_eventos_fuera_del_contrato():
+    """spec_result (T-73), simul_clause/_mt (T-67 paso 2) y discarded no tienen EventKind: antes KeyError en _emit
+    (dentro del Engine). Ahora no se reenvían al arnés y quedan en describe()['engine_events']."""
+    import asyncio
+
+    from runtime.adapters.baseline import BaselineAdapter
+
+    a = BaselineAdapter()
+
+    async def go():
+        for k in ("spec_result", "simul_clause", "simul_clause_mt", "discarded"):
+            await a._emit(k, {"stream_id": "s", "seg_id": 1, "spec": True, "pcm": b"x"})
+        await a._emit("asr_final", {"stream_id": "s", "seg_id": 1, "text": "hola"})
+
+    asyncio.run(go())
+    assert a._q.qsize() == 1
+    kinds = [e["kind"] for e in a.engine_events]
+    assert kinds == ["spec_result", "simul_clause", "simul_clause_mt", "discarded"]
+    assert all("pcm" not in e for e in a.engine_events)
+    assert a.describe()["engine_events"][0]["spec"] is True

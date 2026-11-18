@@ -38,6 +38,9 @@ class BaselineAdapter(Adapter):
         self.asr_text_log: list[dict[str, Any]] = []
         # T-58: mt_ms (desde que el speaker loop toma el segmento) vs mt_compute_ms (dentro del hilo MT).
         self.mt_timing_log: list[dict[str, Any]] = []
+        # Eventos del Engine sin EventKind en el contrato (spec_result de T-73, simul_clause/_mt de T-67 paso 2,
+        # discarded): antes rompían _emit con KeyError dentro del Engine. Quedan en describe()['engine_events'].
+        self.engine_events: list[dict[str, Any]] = []
 
     async def _emit(self, kind: str, f: dict) -> None:
         if kind == "asr_final" and len(self.asr_text_log) < 5000:
@@ -52,6 +55,10 @@ class BaselineAdapter(Adapter):
                 "commit_id": f"{f['stream_id']}:{f['seg_id']}" if f.get("seg_id") is not None else None,
                 "mt_ms": f.get("mt_ms"), "mt_compute_ms": f.get("mt_compute_ms"), "spec": f.get("spec"),
             })
+        if kind not in _KIND:
+            if len(self.engine_events) < 5000:
+                self.engine_events.append({"kind": kind, **{k: v for k, v in f.items() if k != "pcm"}})
+            return
         ev = AdapterEvent(
             _KIND[kind],
             f["stream_id"],
@@ -82,6 +89,7 @@ class BaselineAdapter(Adapter):
             "load_ms": dict(self.engine.load_ms) if self.engine else {},
             "asr_text_log": list(self.asr_text_log),
             "mt_timing_log": list(self.mt_timing_log),
+            "engine_events": list(self.engine_events),
             "speculation": self.engine.spec_metrics() if self.engine else {},
             "mt_prewarm": dict(self.engine.prewarm_stats, enabled=self.engine._prewarm_enabled,
                                kv_enabled=self.engine._kv_prefill_enabled,
