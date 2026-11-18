@@ -371,7 +371,7 @@ QWEN_GLOSSARY = (
     # T-74 (18/11): léxico rioplatense general. Polisémicas acotadas al sentido lunfardo (al horno, la camiseta, con alambre,
     # chorro de...) y fuera careta y buena/mala onda (Qwen ya las traduce y careta = máscara mete ruido). Fuentes: Diccionario del habla de los argentinos (AAL) y Diccionario
     # lunfardo (Gobello) para garca, chorro, ahorcado, hacer precio, morfar, bondi, birra, cana, cheto, careta, mangos,
-    # al horno, cajonear, sarasa, ni ahí, de onda/buena onda, colgarse, hacerse el boludo, chupar un huevo, rescatarse;
+    # al horno, cajonear, sarasa, ni ahí, de onda/buena onda, hacerse el boludo, chupar un huevo, rescatarse;
     # uso común en reuniones de trabajo para bajar línea, ponerse la camiseta, atar con alambre, agarrar viaje, un cacho.
     # Ninguna sale de los fallos ni de las traducciones esperadas del set del 17/11.
     (r"\bgarc(a|as|ada|adas|ó|aron|ar|arte|arme)\b", "garca = crook, swindler; garcar = to screw someone over"),
@@ -389,8 +389,6 @@ QWEN_GLOSSARY = (
     (r"\bcajone(ar|aron|ó|amos|ado|ada)\b", "cajonear = to shelve, sit on something"),
     (r"\bsarasa\b", "sarasa = blah blah, empty talk"),
     (r"\bni ahí\b", "ni ahí = not at all, no way"),
-    (r"\b(me|te|se|nos) colg(u[ée]|ó|aste|amos|aron)\b|\bcolgad[oa]\b",
-     "colgarse = to space out, forget; colgado = distracted, spaced out (a computer or app that se colgó = hung, stuck)"),
     (r"\bhac(e|és|erse|iendo|ete)(se|te)? el (boludo|otario|sota|tonto)\b|\bse hizo el (boludo|otario|sota|tonto)\b",
      "hacerse el boludo = to play dumb"),
     (r"\bchupa un huevo\b|\bchupa tres pepinos\b", "me chupa un huevo = I couldn't care less"),
