@@ -312,10 +312,12 @@ QWEN_GLOSSARY = (
     # dale y che fuera: Qwen ya los traduce bien y la glosa cambiaba el registro (gate 6f57a1a: -1,4 BLEU solo por dev-03/dev-13)
     (r"\bboludo\b", "boludo = dude"),
     (r"\bquilombo\b", "quilombo = mess"),
-    (r"\bbanc(ar|ame|ate|ás|amos|ó|an|aste)\b", "bancar = to handle, withstand; bancame = hold on"),
+    (r"\bbanc(ar|ame|ate|ás|amos|ó|an|aste)\b|\b(te|lo|la|los|las|me|nos|les?) banco\b",
+     "bancar = to handle, put up with; to back or cover someone (te banco = I've got you / I'll cover you); "
+     "¿te bancás + verb? = are you up for; bancame = hold on"),
     (r"\bfiaca\b", "fiaca = laziness, not feeling like it"),
     (r"\bal pedo\b", "al pedo = for nothing, pointless"),
-    (r"\bzaf(ar|amos|ó|é|aste|aron)\b", "zafar = to get by, get away with it"),
+    (r"\bzaf(ar|amos|ó|é|aste|aron)\b", "zafar = to get by, scrape through, be OK; to get away with it"),
     (r"\bchamuyo\b", "chamuyo = smooth talk, BS"),
     (r"\bgarrón\b", "garrón = bummer"),
     (r"\bcopad[oa]s?\b", "copado = cool"),
@@ -328,10 +330,11 @@ QWEN_GLOSSARY = (
     # Patrones acotados para no disparar en frases comunes (ver test_glossary_general_no_false_positives).
     (r"\b(un|medio|dos|tres|cuatro|cinco|diez|\d+) palos?\b", "un palo = a million (pesos or dollars)"),
     (r"\b(\d+|cien|mil|quinientos|doscientos) verdes\b", "verdes = US dollars"),
-    (r"\bd[óo]lar blue\b|\bel blue\b", "dólar blue = the informal-market US dollar rate"),
+    (r"\bd[óo]lar blue\b|\b(el|al) blue\b", "dólar blue = the 'blue dollar', Argentina's informal-market dollar rate (say 'blue dollar')"),
     (r"\bgarp\w*", "garpar = to pay"),
     (r"\bmangue(ar|o|a|ás|ando|é|aste|amos)\b", "manguear = to bum, ask for money or favors"),
-    (r"\b(cobr|pag|trabaj|labur|contrat|ten)\w*( \w+)? en negro\b", "en negro = off the books, undeclared"),
+    (r"\b(cobr|pag|trabaj|labur|contrat|ten)\w*( \w+)? en negro\b|\best[áa]n? en negro\b",
+     "en negro (pay, jobs, contracts, rent) = off the books, undeclared"),
     (r"\bchang(a|as|uita)\b", "changa = odd job, side gig"),
     (r"\bcurr(o|os|ar|ando)\b", "curro = racket, easy money scheme"),
     (r"\bñoquis?\b", "ñoqui = no-show employee who still gets paid"),
@@ -365,6 +368,39 @@ QWEN_GLOSSARY = (
     (r"\bpib[ea]s?\b", "pibe/piba = kid, young guy/girl"),
     (r"\btranqui\b", "tranqui = relax, no worries"),
     (r"\bla gamba\b", "hacer la gamba = to back someone up"),
+    # T-74 (18/11): léxico rioplatense general. Fuentes: Diccionario del habla de los argentinos (AAL) y Diccionario
+    # lunfardo (Gobello) para garca, chorro, ahorcado, hacer precio, morfar, bondi, birra, cana, cheto, careta, mangos,
+    # al horno, cajonear, sarasa, ni ahí, de onda/buena onda, colgarse, hacerse el boludo, chupar un huevo, rescatarse;
+    # uso común en reuniones de trabajo para bajar línea, ponerse la camiseta, atar con alambre, agarrar viaje, un cacho.
+    # Ninguna sale de los fallos ni de las traducciones esperadas del set del 17/11.
+    (r"\bgarc(a|as|ada|adas|ó|aron|ar|arte|arme)\b", "garca = crook, swindler; garcar = to screw someone over"),
+    (r"\bchorr(o|os|a|as)\b", "chorro = thief (un chorro de agua = a jet of water)"),
+    (r"\b(me|te|nos|se) ahorc(o|a|ás|amos|an)\b|\bahorcad[oa]s?\b",
+     "ahorcarse / andar ahorcado (with money) = to be strapped for cash, stretched thin"),
+    (r"\b(hizo|hice|hacés|hace|hacen|hicieron|haceme|hacer|hago) (un )?precio\b", "hacer precio = to give a discount"),
+    (r"\bmorf(ar|amos|ás|é|ó|aron|o)\b", "morfar = to eat"),
+    (r"\bbondis?\b", "bondi = bus"),
+    (r"\bbirras?\b", "birra = beer"),
+    (r"\bla cana\b|\ben cana\b", "la cana = the cops; en cana = in jail"),
+    (r"\bchet(o|a|os|as)\b", "cheto = posh, snobby"),
+    (r"\bcaretas?\b", "careta = fake, phony; square (not into partying)"),
+    (r"\b(\d+|diez|veinte|cien|mil|dos|tres|cinco) mangos\b", "mangos = pesos, bucks"),
+    (r"\bal horno\b", "estar al horno = to be in deep trouble"),
+    (r"\bcajone(ar|aron|ó|amos|ado|ada)\b", "cajonear = to shelve, sit on something"),
+    (r"\bsarasa\b", "sarasa = blah blah, empty talk"),
+    (r"\bni ahí\b", "ni ahí = not at all, no way"),
+    (r"\b(buena|mala) onda\b", "buena onda = nice, friendly vibe; mala onda = unfriendly, bad vibe"),
+    (r"\b(me|te|se|nos) colg(u[ée]|ó|aste|amos|aron)\b|\bcolgad[oa]\b",
+     "colgarse = to space out, forget (a computer or app: to hang, freeze); colgado = distracted, or frozen"),
+    (r"\bhac(e|és|erse|iendo|ete)(se|te)? el (boludo|otario|sota|tonto)\b|\bse hizo el (boludo|otario|sota|tonto)\b",
+     "hacerse el boludo = to play dumb"),
+    (r"\bchupa un huevo\b|\bchupa tres pepinos\b", "me chupa un huevo = I couldn't care less"),
+    (r"\brescat(ate|ese|arse|ó)\b", "rescatate = get it together, wise up"),
+    (r"\bbaj(ar|ó|aron|a|ando) (la )?l[íi]nea\b", "bajar línea = to lecture, tell people what to think"),
+    (r"\bla camiseta\b", "ponerse la camiseta = to commit fully to the team"),
+    (r"\bcon alambre\b", "atado con alambre = held together with duct tape, jury-rigged"),
+    (r"\bagarr(ó|aron|ar|a|ás|amos) viaje\b", "agarrar viaje = to go along with it, take up an offer"),
+    (r"\bun cacho\b", "un cacho = a bit, a while"),
 )
 # 1.ª versión («Keep ... exactly as in the Spanish») hacía copiar el modismo (put more guita, ten lucas): 21/30.
 QWEN_GUARD = ("Do not copy those Argentine words into the English: write their meaning instead. "

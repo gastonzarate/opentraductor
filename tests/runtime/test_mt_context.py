@@ -152,7 +152,7 @@ def test_glossary_general_rioplatense_terms():
     assert K.qwen_glossary("Eso sale dos palos") == [
         "'sale' with a price = it costs; '¿sale?' about a plan = is it on?", "un palo = a million (pesos or dollars)"]
     assert K.qwen_glossary("Lo cobra en negro, posta") == [
-        "en negro = off the books, undeclared", "posta = for real, the truth"]
+        "en negro (pay, jobs, contracts, rent) = off the books, undeclared", "posta = for real, the truth"]
     assert K.qwen_glossary("Lo miro al toque") == ["al toque = right away"]
     assert K.qwen_glossary("¿Lo hacemos? De una.") == ["de una = sure, right away"]
 
@@ -160,5 +160,16 @@ def test_glossary_general_rioplatense_terms():
 def test_glossary_general_no_false_positives():
     # palabras comunes en charlas de software que no deben disparar el glosario
     for t in ("Los tests están verdes", "El texto en negro sobre fondo blanco", "Cambiamos la manguera",
-              "Hagámoslo de una vez", "De una manera u otra", "El palo de golf", "Pon las pruebas en verde"):
+              "Hagámoslo de una vez", "De una manera u otra", "El palo de golf", "Pon las pruebas en verde",
+              "Hay un banco en la esquina", "El banco me cobra comisión", "Precio final con IVA", "La línea de base"):
         assert K.qwen_glossary(t) == [], t
+
+
+def test_glossary_t74_terms():
+    # T-74: léxico general (AAL / Gobello), no sale del set del 17/11
+    assert K.qwen_glossary("Los cambio al blue")[0].startswith("dólar blue = the 'blue dollar'")
+    assert K.qwen_glossary("así no me ahorco a fin de mes")[0].startswith("ahorcarse")
+    assert K.qwen_glossary("me hizo precio") == ["hacer precio = to give a discount"]
+    assert K.qwen_glossary("Tranqui, te banco")[0].startswith("bancar =")
+    assert K.qwen_glossary("no está en negro")[0].startswith("en negro")
+    assert K.qwen_glossary("es medio garca")[0].startswith("garca")
