@@ -70,6 +70,16 @@ def endpoint_short_ms(cfg: PipelineConfig) -> float:
     return cfg.endpoint_short_ms
 
 
+def asr_spec_finish_ms(cfg: PipelineConfig) -> float:
+    """T-67 silencio VAD para el finish especulativo del ASR (T-58). $OPENTRADUCTOR_ASR_SPEC_FINISH_MS=N lo fuerza
+    (entero > 0): con el fin de frase adaptativo la espera corta (96) cae en la misma ventana que el de 80, y el
+    finish adelantado no gana nada; con 32 el decode final corre durante la espera. Sin env = cfg."""
+    v = os.environ.get("OPENTRADUCTOR_ASR_SPEC_FINISH_MS", "").strip()
+    if v.isdigit() and int(v) > 0:
+        return float(v)
+    return cfg.asr_spec_finish_silence_ms
+
+
 def _timed_call(fn, *a):
     """Ejecuta ``fn`` y devuelve (resultado, ms medidos dentro del hilo del executor)."""
     t = time.perf_counter()
@@ -604,8 +614,10 @@ class Engine:
         seg = st.seg
         if seg is None or not st.in_speech or st.asr_spec_open or not self._asr_spec_enabled:
             return
-        if st.silence_ms < c.asr_spec_finish_silence_ms or st.silence_ms >= c.endpoint_silence_ms:
+        if st.silence_ms < asr_spec_finish_ms(c) or st.silence_ms >= c.endpoint_silence_ms:
             return
+        if self._endpoint_adaptive and K.phrase_endpoint_kind(st.last_partial) == "continue":
+            return  # T-67: el hablante sigue (espera larga); cerrar el stream solo costaría re-pasar el audio
         pause = (seg.seg_id, st.last_speech_end_s)
         if pause == st.asr_spec_pause or not st.last_partial.strip():
             return

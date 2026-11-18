@@ -132,3 +132,70 @@ def test_two_segments_independent(monkeypatch):
     on, ev_on = _go(SIMPLE + [0] * 10 + SIMPLE, asr_spec_finish_on_pause=True)
     assert on.asr_spec_stats["hit"] == 2 and on.asr_spec_stats["discard_voice"] == 0
     assert len(_finals(ev_on)) == len(_finals(ev_off)) == 2
+
+
+# T-67: pausa de 1 ventana (32 ms) dentro de la frase
+SHORT_PAUSE = [1] * 10 + [0] * 1 + [1] * 6
+
+
+def test_env_ms_moves_the_threshold(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_ASR_SPEC_FINISH", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_ASR_SPEC_FINISH_MS", raising=False)
+    base, ev_base = _go(SHORT_PAUSE, asr_spec_finish_on_pause=True)
+    assert base.asr_spec_stats["started"] == 1  # la pausa de 32 ms no llega a 80
+    monkeypatch.setenv("OPENTRADUCTOR_ASR_SPEC_FINISH_MS", "32")
+    on, ev_on = _go(SHORT_PAUSE, asr_spec_finish_on_pause=True)
+    s = on.asr_spec_stats
+    assert s["started"] == 2 and s["discard_voice"] == 1 and s["hit"] == 1
+    assert on.asr.finishes[-1] == base.asr.finishes[-1] == 16 * 2 * WIN  # misma voz
+    assert _finals(ev_on) == _finals(ev_base)
+
+
+def test_env_ms_invalid_is_ignored(monkeypatch):
+    monkeypatch.setenv("OPENTRADUCTOR_ASR_SPEC_FINISH_MS", "x")
+    e, _ = _go(SHORT_PAUSE, asr_spec_finish_on_pause=True)
+    assert e.asr_spec_stats["started"] == 1
+
+
+class ContinueASR(RecASR):
+    def add(self, pcm):
+        super().add(pcm)
+        return "vamos y"
+
+    def finish(self):
+        super().finish()
+        return "vamos y"
+
+
+def test_adaptive_skips_early_finish_on_continue(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_ASR_SPEC_FINISH", raising=False)
+    monkeypatch.setenv("OPENTRADUCTOR_ASR_SPEC_FINISH_MS", "32")
+    monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", "1")
+
+    async def run():
+        events = []
+
+        async def emit(kind, f):
+            events.append((kind, f))
+
+        cfg = PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=False, endpoint_silence_ms=160,
+                             asr_chunk_ms=160, min_speech_ms=0, mt_kv_prefill_on_pause=False,
+                             asr_spec_finish_on_pause=True)
+        e = Engine(cfg, emit)
+        e.asr, e.mt, e.tts = ContinueASR(), FakeMT(), FakeTTS()
+        e.vad_proto = PatternVAD(SHORT_PAUSE)
+        e._out_q = asyncio.Queue(maxsize=8)
+        e._out_task = asyncio.ensure_future(e._speaker_loop())
+        await e.start_stream("s")
+        for i in range(len(SHORT_PAUSE) + 20):
+            voice = i < len(SHORT_PAUSE) and SHORT_PAUSE[i]
+            await e.push("s", (b"\x01" if voice else b"\x00") * (2 * WIN), 0.0)
+            await asyncio.sleep(0.02)
+        await e.end_stream("s")
+        await e.close()
+        return e, events
+
+    e, ev = asyncio.run(run())
+    assert e.asr_spec_stats["started"] == 0  # parcial en conector: nunca cierra el stream antes del endpoint
+    assert e.asr_spec_stats["discard_voice"] == 0
+    assert len(e.asr.finishes) == 1 and e.asr.finishes[0] == 16 * 2 * WIN
