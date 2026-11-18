@@ -54,7 +54,7 @@ print(f"# T-67 cola del VAD · {man.name} · {len(clips)} clips\n")
 print("| off_thr | espera | n | cola VAD p50 | endpoint - fin ref p50 | p90 | cortes falsos | sin endpoint |")
 print("|---|---|---|---|---|---|---|---|")
 for off_thr in (0.5, 0.65, 0.8, 0.9):
-    for wait in (160, 128, 96):
+    for wait in (160, 128, 96, 64):
         tails, lat, false_cuts, noep = [], [], 0, 0
         for it, probs in clips:
             ref = it["utterance_end_s"]

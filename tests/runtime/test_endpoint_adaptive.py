@@ -90,6 +90,7 @@ PAUSE = [1] * 10 + [0] * 6 + [1] * 6
 def _no_env(monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_ASR_SPEC_FINISH", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_ENDPOINT_SHORT_MS", raising=False)
 
 
 def test_off_by_default_is_fixed():
@@ -119,6 +120,22 @@ def test_short_never_above_base_nor_long_below():
     assert _endpoints(ev)[0]["wait_ms"] == 160
     e, ev = _go(PAUSE, "fuimos al centro y", endpoint_adaptive=True, endpoint_long_ms=64)
     assert {f["wait_ms"] for f in _endpoints(ev)} == {160}
+
+
+def test_env_short_ms_overrides_only_complete(monkeypatch):
+    monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_SHORT_MS", "64")
+    _, ev = _go([1] * 10, "el granizo destruyó la plantación", endpoint_adaptive=True)
+    eps = _endpoints(ev)
+    assert eps[0]["wait_reason"] == "complete" and eps[0]["wait_ms"] == 64
+    assert eps[0]["audio_pos_s"] == pytest.approx(12 * WIN / 16000)
+    _, ev = _go(PAUSE, "fuimos al centro y", endpoint_adaptive=True)
+    assert len(_endpoints(ev)) == 1  # "continue" sigue esperando largo
+    _, ev = _go(PAUSE, "fuimos al centro y")
+    assert {f["wait_ms"] for f in _endpoints(ev)} == {160}  # sin el flag, nada cambia
+    for bad in ("0", "-5", "abc", ""):
+        monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_SHORT_MS", bad)
+        _, ev = _go([1] * 10, "el granizo destruyó la plantación", endpoint_adaptive=True)
+        assert _endpoints(ev)[0]["wait_ms"] == 96
 
 
 def test_env_forces_on_and_off(monkeypatch):

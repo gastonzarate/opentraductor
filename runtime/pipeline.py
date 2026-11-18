@@ -61,6 +61,15 @@ def tts_first_words(cfg: PipelineConfig) -> int | None:
     return cfg.tts_first_chunk_max_words
 
 
+def endpoint_short_ms(cfg: PipelineConfig) -> float:
+    """T-67 espera corta del fin de frase adaptativo. $OPENTRADUCTOR_ENDPOINT_SHORT_MS=N la fuerza (entero > 0), para
+    que @bench mida otra espera sin tocar la config de la app. Sin env (o valor inválido) = cfg.endpoint_short_ms."""
+    v = os.environ.get("OPENTRADUCTOR_ENDPOINT_SHORT_MS", "").strip()
+    if v.isdigit() and int(v) > 0:
+        return float(v)
+    return cfg.endpoint_short_ms
+
+
 def _timed_call(fn, *a):
     """Ejecuta ``fn`` y devuelve (resultado, ms medidos dentro del hilo del executor)."""
     t = time.perf_counter()
@@ -501,7 +510,7 @@ class Engine:
         if kind == "continue":
             st.ep_wait = (max(c.endpoint_long_ms, c.endpoint_silence_ms), "continue")
         elif kind == "complete" and caught_up:
-            st.ep_wait = (min(c.endpoint_short_ms, c.endpoint_silence_ms), "complete")
+            st.ep_wait = (min(endpoint_short_ms(c), c.endpoint_silence_ms), "complete")
         else:
             st.ep_wait = (c.endpoint_silence_ms, "base")
         return st.ep_wait[0]
