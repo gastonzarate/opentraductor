@@ -171,5 +171,9 @@ def test_glossary_t74_terms():
     assert K.qwen_glossary("así no me ahorco a fin de mes")[0].startswith("ahorcarse")
     assert K.qwen_glossary("me hizo precio") == ["hacer precio = to give a discount"]
     assert K.qwen_glossary("Tranqui, te banco")[0].startswith("bancar =")
-    assert K.qwen_glossary("no está en negro")[0].startswith("en negro")
+    assert K.qwen_glossary("el contrato no está en negro")[0].startswith("en negro")
+    # sentido literal: no disparan (pantalla en negro, rescatar personas, mangos fruta, camiseta en el lavarropas)
+    for s in ("La pantalla está en negro", "Se rescató a tres personas", "Compré dos mangos",
+              "Pongan la camiseta en el lavarropas", "Baja la línea de producción"):
+        assert K.qwen_glossary(s) == [], s
     assert K.qwen_glossary("es medio garca")[0].startswith("garca")
