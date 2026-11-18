@@ -128,3 +128,21 @@ def test_env_forces_on_and_off(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", "0")
     _, ev = _go(PAUSE, "fuimos al centro y", endpoint_adaptive=True)
     assert len(_endpoints(ev)) == 2
+
+
+def test_adapter_endpoint_lleva_wait_reason_en_unit_reason():
+    """T-67: el A/B de bench veía wait_reason=None porque AdapterEvent no tiene ese campo."""
+    import asyncio
+
+    from runtime.adapters.baseline import BaselineAdapter
+
+    async def go():
+        a = BaselineAdapter()
+        await a._emit("endpoint", {"stream_id": "s1", "audio_pos_s": 1.0, "forced": False, "seg_id": 2,
+                                   "wait_ms": 96.0, "wait_reason": "complete"})
+        await a._emit("asr_final", {"stream_id": "s1", "text": "Hola.", "seg_id": 2})
+        return a._q.get_nowait(), a._q.get_nowait()
+
+    ep, fin = asyncio.run(go())
+    assert ep.unit_reason == "ep:complete:96"
+    assert fin.unit_reason is None

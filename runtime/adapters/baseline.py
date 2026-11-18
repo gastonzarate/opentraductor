@@ -63,6 +63,10 @@ class BaselineAdapter(Adapter):
             source_span_s=f.get("source_span_s"),
             error_kind=f.get("error_kind") or ("overflow" if kind == "overflow" else None),
             commit_id=(f"{f['stream_id']}:{f['seg_id']}" if f.get("seg_id") is not None else None),
+            # T-67: AdapterEvent no tiene wait_ms/wait_reason; viajan en unit_reason ("ep:<reason>:<ms>") para
+            # que queden en traces.jsonl. El arnés no interpreta unit_reason en endpoint.
+            unit_reason=(f"ep:{f.get('wait_reason')}:{round(f['wait_ms'])}"
+                         if kind == "endpoint" and f.get("wait_ms") is not None else None),
         )
         await self._q.put(ev)
 
