@@ -145,3 +145,20 @@ def test_context_tokens_off_keeps_turn_rule():
     for t in "abc":
         rem(t)
     assert [es for es, _ in e._mt_ctx["s"]] == ["b", "c"]
+
+
+def test_glossary_general_rioplatense_terms():
+    # T-68: modismos generales (no salen del set del 17/11)
+    assert K.qwen_glossary("Eso sale dos palos") == [
+        "'sale' with a price = it costs; '¿sale?' about a plan = is it on?", "un palo = a million (pesos or dollars)"]
+    assert K.qwen_glossary("Lo cobra en negro, posta") == [
+        "en negro = off the books, undeclared", "posta = for real, the truth"]
+    assert K.qwen_glossary("Lo miro al toque") == ["al toque = right away"]
+    assert K.qwen_glossary("¿Lo hacemos? De una.") == ["de una = sure, right away"]
+
+
+def test_glossary_general_no_false_positives():
+    # palabras comunes en charlas de software que no deben disparar el glosario
+    for t in ("Los tests están verdes", "El texto en negro sobre fondo blanco", "Cambiamos la manguera",
+              "Hagámoslo de una vez", "De una manera u otra", "El palo de golf", "Pon las pruebas en verde"):
+        assert K.qwen_glossary(t) == [], t
