@@ -127,3 +127,5 @@ Before opening a pull request, run `uv run --extra runtime python -m pytest test
 
 Code: [MIT](LICENSE). Models and datasets keep their own licenses and attributions, listed in [NOTICE.md](NOTICE.md).
 Using this project to run a virtual microphone requires BlackHole, which has its own license (GPL-3.0).
+
+The Kokoro English voice pulls in `phonemizer-fork` and espeak-ng (both GPL-3.0). This repository only references them as dependencies. If you redistribute a built binary that bundles them, that binary must follow the GPL-3.0. Details in [NOTICE.md](NOTICE.md).

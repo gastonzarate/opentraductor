@@ -40,3 +40,5 @@ Abrí un issue o un pull request. Las áreas más útiles son la latencia, la ca
 ## Licencia
 
 Código bajo [MIT](LICENSE). Los modelos y los datos mantienen sus licencias, listadas en [NOTICE.md](NOTICE.md).
+
+La voz inglesa de Kokoro usa `phonemizer-fork` y espeak-ng (GPL-3.0). El repo solo los declara como dependencias. Si redistribuís un binario que los incluya, ese binario debe cumplir la GPL-3.0. Detalle en [NOTICE.md](NOTICE.md).
