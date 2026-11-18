@@ -91,8 +91,9 @@ def simul_translate(q, es: str, hist: list, n: int) -> tuple[str, int]:
         en = q.translate(piece, tuple(hist) if n > 0 else ())
         if n > 0:
             remember(q, hist, piece, en, n)
-        parts.append(en.strip())
-    return " ".join(p for p in parts if p), len(parts)
+        parts.append((piece, en))
+    from runtime.simul import join_pieces  # noqa: E402
+    return join_pieces(parts), len(parts)
 
 
 def main() -> int:

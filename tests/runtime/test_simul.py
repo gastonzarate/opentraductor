@@ -158,3 +158,26 @@ def test_engine_clauser_reads_config_and_env(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_CUES", "y,que")
     c = e._new_clauser()
     assert (c.min_words, c.extra_cues) == (3, frozenset({"y", "que"}))
+
+
+def test_join_pieces_fixes_mid_sentence_case_and_period():
+    from runtime.simul import join_pieces
+    # casos reales de t67-terminos (simul, ctx200)
+    assert join_pieces([("Si en 48 horas no se acredita,", "If it's not credited within 48 hours,"),
+                        ("hacemos un contracargo.", "We'll do a chargeback.")]) == \
+        "If it's not credited within 48 hours, we'll do a chargeback."
+    assert join_pieces([("A más tardar el viernes 20,", "At the latest by Friday the 20th."),
+                        ("a las 18.", "by 6 PM.")]) == "At the latest by Friday the 20th, by 6 PM."
+
+
+def test_join_pieces_keeps_names_sentences_and_empty():
+    from runtime.simul import join_pieces
+    # nombre propio e "I" no se tocan; tras punto real tampoco; piezas vacías se saltan
+    assert join_pieces([("Le dije a Martín que venga,", "I told Martin to come,"),
+                        ("Martín no vino.", "Martin didn't come.")]) == "I told Martin to come, Martin didn't come."
+    assert join_pieces([("listo,", "Ready,"), ("yo voy.", "I'm going.")]) == "Ready, I'm going."
+    assert join_pieces([("Terminamos.", "We're done."), ("Nos vemos.", "See you.")]) == "We're done. See you."
+    assert join_pieces([("pero bueno", "But well."), ("", "")]) == "But well."
+    # cláusula cortada antes de "pero" (sin puntuación en español): se quita el punto de Marian
+    assert join_pieces([("Lo hicimos rápido", "We did it fast."), ("pero salió bien.", "But it went well.")]) == \
+        "We did it fast but it went well."

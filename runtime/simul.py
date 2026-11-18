@@ -52,6 +52,42 @@ def next_clause_end(words: list[str], start: int, min_words: int = 5,
     return None
 
 
+# Primeras palabras de una pieza que, si siguen a una pieza sin punto final, van en minúscula en el subtítulo
+# ("..., We'll do" -> "..., we'll do"). Solo palabras que nunca son nombre propio; "I" y nombres quedan igual.
+_LOWER_OK = frozenset("""
+a an the and but or so because if then when while although though since unless until as at by for from in
+into of on to with without after before about we we're we'll we've we'd you you're you'll you've it it's
+it'll they they're they'll he he's she she's this that that's these those there there's here what which who
+how why where my our your their his her its me us them let let's just also still even only not no yes well
+look listen okay ok please do does did is are was were will would can could should have has had
+""".split())
+
+
+def join_pieces(pieces: list[tuple[str, str]]) -> str:
+    """Une las traducciones de las piezas de una frase (``[(es, en), ...]``, en orden) para el subtítulo.
+
+    Marian traduce cada cláusula como si fuera una oración: cierra con punto y empieza con mayúscula. Si la
+    cláusula española no terminaba en punto, ese punto se cambia por la puntuación española (``, ; :``) o se
+    quita, y la pieza siguiente empieza en minúscula si su 1.ª palabra está en ``_LOWER_OK``. Solo texto: el
+    audio de cada pieza ya se habló con su propio texto."""
+    out: list[str] = []
+    pieces = [(es, (en or "").strip()) for es, en in pieces if en and en.strip()]
+    n = len(pieces)
+    for i, (es, en) in enumerate(pieces):
+        if out and out[-1][-1:] not in ".!?…":
+            first, _, tail = en.partition(" ")
+            if first[:1].isupper() and first.strip(_STRIP).lower() in _LOWER_OK:
+                en = first[:1].lower() + first[1:] + (" " + tail if tail else "")
+        if i < n - 1 and en.endswith(".") and not en.endswith(".."):
+            last = (es or "").rstrip()[-1:]
+            if last in ",;:":
+                en = en[:-1] + last
+            elif last not in ".!?…":
+                en = en[:-1]
+        out.append(en)
+    return " ".join(out)
+
+
 class ClauseCommitter:
     """Estado por segmento: último parcial, cuántas palabras ya se confirmaron como cláusulas."""
 

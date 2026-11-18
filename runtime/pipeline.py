@@ -30,7 +30,7 @@ from typing import Any, Awaitable, Callable
 
 from . import components as K
 from .config import PipelineConfig
-from .simul import ClauseCommitter
+from .simul import ClauseCommitter, join_pieces
 
 SR = 16000
 Emit = Callable[[str, dict], Awaitable[None]]
@@ -234,7 +234,7 @@ class Engine:
         # T-67 paso 2: cláusulas habladas antes del fin de frase, frases con cláusulas, ASR que reescribió lo
         # confirmado, frases sin resto que traducir. _clause_en: traducciones por (stream, gen, seg_id) hasta su resto.
         self.simul_stats = {"clauses": 0, "segments": 0, "rewrite": 0, "rest_empty": 0}
-        self._clause_en: dict[tuple, list[str]] = {}
+        self._clause_en: dict[tuple, list[tuple[str, str]]] = {}  # (es, en) por pieza
 
     def spec_metrics(self) -> dict:
         """Contadores de especulación.
@@ -1121,14 +1121,14 @@ class Engine:
             self._clause_en.pop(key, None)
             return
         if seg.clause > 0:
-            self._clause_en.setdefault(key, []).append(en)
+            self._clause_en.setdefault(key, []).append((src, en))
             await self.emit("simul_clause_mt", {"stream_id": stream_id, "seg_id": seg.seg_id, "clause": seg.clause,
                                                 "text": en, "mt_ms": round(mt_ms, 1), "mt_compute_ms": round(comp, 1)})
         else:
             parts = self._clause_en.pop(key, [])
             if not src.strip():
                 self.simul_stats["rest_empty"] += 1
-            full = " ".join(p.strip() for p in parts + [en] if p and p.strip())
+            full = join_pieces(parts + [(src, en)])
             await self.emit("mt_final", {"stream_id": stream_id, "text": full, "seg_id": seg.seg_id,
                                          "mt_ms": round(mt_ms, 1), "mt_compute_ms": round(comp, 1),
                                          "simul_clauses": len(parts)})
