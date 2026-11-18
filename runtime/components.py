@@ -368,13 +368,14 @@ QWEN_GLOSSARY = (
     (r"\bpib[ea]s?\b", "pibe/piba = kid, young guy/girl"),
     (r"\btranqui\b", "tranqui = relax, no worries"),
     (r"\bla gamba\b", "hacer la gamba = to back someone up"),
-    # T-74 (18/11): léxico rioplatense general. Fuentes: Diccionario del habla de los argentinos (AAL) y Diccionario
+    # T-74 (18/11): léxico rioplatense general. Polisémicas acotadas al sentido lunfardo (al horno, la camiseta, con alambre,
+    # chorro de...) y fuera careta y buena/mala onda (Qwen ya las traduce y careta = máscara mete ruido). Fuentes: Diccionario del habla de los argentinos (AAL) y Diccionario
     # lunfardo (Gobello) para garca, chorro, ahorcado, hacer precio, morfar, bondi, birra, cana, cheto, careta, mangos,
     # al horno, cajonear, sarasa, ni ahí, de onda/buena onda, colgarse, hacerse el boludo, chupar un huevo, rescatarse;
     # uso común en reuniones de trabajo para bajar línea, ponerse la camiseta, atar con alambre, agarrar viaje, un cacho.
     # Ninguna sale de los fallos ni de las traducciones esperadas del set del 17/11.
     (r"\bgarc(a|as|ada|adas|ó|aron|ar|arte|arme)\b", "garca = crook, swindler; garcar = to screw someone over"),
-    (r"\bchorr(o|os|a|as)\b", "chorro = thief (un chorro de agua = a jet of water)"),
+    (r"\bchorr(o|os|a|as)\b(?! de)", "chorro = thief"),
     (r"\b(me|te|nos|se) ahorc(o|a|ás|amos|an)\b|\bahorcad[oa]s?\b",
      "ahorcarse / andar ahorcado (with money or payments) = to be squeezed, stretched thin financially (never literally hang)"),
     (r"\b(hizo|hice|hacés|hace|hacen|hicieron|haceme|hacer|hago) (un )?precio\b", "hacer precio = to give a discount"),
@@ -383,13 +384,11 @@ QWEN_GLOSSARY = (
     (r"\bbirras?\b", "birra = beer"),
     (r"\bla cana\b|\ben cana\b", "la cana = the cops; en cana = in jail"),
     (r"\bchet(o|a|os|as)\b", "cheto = posh, snobby"),
-    (r"\bcaretas?\b", "careta = fake, phony; square (not into partying)"),
     (r"\b(\d+|diez|veinte|cien|mil|dos|tres|cinco) mangos\b", "mangos = pesos, bucks"),
-    (r"\bal horno\b", "estar al horno = to be in deep trouble"),
+    (r"\b(estoy|estás|está|estamos|están|estaba|estábamos|quedé|quedó|quedamos) al horno\b", "estar al horno = to be in deep trouble"),
     (r"\bcajone(ar|aron|ó|amos|ado|ada)\b", "cajonear = to shelve, sit on something"),
     (r"\bsarasa\b", "sarasa = blah blah, empty talk"),
     (r"\bni ahí\b", "ni ahí = not at all, no way"),
-    (r"\b(buena|mala) onda\b", "buena onda = nice, friendly vibe; mala onda = unfriendly, bad vibe"),
     (r"\b(me|te|se|nos) colg(u[ée]|ó|aste|amos|aron)\b|\bcolgad[oa]\b",
      "colgarse = to space out, forget; colgado = distracted, spaced out (a computer or app that se colgó = hung, stuck)"),
     (r"\bhac(e|és|erse|iendo|ete)(se|te)? el (boludo|otario|sota|tonto)\b|\bse hizo el (boludo|otario|sota|tonto)\b",
@@ -397,8 +396,8 @@ QWEN_GLOSSARY = (
     (r"\bchupa un huevo\b|\bchupa tres pepinos\b", "me chupa un huevo = I couldn't care less"),
     (r"\brescat(ate|ese|arse|ó)\b", "rescatate = get it together, wise up"),
     (r"\bbaj(ar|ó|aron|a|ando) (la )?l[íi]nea\b", "bajar línea = to lecture, tell people what to think"),
-    (r"\bla camiseta\b", "ponerse la camiseta = to commit fully to the team"),
-    (r"\bcon alambre\b", "atado con alambre = held together with duct tape, jury-rigged"),
+    (r"\bpon(e|er|go|é|és|emos|en|erse|ete|ete|gan|ganse|ernos)(se|me|te|nos)? la camiseta\b", "ponerse la camiseta = to commit fully to the team"),
+    (r"\b(atad|atat|emparchad)[oa]s? con alambre\b|\batad[oa] con alambre\b", "atado con alambre = held together with duct tape, jury-rigged"),
     (r"\bagarr(ó|aron|ar|a|ás|amos) viaje\b", "agarrar viaje = to go along with it, take up an offer"),
     (r"\bun cacho\b", "un cacho = a bit, a while"),
 )
