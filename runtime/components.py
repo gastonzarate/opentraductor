@@ -447,6 +447,58 @@ QWEN_GLOSSARY_EXT = (
 )
 
 
+# T-74 palanca 5 (OPENTRADUCTOR_GLOSSARY_DOM=1, apagada por defecto): jerga de dominio por causa de fallo (ver
+# artifacts/t74-gs/RESULTADO.md, clasificación 18/11 03:35). Disparo acotado a una palabra técnica en la misma frase.
+# Fuentes: [dev] uso general de equipos de software rioplatenses (pisar/subir/bajar/levantar/caerse/sacar del
+# alcance en sentido de código, deploy o alcance); [fin] glosarios de AFIP (retenciones y percepciones, impuesto a
+# las ganancias), BCRA (CBU/CVU, acreditación) y procesadores de pago (contracargo = chargeback, cuotas sin interés);
+# [lunf] mangos con números en letras (amplía la entrada de 5d6a3b5, Gobello); [fecha] convención AR día/mes.
+# Ninguna sale de copiar frases o traducciones del 17/11; el arreglo se mide en el set sellado de @bench.
+_TECH = (r"(cambios?|commits?|branch\w*|ramas?|base|archivos?|config\w*|c[óo]digo|merge\w*|versi[óo]n\w*|deploy\w*|"
+         r"push|PRs?|release\w*|prod\w*|staging|servidor\w*|server|servicios?|build|fix|hotfix|patch|minor|major|"
+         r"main|master|tag|\d+\.\d+\.\d+)")
+QWEN_GLOSSARY_DOM = (
+    (rf"\bpis(é|ó|aste|amos|aron|a|o|an|ar|ado|ada|ados|adas|en|es)\b.*\b{_TECH}\b|\b{_TECH}\b.*\bpis(é|ó|aste|amos|aron|a|o|an|ar|ado|ada|ados|adas|en|es)\b",
+     "pisar (code, changes, data, a branch) = to overwrite, clobber"),
+    (rf"\bsub(ir|í|ió|imos|ieron|o|e|an|amos|ilo|ila|ido)\b.*\b{_TECH}\b",
+     "subir (a version, build, fix or change) = to release, deploy, push out; subir la versión = bump the version"),
+    (rf"\bbaj(ar|á|ó|amos|aron|o|a|an|emos|alo|ala|ado)\b.*\b{_TECH}\b|\b{_TECH}\b.*\bbaj(ar|á|ó|amos|aron|alo|ala)\b",
+     "bajar (a deploy, release or service) = to roll back, take down; bajar un archivo = to download"),
+    (rf"\blevant(ar|á|ó|amos|o|a|an|alo|ado)\b.*\b{_TECH}\b", "levantar (a service, server) = to bring up, start"),
+    (r"\bse (cay[óo]|cae|cayeron|caen|est[áa] cayendo)\b.*\b(sistema|servidor\w*|server|p[áa]gina|sitio|app|servicios?|"
+     r"base|api|prod\w*|deploy\w*|red|internet)\b|\b(sistema|servidor\w*|server|p[áa]gina|sitio|app|servicios?|api|"
+     r"prod\w*|red|internet)\b.*\bse (cay[óo]|cae|cayeron|caen|est[áa] cayendo)\b",
+     "se cayó (a system, server, site, service) = went down, crashed"),
+    (r"\b(sac(ar|amos|á|ás|o|alo|ala|aron|ó)|saqu(emos|en|e|é))\b.*\b(alcance|etapa|fase|sprint|release|mvp|versi[óo]n|roadmap|scope)\b",
+     "sacar (a feature) from the scope = to drop, cut, leave out"),
+    (r"\bcontracargos?\b", "contracargo = chargeback"),
+    (r"\b(retenci[óo]n|retenciones|percepci[óo]n|percepciones)\b.*\b(ganancias|iva|iibb|ingresos brutos|afip|impuestos?)\b"
+     r"|\b(ganancias|iva|iibb|ingresos brutos|afip|impuestos?)\b.*\b(retenci[óo]n|retenciones|percepci[óo]n|percepciones)\b",
+     "retención = tax withholding; percepción = tax collected in advance; ganancias = income tax"),
+    (r"\bacredit(a|ó|e|en|ar|aron|ado|ada)\b", "acreditarse (a payment, transfer) = to clear, post, come through"),
+    (r"\b(cbu|cvu)\b", "CBU/CVU = bank account number (keep CBU/CVU)"),
+    (r"\bcuotas sin inter[ée]s\b", "cuotas sin interés = interest-free installments"),
+    (r"\b(\d+|un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|"
+     r"ochenta|noventa|cien|ciento|\w+ientos|mil) mangos\b", "mangos = pesos, bucks"),
+)
+# «plata» como metal: con DOM no se glosa como money tras un objeto o en «es de plata» (control de sentido literal).
+_PLATA_METAL = re.compile(r"\b(anillo|cadena|collar|medalla|aros?|pulsera|cubiertos|bandeja|joyas?|reloj|cuchara)\b"
+                          r"[^.]*\bde plata\b|\bes de plata\b|\bmedalla de plata\b", re.I)
+_FECHA = re.compile(r"\b(?:el|del|para el|hasta el|desde el|al)\s+(\d{1,2})/(\d{1,2})\b(?!/)", re.I)
+_MONTHS_EN = ("January February March April May June July August September October November December").split()
+
+
+def _glossary_dom(text_es: str, base: list[str]) -> list[str]:
+    out = [g for g in base if not (g == "plata = money" and _PLATA_METAL.search(text_es))]
+    if len(out) < len(base):
+        out.append("de plata (an object) = made of silver")
+    out += [g for pat, g in QWEN_GLOSSARY_DOM if re.search(pat, text_es, re.I) and g not in out]
+    for d, m in _FECHA.findall(text_es):
+        if 1 <= int(d) <= 31 and 1 <= int(m) <= 12:
+            out.append(f"{d}/{m} = {_MONTHS_EN[int(m) - 1]} {int(d)} (Argentine dates are day/month)")
+    return out
+
+
 # T-74 palanca 4 (OPENTRADUCTOR_MT_TOPIC=1, apagada por defecto): pista de tema. Con la historia de la sesión
 # (solo las frases anteriores, no el parcial: así no cambia mientras se habla y entra en la caché de prefill())
 # se elige un tema por vocabulario de dominio y el turno actual lleva una línea «Topic of the conversation: …».
@@ -486,13 +538,17 @@ def qwen_topic(history_es, last: int = 12) -> str | None:
     return lbl if s1 >= 2 and s1 > s2 else None
 
 
-def qwen_glossary(text_es: str, ext: bool | None = None) -> list[str]:
+def qwen_glossary(text_es: str, ext: bool | None = None, dom: bool | None = None) -> list[str]:
     """Entradas de QWEN_GLOSSARY cuyos términos aparecen en ``text_es`` (sin distinguir mayúsculas), en orden.
-    Con ``ext`` (por defecto, env OPENTRADUCTOR_GLOSSARY_EXT=1) suma QWEN_GLOSSARY_EXT al final."""
+    Con ``ext`` (por defecto, env OPENTRADUCTOR_GLOSSARY_EXT=1) suma QWEN_GLOSSARY_EXT al final.
+    Con ``dom`` (env OPENTRADUCTOR_GLOSSARY_DOM=1) suma jerga de dominio, fechas d/m y «de plata» metal."""
     if ext is None:
         ext = os.environ.get("OPENTRADUCTOR_GLOSSARY_EXT") == "1"
+    if dom is None:
+        dom = os.environ.get("OPENTRADUCTOR_GLOSSARY_DOM") == "1"
     pats = QWEN_GLOSSARY + QWEN_GLOSSARY_EXT if ext else QWEN_GLOSSARY
-    return [g for pat, g in pats if re.search(pat, text_es, re.I)]
+    out = [g for pat, g in pats if re.search(pat, text_es, re.I)]
+    return _glossary_dom(text_es, out) if dom else out
 
 
 class QwenMLX:

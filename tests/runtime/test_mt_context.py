@@ -262,3 +262,32 @@ def test_glossary_ext_literal():
               "Me pinta la pared", "Hay un problema en el servidor", "El dólar oficial subió",
               "El cajón del escritorio", "Una joda bárbara"):
         assert [e for e in K.qwen_glossary(s, ext=True) if e not in K.qwen_glossary(s, ext=False)] == [], s
+
+
+def _dom_only(s):
+    return [g for g in K.qwen_glossary(s, ext=True, dom=True) if g not in K.qwen_glossary(s, ext=True, dom=False)]
+
+
+def test_glossary_dom_fires_in_technical_and_tax_context():
+    assert any(g.startswith("pisar") for g in _dom_only("Ojo que me pisaste el commit de ayer"))
+    assert any(g.startswith("subir") for g in _dom_only("Subimos el hotfix a producción"))
+    assert any(g.startswith("bajar") for g in _dom_only("Bajá el release, volvemos a la 1.2.3"))
+    assert any(g.startswith("se cayó") for g in _dom_only("Se cayó el servidor de pagos"))
+    assert any(g.startswith("sacar") for g in _dom_only("Saquemos el login del alcance del sprint"))
+    assert "contracargo = chargeback" in _dom_only("El cliente pidió un contracargo")
+    assert any(g.startswith("retención") for g in _dom_only("Te hacen la retención de IVA en la factura"))
+    assert "mangos = pesos, bucks" in _dom_only("Me cobró ochocientos mangos")
+    assert _dom_only("Nos vemos el 12/10 en la oficina") == ["12/10 = October 12 (Argentine dates are day/month)"]
+
+
+def test_glossary_dom_literal_controls():
+    # sentido literal o sin contexto técnico: DOM no agrega nada
+    for s in ("Subí la escalera hasta el tercer piso", "Pisé un charco en la vereda", "Bajá el volumen de la tele",
+              "Se me cayó el cargador atrás del escritorio", "Me hizo una seña con la mano", "Sacá la basura",
+              "Comí tres cuartos, o sea 3/4 de la pizza", "Retención de líquidos", "Compré mangos en la verdulería"):
+        assert _dom_only(s) == [], s
+    # «de plata» como metal: no se glosa como money
+    g = K.qwen_glossary("Le regalé una cadena de plata", ext=True, dom=True)
+    assert "plata = money" not in g and "de plata (an object) = made of silver" in g
+    assert "plata = money" in K.qwen_glossary("No hay plata para el viaje", ext=True, dom=True)
+    assert "plata = money" in K.qwen_glossary("Le regalé una cadena de plata", ext=True, dom=False)
