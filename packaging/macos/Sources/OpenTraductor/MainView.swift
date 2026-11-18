@@ -318,7 +318,7 @@ struct AboutView: View {
         ("MLX (Apple)", "MIT"),
         ("CTranslate2", "MIT"),
         ("Python", "Python Software Foundation License"),
-        ("Moonshine (experimental)", "Moonshine AI Community License"),
+        ("Moonshine (reconocimiento de voz, modelos streaming)", "MIT"),
         ("BlackHole (opcional, no incluido)", "GPL-3.0; lo instala la persona por su cuenta"),
     ]
 
