@@ -8,6 +8,7 @@ Un término acierta si ``must`` aparece y ``bad`` no. Mide también la MT por tu
 
 Uso:
   .venv-inc-llm/bin/python scripts/eval/t69_charlas_eval.py --out artifacts/t69-charlas/base [--ctx 0,6] [--set ...]
+  .venv-inc-llm/bin/python scripts/eval/t69_charlas_eval.py --simul --out artifacts/t69-charlas/simul   # T-67 paso 2
   OPENTRADUCTOR_MT_GLOSSARY=1 .venv-inc-llm/bin/python scripts/eval/t69_charlas_eval.py --out artifacts/t69-charlas/gloss
 """
 import argparse
@@ -60,6 +61,32 @@ def remember(q, h: list, es: str, en: str, n: int) -> None:
         del h[:-n]
 
 
+def simul_split(es: str, min_words: int = 5) -> list[str]:
+    """Piezas en que el Engine con MT_SIMUL=1 traduce ``es``: cláusulas confirmadas por local agreement sobre
+    parciales que crecen de a una palabra (el ASR real puede cortar menos), y el resto al fin de frase."""
+    from runtime.simul import ClauseCommitter  # noqa: E402
+    c = ClauseCommitter(min_words=min_words)
+    w = es.split()
+    pieces: list[str] = []
+    for k in range(1, len(w) + 1):
+        pieces += c.update(" ".join(w[:k]))
+    rest = c.rest(es)
+    if rest is None:
+        rest = " ".join(w[c.committed:])
+    return pieces + ([rest] if rest.strip() else [])
+
+
+def simul_translate(q, es: str, hist: list, n: int) -> tuple[str, int]:
+    """Como Engine._simul_speak: cada pieza se traduce con el contexto de ese momento y se recuerda como turno."""
+    parts = []
+    for piece in simul_split(es):
+        en = q.translate(piece, tuple(hist) if n > 0 else ())
+        if n > 0:
+            remember(q, hist, piece, en, n)
+        parts.append(en.strip())
+    return " ".join(p for p in parts if p), len(parts)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=os.environ.get("OPENTRADUCTOR_QWEN_DIR", str(DEFAULT_MODEL)))
@@ -69,6 +96,9 @@ def main() -> int:
                     help="usa translate_stream (mismo texto que translate) y mide ms hasta el 1.er token de la MT")
     ap.add_argument("--prefill", action="store_true",
                     help="q.prefill() antes de cada turno (camino del pipeline; con SESSION_KV=1 es lo que lo hace valer)")
+    ap.add_argument("--simul", action="store_true",
+                    help="T-67 paso 2: parte cada turno como el Engine con MT_SIMUL=1 (parciales crecientes -> "
+                         "ClauseCommitter), traduce cada cláusula y el resto por separado y une el inglés")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     from runtime import components as K  # noqa: E402
@@ -95,6 +125,7 @@ def main() -> int:
             hits = total = 0
             ms: list[float] = []
             ft: list[float] = []
+            n_pieces: list[int] = []
             by_charla: dict[str, list[int]] = {}
             for ch in charlas:
                 hist: list[tuple[str, str]] = []
@@ -111,10 +142,14 @@ def main() -> int:
                                                 lambda _p: first.append(time.perf_counter()) if not first else None)
                         if first:
                             ft.append((first[0] - t0) * 1000)
+                    elif a.simul:
+                        en, pieces = simul_translate(q, turn["es"], hist, n)
                     else:
                         en = q.translate(turn["es"], context)
                     ms.append((time.perf_counter() - t0) * 1000)
-                    if n > 0:
+                    if a.simul:
+                        n_pieces.append(pieces)
+                    elif n > 0:
                         remember(q, hist, turn["es"], en, n)
                     res = [term_ok(en, t) for t in turn["terms"]]
                     h += sum(res)
@@ -130,6 +165,9 @@ def main() -> int:
                                     "mt_p50_ms": round(statistics.median(ms), 1),
                                     "mt_p95_ms": round(sorted(ms)[int(0.95 * (len(ms) - 1))], 1), "turnos": len(ms),
                                     "loadavg_fin": os.getloadavg()[0]}
+            if n_pieces:
+                summary["arms"][arm]["simul_turnos_cortados"] = sum(1 for x in n_pieces if x > 1)
+                summary["arms"][arm]["simul_piezas"] = sum(n_pieces)
             if ft:
                 summary["arms"][arm]["mt_1er_token_p50_ms"] = round(statistics.median(ft), 1)
                 summary["arms"][arm]["mt_1er_token_p95_ms"] = round(sorted(ft)[int(0.95 * (len(ft) - 1))], 1)
