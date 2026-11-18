@@ -35,7 +35,7 @@ Mediana desde el fin de habla hasta el primer audio: unos 930 ms (p95 cerca de 1
 
 ## Cómo contribuir
 
-Abrí un issue o un pull request. Las áreas más útiles son la latencia, la calidad con español rioplatense (un set de prueba más grande, glosario del usuario) y la portabilidad (instalación en una Mac limpia). Corré `uv run --extra runtime python -m pytest tests -q` y contá qué Mac y qué macOS usaste.
+Abrí un issue o un pull request. Las áreas más útiles son la latencia, la calidad con español rioplatense (un set de prueba más grande, glosario del usuario) y la portabilidad (instalación en una Mac limpia). Corré `uv run --extra runtime python -m pytest tests -q` y contá qué Mac y qué macOS usaste. El audio de evaluación (`data/audio/`) no está en el repositorio: en un clon nuevo los tests que lo leen se saltean con el motivo «data/audio ausente». Para bajarlo, mirá la sección «Run the tests» de [README.md](README.md).
 
 ## Licencia
 
