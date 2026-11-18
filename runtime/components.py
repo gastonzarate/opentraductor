@@ -406,7 +406,7 @@ QWEN_GUARD = ("Do not copy those Argentine words into the English: write their m
               "Translate the rest of the sentence as usual.")
 
 
-# T-74 palanca 3 (OPENTRADUCTOR_GLOSSARY_EXT=1, apagada por defecto): ampliación con fuente general y licencia
+# T-74 palanca 3 (encendida por defecto; OPENTRADUCTOR_GLOSSARY_EXT=0 la apaga): ampliación con fuente general y licencia
 # compatible. Fuente única: Wiktionary en inglés, categorías «Rioplatense Spanish», «Argentine Spanish» y «Lunfardo»
 # (CC BY-SA 4.0; solo se toma la lista de lemas y su sentido, redactado aquí). Elegidas por uso en charlas de trabajo,
 # plata y reuniones; ninguna sale de los fallos del set del 17/11 ni del banco v1. Las polisémicas solo disparan con
@@ -447,7 +447,7 @@ QWEN_GLOSSARY_EXT = (
 )
 
 
-# T-74 palanca 5 (OPENTRADUCTOR_GLOSSARY_DOM=1, apagada por defecto): jerga de dominio por causa de fallo (ver
+# T-74 palanca 5 (encendida por defecto; OPENTRADUCTOR_GLOSSARY_DOM=0 la apaga): jerga de dominio por causa de fallo (ver
 # artifacts/t74-gs/RESULTADO.md, clasificación 18/11 03:35). Disparo acotado a una palabra técnica en la misma frase.
 # Fuentes: [dev] uso general de equipos de software rioplatenses (pisar/subir/bajar/levantar/caerse/sacar del
 # alcance en sentido de código, deploy o alcance); [fin] glosarios de AFIP (retenciones y percepciones, impuesto a
@@ -556,12 +556,13 @@ def qwen_topic(history_es, last: int = 12) -> str | None:
 
 def qwen_glossary(text_es: str, ext: bool | None = None, dom: bool | None = None) -> list[str]:
     """Entradas de QWEN_GLOSSARY cuyos términos aparecen en ``text_es`` (sin distinguir mayúsculas), en orden.
-    Con ``ext`` (por defecto, env OPENTRADUCTOR_GLOSSARY_EXT=1) suma QWEN_GLOSSARY_EXT al final.
-    Con ``dom`` (env OPENTRADUCTOR_GLOSSARY_DOM=1) suma jerga de dominio, fechas d/m y «de plata» metal."""
+    Con ``ext`` (por defecto; env OPENTRADUCTOR_GLOSSARY_EXT=0 lo apaga) suma QWEN_GLOSSARY_EXT al final.
+    Con ``dom`` (por defecto; env OPENTRADUCTOR_GLOSSARY_DOM=0 lo apaga) suma jerga de dominio, fechas d/m y
+    «de plata» metal. T-74 (18/11): ambos encendidos tras el A/B del 17/11 (ctx200 83 -> 91/96, 0 pérdidas)."""
     if ext is None:
-        ext = os.environ.get("OPENTRADUCTOR_GLOSSARY_EXT") == "1"
+        ext = os.environ.get("OPENTRADUCTOR_GLOSSARY_EXT", "1") != "0"
     if dom is None:
-        dom = os.environ.get("OPENTRADUCTOR_GLOSSARY_DOM") == "1"
+        dom = os.environ.get("OPENTRADUCTOR_GLOSSARY_DOM", "1") != "0"
     pats = QWEN_GLOSSARY + QWEN_GLOSSARY_EXT if ext else QWEN_GLOSSARY
     out = [g for pat, g in pats if re.search(pat, text_es, re.I)]
     return _glossary_dom(text_es, out) if dom else out

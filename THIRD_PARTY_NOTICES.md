@@ -3,7 +3,7 @@
 ## Wiktionary (CC BY-SA 4.0)
 
 The extended glossary `QWEN_GLOSSARY_EXT` in `runtime/components.py`
-(enabled with `OPENTRADUCTOR_GLOSSARY_EXT=1`) uses headwords (lemmas) taken
+(enabled by default; `OPENTRADUCTOR_GLOSSARY_EXT=0` disables it) uses headwords (lemmas) taken
 from the English Wiktionary categories:
 
 - Rioplatense Spanish

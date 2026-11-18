@@ -231,15 +231,21 @@ def test_glossary_t74_terms():
     # sentido literal: no disparan (pantalla en negro, rescatar personas, mangos fruta, camiseta en el lavarropas)
     for s in ("La pantalla está en negro", "Se rescató a tres personas", "Compré dos mangos",
               "Pongan la camiseta en el lavarropas", "Baja la línea de producción"):
-        assert K.qwen_glossary(s) == [], s
+        # solo la lista base: con DOM (por defecto desde 18/11) «dos mangos» dispara «mangos = pesos» (número + mangos)
+        assert K.qwen_glossary(s, ext=False, dom=False) == [], s
     assert K.qwen_glossary("es medio garca")[0].startswith("garca")
 
 
-def test_glossary_ext_off_by_default(monkeypatch):
+def test_glossary_ext_dom_on_by_default(monkeypatch):
+    # T-74 (18/11): EXT y DOM encendidos por defecto; =0 los apaga
     monkeypatch.delenv("OPENTRADUCTOR_GLOSSARY_EXT", raising=False)
-    assert K.qwen_glossary("no funca el build") == []
-    monkeypatch.setenv("OPENTRADUCTOR_GLOSSARY_EXT", "1")
+    monkeypatch.delenv("OPENTRADUCTOR_GLOSSARY_DOM", raising=False)
     assert K.qwen_glossary("no funca el build") == ["funcar = to work, function (no funca = it doesn't work)"]
+    assert "contracargo = chargeback" in K.qwen_glossary("El cliente pidió un contracargo")
+    monkeypatch.setenv("OPENTRADUCTOR_GLOSSARY_EXT", "0")
+    monkeypatch.setenv("OPENTRADUCTOR_GLOSSARY_DOM", "0")
+    assert K.qwen_glossary("no funca el build") == []
+    assert K.qwen_glossary("El cliente pidió un contracargo") == []
 
 
 def test_glossary_ext_terms():
