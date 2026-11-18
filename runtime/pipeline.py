@@ -51,6 +51,16 @@ def _apply_mlx_cache_limit(cfg: PipelineConfig) -> int | None:
     return b
 
 
+def tts_first_words(cfg: PipelineConfig) -> int | None:
+    """T-67 TTS en streaming: palabras del 1.er fragmento de Kokoro. $OPENTRADUCTOR_TTS_FIRST_WORDS=N lo fuerza
+    (0 = solo por puntuación), para que @bench mida N chico con MT_STREAM_TTS=1 sin tocar la config de la app.
+    Sin env (o valor inválido) = cfg.tts_first_chunk_max_words, el camino de hoy."""
+    v = os.environ.get("OPENTRADUCTOR_TTS_FIRST_WORDS", "").strip()
+    if v.isdigit():
+        return int(v) or None
+    return cfg.tts_first_chunk_max_words
+
+
 def _timed_call(fn, *a):
     """Ejecuta ``fn`` y devuelve (resultado, ms medidos dentro del hilo del executor)."""
     t = time.perf_counter()
@@ -242,7 +252,7 @@ class Engine:
 
     def _spec_fp(self) -> tuple:
         c = self.cfg
-        return (c.voice, c.speed, c.tts_trim_lead_margin_ms, c.tts_first_chunk_max_words,
+        return (c.voice, c.speed, c.tts_trim_lead_margin_ms, tts_first_words(c),
                 c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail, c.mt_normalize, c.mt_engine,
                 c.tts_trim_lead_all_clauses)
 
@@ -269,7 +279,7 @@ class Engine:
         await self.gpu.run(lambda: _apply_mlx_cache_limit(c))  # T-50: antes de cargar nada en MLX
         self.asr = await self.asr_worker.run(lambda: timed("asr", self._make_asr))
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
-                                                   c.tts_first_chunk_max_words, c.tts_bind_conjunctions,
+                                                   tts_first_words(c), c.tts_bind_conjunctions,
                                                    c.tts_trim_tail, c.tts_trim_lead_all_clauses)))
         if c.mt_engine == "qwen":  # T-51: Qwen MLX comparte el hilo GPU con Kokoro
             from .config import qwen_model_dir
