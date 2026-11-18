@@ -280,6 +280,16 @@ def test_glossary_dom_fires_in_technical_and_tax_context():
     assert _dom_only("Nos vemos el 12/10 en la oficina") == ["12/10 = October 12 (Argentine dates are day/month)"]
 
 
+def test_glossary_dom_subir_bajar_by_sense():
+    # run14: un solo sentido por objeto (rama/repo, producción, servicio, release, archivo)
+    assert _dom_only("Subí los commits a la rama de staging") == ["subir (code, a fix, commits) to a branch or repo = to push"]
+    assert any("to deploy, release" in g for g in _dom_only("Subimos el hotfix a producción"))
+    assert _dom_only("Mañana bajamos el servidor de reportes") == ["bajar (a service, server, site) = to take down, shut down"]
+    assert any("to pull" in g for g in _dom_only("Bajate los cambios del remoto antes de empezar"))
+    assert _dom_only("Bajá el release, volvemos a la 1.2.3") == ["bajar (a deploy, release or version) = to roll back"]
+    assert _dom_only("Bajate el instalador de la página") == ["bajar (a file, app, installer) = to download"]
+
+
 def test_glossary_dom_literal_controls():
     # sentido literal o sin contexto técnico: DOM no agrega nada
     for s in ("Subí la escalera hasta el tercer piso", "Pisé un charco en la vereda", "Bajá el volumen de la tele",
@@ -300,7 +310,7 @@ def test_glossary_dom_not_in_history_turns(monkeypatch):
     q.glossary = True
     ctx = (("Y si nada funciona, bajá el servicio entero", "If nothing works, roll back the whole service"),)
     p = q.prompt("Bajá la pantalla de la notebook", ctx)
-    assert "roll back, take down" not in p
+    assert "= to take down" not in p and "= to roll back" not in p
     p2 = q.prompt("Bajá el release, volvemos a la 1.2.3", ctx)
     assert p2.count("bajar (a deploy") == 1 and p2.rindex("bajar (a deploy") > p2.rindex("|user:")
     assert any("credited, deposited" in g for g in _dom_only("Hoy me acreditaron el sueldo"))

@@ -460,10 +460,25 @@ _TECH = (r"(cambios?|commits?|branch\w*|ramas?|base|archivos?|config\w*|c[óo]di
 QWEN_GLOSSARY_DOM = (
     (rf"\bpis(é|ó|aste|amos|aron|a|o|an|ar|ado|ada|ados|adas|en|es)\b.*\b{_TECH}\b|\b{_TECH}\b.*\bpis(é|ó|aste|amos|aron|a|o|an|ar|ado|ada|ados|adas|en|es)\b",
      "pisar (code, changes, data, a branch) = to overwrite, clobber"),
-    (rf"\bsub(ir|í|ió|imos|ieron|o|e|an|amos|ilo|ila|ido)\b.*\b{_TECH}\b",
-     "subir (a version, build, fix or change) = to release, deploy, push out; subir la versión = bump the version"),
-    (rf"\bbaj(ar|á|ó|amos|aron|o|a|an|emos|alo|ala|ado)\b.*\b{_TECH}\b|\b{_TECH}\b.*\bbaj(ar|á|ó|amos|aron|alo|ala)\b",
-     "bajar (a deploy, release or service) = to roll back, take down; bajar un archivo = to download"),
+    # run14 (18/11): subir/bajar se separan por el objeto, como se usan en git y operaciones: subir a una rama o
+    # repo = push; subir a producción/staging o una versión = deploy/release; bajar un servicio o servidor = take
+    # down; bajar(se) de una rama = pull; bajar un deploy/release/versión = roll back. Una sola glosa con todos los
+    # sentidos hacía que Qwen eligiera el primero («subí el fix a la rama» -> released; «bajá el servicio» -> roll back).
+    (rf"\bsub(ir|í|ió|imos|ieron|o|e|an|amos|ilo|ila|ido)\b.*\b(ramas?|branch\w*|repos?|repositorios?|remoto|origin|github|gitlab|main|master)\b",
+     "subir (code, a fix, commits) to a branch or repo = to push"),
+    (rf"^(?!.*\b(ramas?|branch\w*|repos?|repositorios?|remoto|origin|github|gitlab|main|master)\b).*"
+     rf"\bsub(ir|í|ió|imos|ieron|o|e|an|amos|ilo|ila|ido)\b.*\b{_TECH}\b",
+     "subir (a version, build, fix or change) to production = to deploy, release; subir la versión = bump the version"),
+    (r"\bbaj(ar|á|ó|amos|aron|o|a|an|emos|alo|ala|ado)\b.*\b(servicios?|servidor\w*|server|sitio|api|base de datos)\b"
+     r"|\b(servicios?|servidor\w*|server|sitio|api)\b.*\bbaj(ar|á|ó|amos|aron|alo|ala)\b",
+     "bajar (a service, server, site) = to take down, shut down"),
+    (r"\bbaj(ar|á|ó|amos|aron|o|a|an|emos|alo|ala|ado|ate|arse|arte|ame)\b.*\b(ramas?|branch\w*|repos?|repositorios?|remoto|origin|main|master)\b",
+     "bajar(se) changes from a branch or repo = to pull"),
+    (rf"\bbaj(ar|á|ó|amos|aron|o|a|an|emos|alo|ala|ado)\b.*\b(deploy\w*|release\w*|versi[óo]n\w*|build|hotfix|patch|tag|cambios?|\d+\.\d+\.\d+)\b"
+     rf"|\b(deploy\w*|release\w*|versi[óo]n\w*|build|hotfix|patch|tag|cambios?)\b.*\bbaj(ar|á|ó|amos|aron|alo|ala)\b",
+     "bajar (a deploy, release or version) = to roll back"),
+    (r"\bbaj(ar|á|ó|amos|aron|o|a|an|emos|alo|ala|ado|ate|arse)\b.*\b(archivos?|instalador|app|aplicaci[óo]n|driver|actualizaci[óo]n)\b",
+     "bajar (a file, app, installer) = to download"),
     (rf"\blevant(ar|á|ó|amos|o|a|an|alo|ado)\b.*\b{_TECH}\b", "levantar (a service, server) = to bring up, start"),
     (r"\bse (cay[óo]|cae|cayeron|caen|est[áa] cayendo)\b.*\b(sistema|servidor\w*|server|p[áa]gina|sitio|app|servicios?|"
      r"base|api|prod\w*|deploy\w*|red|internet)\b|\b(sistema|servidor\w*|server|p[áa]gina|sitio|app|servicios?|api|"
