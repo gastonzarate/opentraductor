@@ -9,6 +9,9 @@
 #   CFG='{...}'       config JSON de PipelineConfig para el adaptador (por defecto: tienda = Moonshine tiny + Qwen 4B)
 #   COMMIT=<sha>      mide ese commit (git archive en /tmp, con venvs/modelos/datos enlazados) y no el árbol de trabajo, que
 #                     puede traer cambios sin commitear de otros. Sin COMMIT mide el árbol de trabajo y lo anota.
+#   SET=<jsonl>       set de charlas (por defecto banco v1; el oficial del 17/11: artifacts/eval/contexto-largo/charlas.jsonl)
+#   PREFILL=1         prefill() antes de cada turno (camino del pipeline; necesario para medir OPENTRADUCTOR_MT_SESSION_KV)
+#                     Con CTX=n y OPENTRADUCTOR_MT_CONTEXT_TOKENS=cap el historial se recorta igual que Engine._mt_remember.
 #   SKIP_LAT=1 / SKIP_CHARLAS=1   saltar una de las dos mediciones
 #   QUIET_MAX=1.5 QUIET_TMO=600   reposo (loadavg 1 min) y espera máxima; si vence se mide igual y queda marcado NO REPOSO
 # Ejemplos:
@@ -52,7 +55,7 @@ for it in "${ITEMS[@]}"; do
     "$PYBIN" "$ROOT/scripts/eval/t58_stage_breakdown.py" "$D/latency" > "$D/stages.md" 2>&1 || true
   fi
   if [ -z "${SKIP_CHARLAS:-}" ]; then
-    env $envs "$PYBIN" "$ROOT/scripts/eval/t69_charlas_eval.py" --out "$D/charlas" --ctx "$CTX" --first-token > "$D/charlas.log" 2>&1 || echo "charlas rc!=0 ($name)" | tee -a "$OUT/entorno.txt"
+    env $envs "$PYBIN" "$ROOT/scripts/eval/t69_charlas_eval.py" --out "$D/charlas" --ctx "$CTX" --first-token ${SET:+--set "$SET"} ${PREFILL:+--prefill} > "$D/charlas.log" 2>&1 || echo "charlas rc!=0 ($name)" | tee -a "$OUT/entorno.txt"
   fi
 done
 "$PYBIN" "$ROOT/scripts/eval/t69_summary.py" "$OUT" | tee "$OUT/RESUMEN.md"

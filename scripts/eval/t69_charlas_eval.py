@@ -28,6 +28,38 @@ def term_ok(en: str, term: dict) -> bool:
     return bool(re.search(term["must"], en, re.I)) and not (term["bad"] and re.search(term["bad"], en, re.I))
 
 
+def norm_charla(ch: dict) -> dict:
+    """Acepta el banco v1 (turnos/terms must,bad) y el set del 17/11 (sentences/terms ok,bad, 7 charlas)."""
+    if "turnos" in ch:
+        return ch
+    return {"id": ch["talk_id"], "turnos": [
+        {"es": x["es"], "terms": [{"t": t["es"], "must": t["ok"], "bad": t.get("bad") or ""} for t in x["terms"]]}
+        for x in ch["sentences"]]}
+
+
+def remember(q, h: list, es: str, en: str, n: int) -> None:
+    """Igual que Engine._mt_remember (pipeline.py): tope por tokens (OPENTRADUCTOR_MT_CONTEXT_TOKENS) con recorte en
+    bloque hasta cap/2; con session_kv recorte en bloque por frases; si no, las últimas n. n = mt_context_turns."""
+    h.append((es.strip(), en.strip()))
+    v = os.environ.get("OPENTRADUCTOR_MT_CONTEXT_TOKENS")
+    cap = int(v) if v and v.isdigit() else 0
+    if cap > 0 and hasattr(q, "turn_tokens"):
+        sizes = [q.turn_tokens(a, b) for a, b in h]
+        if sum(sizes) > cap:
+            tot, k = sum(sizes), 0
+            while k < len(h) - 1 and tot > cap // 2:
+                tot -= sizes[k]
+                k += 1
+            del h[:k]
+        if len(h) > n:
+            del h[: len(h) - max(1, n // 2)]
+    elif getattr(q, "session_kv", False):
+        if len(h) > n:
+            del h[: len(h) - max(1, n // 2)]
+    else:
+        del h[:-n]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=os.environ.get("OPENTRADUCTOR_QWEN_DIR", str(DEFAULT_MODEL)))
@@ -35,16 +67,18 @@ def main() -> int:
     ap.add_argument("--ctx", default="0,6", help="turnos de contexto por brazo, separados por coma (0 = sin contexto)")
     ap.add_argument("--first-token", action="store_true",
                     help="usa translate_stream (mismo texto que translate) y mide ms hasta el 1.er token de la MT")
+    ap.add_argument("--prefill", action="store_true",
+                    help="q.prefill() antes de cada turno (camino del pipeline; con SESSION_KV=1 es lo que lo hace valer)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     from runtime import components as K  # noqa: E402
 
-    charlas = [json.loads(line) for line in open(a.set) if line.strip()]
+    charlas = [norm_charla(json.loads(line)) for line in open(a.set) if line.strip()]
     q = K.QwenMLX(a.model)
     q.translate("hola")  # calentamiento
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    summary = {"flags": {k: v for k, v in os.environ.items() if k.startswith("OPENTRADUCTOR_MT_")},
+    summary = {"flags": {k: v for k, v in os.environ.items() if k.startswith("OPENTRADUCTOR_MT_")}, "prefill": a.prefill,
                "set": a.set, "arms": {}}
     with open(out / "rows.jsonl", "w") as f:
         for n in [int(x) for x in a.ctx.split(",")]:
@@ -56,8 +90,11 @@ def main() -> int:
             for ch in charlas:
                 hist: list[tuple[str, str]] = []
                 h = t_ = 0
+                q._sess = None  # charla nueva = sesión nueva
                 for i, turn in enumerate(ch["turnos"]):
-                    context = tuple(hist[-n:]) if n > 0 else ()
+                    context = tuple(hist) if n > 0 else ()
+                    if a.prefill:  # como el pipeline: el parcial (sin su última palabra) se carga antes del fin de frase
+                        q.prefill(turn["es"], context)
                     t0 = time.perf_counter()
                     if a.first_token:
                         first: list[float] = []
@@ -68,7 +105,8 @@ def main() -> int:
                     else:
                         en = q.translate(turn["es"], context)
                     ms.append((time.perf_counter() - t0) * 1000)
-                    hist.append((turn["es"], en))
+                    if n > 0:
+                        remember(q, hist, turn["es"], en, n)
                     res = [term_ok(en, t) for t in turn["terms"]]
                     h += sum(res)
                     t_ += len(res)
