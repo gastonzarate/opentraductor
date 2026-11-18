@@ -23,6 +23,7 @@ import asyncio
 import collections
 import concurrent.futures as cf
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
@@ -115,6 +116,7 @@ class SpecEntry:
     tts_ms: float = 0.0
     cancelled: bool = False
     error: str | None = None
+    from_finish: bool = False  # T-73: texto del finish especulativo del ASR (no se reemplaza por un parcial)
 
     @property
     def compute_ms(self) -> float:
@@ -179,7 +181,12 @@ class Engine:
             "started": 0, "hit": 0, "miss_text": 0, "error": 0, "cancelled": 0,
             "skipped_busy": 0, "skipped_limit": 0, "miss_config": 0, "inflight_unmeasured": 0,
             "discarded_observed_ms": 0.0, "overlap_estimate_ms": 0.0,
+            # T-73 spec_on_silence: replaced = relanzada en otra pausa/texto; cancel_voice = volvió la voz;
+            # from_finish = lanzadas con el texto del finish especulativo del ASR; hit_norm = aciertos que solo
+            # coinciden normalizados; late_ms = cómputo de descartadas que terminó después de descartarlas.
+            "replaced": 0, "cancel_voice": 0, "from_finish": 0, "hit_norm": 0, "late_ms": 0.0,
         }
+        self._spec_seg: dict[tuple, dict] = {}  # T-73: por frase (stream, gen, seg_id) -> n lanzadas, wasted_ms
         self.prewarm_stats: dict[str, Any] = {"started": 0, "skipped_hot": 0, "error": 0, "cost_ms": []}
         self._prewarm_tasks: set[asyncio.Future] = set()
         self._mt_ctx: dict[str, list[tuple[str, str]]] = {}  # stream_id -> últimas frases (es, en) emitidas
@@ -209,13 +216,29 @@ class Engine:
         d = dict(self.spec_stats)
         d["discarded_observed_ms"] = round(d["discarded_observed_ms"], 1)
         d["overlap_estimate_ms"] = round(d["overlap_estimate_ms"], 1)
-        d["enabled"] = self.cfg.speculative_mt_tts
+        d["late_ms"] = round(d["late_ms"], 1)
+        d["enabled"] = self._spec_enabled
+        d["on_silence"] = self._spec_on_silence
         return d
 
     @property
     def _mt_exec(self):
         """Ejecutor del MT: Marian en el hilo CPU; Qwen (MLX) en el hilo GPU, el mismo de Kokoro."""
         return self.gpu if self.cfg.mt_engine == "qwen" else self.cpu
+
+    @property
+    def _spec_on_silence(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_SPEC_ON_SILENCE")
+        return (v == "1") if v in ("0", "1") else self.cfg.spec_on_silence
+
+    @property
+    def _spec_enabled(self) -> bool:
+        return bool(self.cfg.speculative_mt_tts or self._spec_on_silence)
+
+    @staticmethod
+    def _spec_norm(t: str) -> str:
+        """T-73: comparación normalizada parcial/final (minúsculas, sin puntuación, espacios simples)."""
+        return " ".join(re.sub(r"[^\w\s]", " ", (t or "").lower()).split())
 
     def _spec_fp(self) -> tuple:
         c = self.cfg
@@ -390,6 +413,8 @@ class Engine:
         for consumed, p in st.vad.probs(pcm):
             end_s = (base + consumed) / SR + st.t_base_s
             if p >= c.vad_threshold:
+                if st.in_speech and st.silence_ms > 0 and st.seg is not None and self._spec_on_silence:
+                    self._spec_cancel_voice(st, st.seg.seg_id)
                 if st.asr_spec_open and st.in_speech:
                     st.asr_spec_open = False  # volvió la voz: el finish especulativo no sirve
                     await st.asr_q.put(("spec_resume", None))
@@ -601,6 +626,8 @@ class Engine:
                         closed = (payload, r[0])
                         self.asr_spec_stats["started"] += 1
                         _append_capped(self.asr_spec_stats["finish_ms"], round(r[1], 1))
+                        if self._spec_on_silence and cur is not None and st.asr_spec_open:
+                            self._spec_from_finish(st, cur, r[0])
                 elif kind == "spec_resume":
                     if closed is not None:
                         audio = b"".join(seg_pcm + held)
@@ -783,9 +810,10 @@ class Engine:
         de audio pendiente es solo silencio) y no hay trabajo confirmado en curso. No emite nada."""
         c = self.cfg
         seg = st.seg
-        if not c.speculative_mt_tts or self.mt is None or seg is None or not st.in_speech:
+        if not self._spec_enabled or self.mt is None or seg is None or not st.in_speech:
             return
-        if seg.seg_id == st.spec_seg_id or st.silence_ms < c.spec_silence_ms:
+        per_pause = self._spec_on_silence
+        if st.silence_ms < c.spec_silence_ms or (not per_pause and seg.seg_id == st.spec_seg_id):
             return
         if st.asr_pending_s > 0 or (st.asr_q is not None and not st.asr_q.empty()):
             return
@@ -800,6 +828,9 @@ class Engine:
             text = K.normalize_asr_text(text)
         if not text:
             return
+        if per_pause:
+            self._spec_start(st, seg, text)
+            return
         if self._speaking or (self._out_q is not None and not self._out_q.empty()):
             self.spec_stats["skipped_busy"] += 1  # prioridad al audio confirmado
             return
@@ -811,6 +842,50 @@ class Engine:
         self._spec[(st.stream_id, st.gen, seg.seg_id)] = e
         self.spec_stats["started"] += 1
         e.task = asyncio.ensure_future(self._spec_run(e))
+
+    def _spec_start(self, st: StreamState, seg: Segment, text: str, from_finish: bool = False) -> None:
+        """T-73 spec_on_silence: una entrada vigente por frase; si el texto normalizado cambió (otra pausa, o llegó el
+        finish especulativo del ASR) se reemplaza. El trabajo de la reemplazada termina en su hilo y cuenta como
+        desperdicio (late_ms). Cede ante audio confirmado en curso, como la especulación de T-58."""
+        c = self.cfg
+        key = (st.stream_id, st.gen, seg.seg_id)
+        old = self._spec.get(key)
+        if old is not None and (self._spec_norm(old.text_es) == self._spec_norm(text)
+                                or (old.from_finish and not from_finish)):
+            return
+        if self._speaking or (self._out_q is not None and not self._out_q.empty()):
+            self.spec_stats["skipped_busy"] += 1
+            return
+        if old is not None:
+            self._spec.pop(key)
+            self._spec_discard(old)
+            self.spec_stats["replaced"] += 1
+        elif len(self._spec) >= max(1, c.spec_max_entries):
+            self.spec_stats["skipped_limit"] += 1
+            return
+        st.spec_seg_id = seg.seg_id
+        e = SpecEntry(st.stream_id, seg.seg_id, text, gen=st.gen, fp=self._spec_fp(), from_finish=from_finish)
+        self._spec[key] = e
+        self.spec_stats["started"] += 1
+        if from_finish:
+            self.spec_stats["from_finish"] += 1
+        self._spec_seg.setdefault(key, {"n": 0, "wasted_ms": 0.0})["n"] += 1
+        e.task = asyncio.ensure_future(self._spec_run(e))
+
+    def _spec_from_finish(self, st: StreamState, seg: Segment, raw: str) -> None:
+        """T-73: el finish especulativo del ASR (T-58) da el texto que será el final si no vuelve la voz."""
+        text = (raw or "").strip()
+        if self.cfg.asr_normalize_text:
+            text = K.normalize_asr_text(text)
+        if text and self.mt is not None and self._is_live(st.stream_id, seg.gen):
+            self._spec_start(st, seg, text, from_finish=True)
+
+    def _spec_cancel_voice(self, st: StreamState, seg_id: int) -> None:
+        """T-73: volvió la voz en una pausa: lo especulado sobre el parcial anterior ya no sirve."""
+        e = self._spec.pop((st.stream_id, st.gen, seg_id), None)
+        if e is not None:
+            self._spec_discard(e)
+            self.spec_stats["cancel_voice"] += 1
 
     async def _spec_run(self, e: SpecEntry) -> None:
         try:
@@ -843,15 +918,34 @@ class Engine:
             e = self._spec.pop(key)
             self._spec_discard(e)
             self.spec_stats["cancelled"] += 1
+        for key in [k for k in self._spec_seg if (stream_id is None or k[0] == stream_id)
+                    and (gen is None or k[1] == gen) and (seg_id is None or k[2] == seg_id)]:
+            del self._spec_seg[key]
 
     def _spec_discard(self, e: SpecEntry) -> None:
         """Marca la entrada como descartada. Un trabajo ya enviado a un executor (FIFO) NO es cancelable y terminará
         en segundo plano (ocupa su hilo hasta entonces); aquí solo se evita lanzar trabajo nuevo (TTS) y se ignora el
         resultado. Solo el cómputo ya completado se suma a discarded_observed_ms."""
         e.cancelled = True
+        key = (e.stream_id, e.gen, e.seg_id)
+        if key in self._spec_seg:
+            self._spec_seg[key]["wasted_ms"] += e.compute_ms
         if e.task is not None and not e.task.done():
-            self.spec_stats["inflight_unmeasured"] += 1
-            e.task.cancel()
+            if self._spec_on_silence:
+                # T-73: sin cancelar la tarea: la MT ya está en el hilo y terminará igual; así se mide lo desperdiciado.
+                done_ms = e.compute_ms
+
+                def late(_t, e=e, done_ms=done_ms, key=key):
+                    extra = max(0.0, e.compute_ms - done_ms)
+                    self.spec_stats["late_ms"] += extra
+                    self.spec_stats["discarded_observed_ms"] += extra
+                    if key in self._spec_seg:
+                        self._spec_seg[key]["wasted_ms"] += extra
+
+                e.task.add_done_callback(late)
+            else:
+                self.spec_stats["inflight_unmeasured"] += 1
+                e.task.cancel()
         self.spec_stats["discarded_observed_ms"] += e.compute_ms
 
     async def _spec_claim(self, stream_id: str, seg: Segment) -> tuple[SpecEntry | None, str | None]:
@@ -859,12 +953,14 @@ class Engine:
         iguales y sin error. Se compara ANTES de esperar la tarea: un fallo conocido no espera ni lanza TTS nuevo."""
         e = self._spec.pop((stream_id, seg.gen, seg.seg_id), None)
         if e is None:
-            return None, ("none" if self.cfg.speculative_mt_tts else None)
+            return None, ("none" if self._spec_enabled else None)
         if e.fp != self._spec_fp():
             self.spec_stats["miss_config"] += 1
             self._spec_discard(e)
             return None, "miss"
-        if e.text_es != seg.text_es:
+        norm_hit = (self._spec_on_silence and e.text_es != seg.text_es
+                    and self._spec_norm(e.text_es) == self._spec_norm(seg.text_es))
+        if e.text_es != seg.text_es and not norm_hit:
             self.spec_stats["miss_text"] += 1
             self._spec_discard(e)
             return None, "miss"
@@ -881,6 +977,8 @@ class Engine:
             self._spec_discard(e)
             return None, "error" if e.error else "cancelled"
         self.spec_stats["hit"] += 1
+        if norm_hit:
+            self.spec_stats["hit_norm"] += 1
         self.spec_stats["overlap_estimate_ms"] += max(0.0, e.compute_ms - waited_ms)
         return e, "hit"
 
@@ -898,6 +996,12 @@ class Engine:
                     continue
                 t0 = time.perf_counter()
                 entry, spec = await self._spec_claim(stream_id, seg)
+                ss = self._spec_seg.pop((stream_id, seg.gen, seg.seg_id), None)
+                if self._spec_on_silence:
+                    await self.emit("spec_result", {
+                        "stream_id": stream_id, "seg_id": seg.seg_id, "spec": spec,
+                        "launched": ss["n"] if ss else 0, "wasted_ms": round(ss["wasted_ms"], 1) if ss else 0.0,
+                        "claim_wait_ms": round((time.perf_counter() - t0) * 1000, 1)})
                 if entry is not None:
                     text_en = entry.text_en
                 elif self._mt_stream_enabled:
@@ -997,8 +1101,8 @@ class Engine:
 
     @property
     def _mt_stream_enabled(self) -> bool:
-        v = os.environ.get("OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK")
-        on = (v == "1") if v in ("0", "1") else self.cfg.mt_stream_first_chunk
+        v = os.environ.get("OPENTRADUCTOR_MT_STREAM_TTS") or os.environ.get("OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK")
+        on = (v == "1") if v in ("0", "1") else (self.cfg.mt_stream_first_chunk or self.cfg.mt_stream_tts)
         return bool(on) and self.cfg.mt_engine == "qwen" and hasattr(self.mt, "translate_stream")
 
     async def _mt_stream_speak(self, stream_id, seg, t0: float) -> None:

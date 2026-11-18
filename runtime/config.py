@@ -261,6 +261,13 @@ class PipelineConfig:
     # prefijo lo fija (components.first_clause_final) y sale antes del mt_final. Mismos cortes y texto que el camino
     # normal. Apagado hasta el A/B de @bench. $OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK=1/0 lo fuerza.
     mt_stream_first_chunk: bool = False
+    # T-73 Idea B: alias de mt_stream_first_chunk con el nombre de la tarea ($OPENTRADUCTOR_MT_STREAM_TTS=1/0).
+    mt_stream_tts: bool = False
+    # T-73 Idea A: especulación por PAUSA (no una vez por frase). En cada pausa VAD con el ASR al día se lanza MT + 1.er
+    # fragmento TTS del parcial; si llega el finish especulativo del ASR (asr_spec_finish_on_pause) con otro texto, se
+    # relanza con ese. Si vuelve la voz, se descarta. Acierto con comparación normalizada (minúsculas, sin
+    # puntuación). Implica speculative_mt_tts. Evento spec_result por frase. $OPENTRADUCTOR_SPEC_ON_SILENCE=1/0.
+    spec_on_silence: bool = False
     asr_spec_finish_silence_ms: float = 80.0
     spec_silence_ms: float = 64.0  # silencio VAD mínimo para especular (< endpoint_silence_ms)
     spec_max_entries: int = 4  # entradas en caché simultáneas (acotado)
