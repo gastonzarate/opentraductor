@@ -231,14 +231,18 @@ class PipelineConfig:
     # la caché); falta repetir gate 2 y latencia. Apagado por defecto; se enciende con env OPENTRADUCTOR_MT_GLOSSARY=1.
     # T-74 (18/11): encendido por defecto junto con mt_sense_prompt; env OPENTRADUCTOR_MT_GLOSSARY=0 lo apaga.
     mt_sense_glossary: bool = True
-    mt_context_turns: int = 0
+    # T-77 (18/11): contexto largo por defecto (pedido de la persona: «mucho contexto»). Máximo de frases; el tope
+    # real lo pone mt_context_tokens. 0 = sin historia (camino viejo).
+    mt_context_turns: int = 200
     # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de
     # sus tokens nuevos. Con mt_context_turns > 0 la historia se recorta en bloque (n -> n/2) para no romper el prefijo.
-    mt_session_kv: bool = False
+    # T-77: encendido por defecto (A/B de T-68 en artifacts/t68-kv95: MT p50 −5 ms, 91/96 igual). Env =0 lo apaga.
+    mt_session_kv: bool = True
     # T-68 contexto largo por tokens: tope (aprox.) de tokens de historia en el prompt de Qwen. Al pasarlo se descartan
     # las frases más viejas hasta quedar en la mitad (recorte en bloque: la caché de sesión se rehace solo entonces).
     # 0 = solo mt_context_turns. Con este tope, mt_context_turns es el máximo de frases (poner alto, p. ej. 200).
-    mt_context_tokens: int = 0
+    # T-77: 2000 por defecto (lo medido en T-68). Env OPENTRADUCTOR_MT_CONTEXT_TOKENS=0 vuelve a solo turnos.
+    mt_context_tokens: int = 2000
     # T-68 decodificación especulativa: carpeta de un Qwen3 chico (0.6B 4bit) como borrador del 4B. None = sin borrador.
     # También por env OPENTRADUCTOR_MT_DRAFT_DIR (y OPENTRADUCTOR_MT_DRAFT_TOKENS, default 3).
     mt_draft_dir: str | None = None

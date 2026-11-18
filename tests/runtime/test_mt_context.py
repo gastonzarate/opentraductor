@@ -28,9 +28,19 @@ def _go(**kw):
     return asyncio.run(go())
 
 
-def test_context_off_by_default_passes_nothing():
-    e, ev = _go(mt_engine="qwen")
+def test_context_off_passes_nothing():
+    e, ev = _go(mt_engine="qwen", mt_context_turns=0)
     assert e.mt.contexts == [(), ()]
+
+
+def test_context_on_by_default():
+    # T-77: contexto largo con caché KV de sesión y tope de 2000 tokens; el especulativo sigue apagado
+    from runtime.config import PipelineConfig
+    c = PipelineConfig()
+    assert (c.mt_context_turns, c.mt_session_kv, c.mt_context_tokens, c.mt_draft_dir) == (200, True, 2000, None)
+    e, ev = _go(mt_engine="qwen")
+    finals = [f["text"] for k, f in ev if k == "asr_final"]
+    assert e.mt.contexts == [(), ((finals[0], "EN " + finals[0]),)]
 
 
 def test_context_passes_previous_turn_per_stream():
@@ -197,7 +207,7 @@ def test_context_tokens_keeps_last_turn_even_if_huge():
 
 
 def test_context_tokens_off_keeps_turn_rule():
-    e, rem = _remember_engine(mt_context_turns=2)
+    e, rem = _remember_engine(mt_context_turns=2, mt_context_tokens=0, mt_session_kv=False)  # camino off (T-77)
     for t in "abc":
         rem(t)
     assert [es for es, _ in e._mt_ctx["s"]] == ["b", "c"]

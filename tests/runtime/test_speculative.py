@@ -44,7 +44,7 @@ class FakeMT:
     def __init__(self, delay=0.02, fail=False):
         self.calls, self.delay, self.fail = [], delay, fail
 
-    def translate(self, t):
+    def translate(self, t, context=()):  # T-77: el pipeline pasa la historia (contexto on por defecto)
         self.calls.append(t)
         time.sleep(self.delay)
         if self.fail and len(self.calls) == 1:

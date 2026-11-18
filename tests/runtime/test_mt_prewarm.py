@@ -83,7 +83,7 @@ class PrefillMT(PrewarmMT):
         super().__init__(**kw)
         self.prefills = []
 
-    def prefill(self, partial):
+    def prefill(self, partial, context=()):
         self.prefills.append(partial)
 
 
