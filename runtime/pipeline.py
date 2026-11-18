@@ -619,7 +619,7 @@ class Engine:
                         await self.asr_worker.run(self.asr.add, pre)
                         seg_pcm.append(pre)
                     st.last_partial = ""
-                    st.clauser = ClauseCommitter() if self._simul_enabled else None
+                    st.clauser = self._new_clauser() if self._simul_enabled else None
                 elif kind == "spec_end":
                     if closed is None:
                         r = await self.asr_worker.run(_timed_call, self.asr.finish)
@@ -1040,6 +1040,13 @@ class Engine:
     def _simul_enabled(self) -> bool:
         v = os.environ.get("OPENTRADUCTOR_MT_SIMUL")
         return (v == "1") if v in ("0", "1") else self.cfg.mt_simul_clauses
+
+    def _new_clauser(self) -> ClauseCommitter:
+        mw = os.environ.get("OPENTRADUCTOR_MT_SIMUL_MIN_WORDS", "")
+        cues = os.environ.get("OPENTRADUCTOR_MT_SIMUL_CUES")
+        return ClauseCommitter(
+            min_words=int(mw) if mw.isdigit() and int(mw) > 0 else self.cfg.mt_simul_min_words,
+            extra_cues=(self.cfg.mt_simul_extra_cues if cues is None else cues).split(","))
 
     async def _enqueue_clause(self, st: StreamState, cur: Segment, text: str) -> None:
         """Cláusula confirmada por local agreement: a la cola de salida como pieza de la frase ``cur`` (mismo

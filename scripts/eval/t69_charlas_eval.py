@@ -61,11 +61,19 @@ def remember(q, h: list, es: str, en: str, n: int) -> None:
         del h[:-n]
 
 
-def simul_split(es: str, min_words: int = 5) -> list[str]:
+def simul_split(es: str, min_words: int | None = None, cues: str | None = None) -> list[str]:
     """Piezas en que el Engine con MT_SIMUL=1 traduce ``es``: cláusulas confirmadas por local agreement sobre
-    parciales que crecen de a una palabra (el ASR real puede cortar menos), y el resto al fin de frase."""
+    parciales que crecen de a una palabra (el ASR real puede cortar menos), y el resto al fin de frase.
+    Reglas como Engine._new_clauser: OPENTRADUCTOR_MT_SIMUL_MIN_WORDS / _CUES o los defaults de PipelineConfig."""
+    from runtime.config import PipelineConfig  # noqa: E402
     from runtime.simul import ClauseCommitter  # noqa: E402
-    c = ClauseCommitter(min_words=min_words)
+    cfg = PipelineConfig()
+    if min_words is None:
+        mw = os.environ.get("OPENTRADUCTOR_MT_SIMUL_MIN_WORDS", "")
+        min_words = int(mw) if mw.isdigit() and int(mw) > 0 else cfg.mt_simul_min_words
+    if cues is None:
+        cues = os.environ.get("OPENTRADUCTOR_MT_SIMUL_CUES", cfg.mt_simul_extra_cues)
+    c = ClauseCommitter(min_words=min_words, extra_cues=cues.split(","))
     w = es.split()
     pieces: list[str] = []
     for k in range(1, len(w) + 1):

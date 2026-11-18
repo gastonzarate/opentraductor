@@ -131,3 +131,30 @@ def test_simul_asr_rewrite_still_translates_only_rest(monkeypatch):
     assert e.mt.calls[-1] == "pero no encontramos nada que valga la pena"
     assert e.simul_stats["rewrite"] == 1
     assert [f["text_raw"] for k, f in ev if k == "asr_final"] == [final]
+
+
+def test_extra_cues_and_min_words_are_parameters():
+    w = "fuimos al centro y no había nadie".split()
+    assert next_clause_end(w, 0) is None  # defaults de hoy: "y" no corta
+    assert next_clause_end(w, 0, 3, frozenset({"y"})) == 3
+    c = ClauseCommitter(min_words=3, extra_cues=("y", " que ", ""))
+    assert c.extra_cues == frozenset({"y", "que"})
+    c.update("fuimos al centro y")
+    assert c.update("fuimos al centro y no") == ["fuimos al centro"]
+    assert c.rest("fuimos al centro y no había nadie") == "y no había nadie"
+
+
+def test_engine_clauser_reads_config_and_env(monkeypatch):
+    from runtime.config import PipelineConfig
+    from runtime.pipeline import Engine
+
+    e = Engine.__new__(Engine)
+    e.cfg = PipelineConfig()
+    monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL_MIN_WORDS", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL_CUES", raising=False)
+    c = e._new_clauser()
+    assert (c.min_words, c.extra_cues) == (5, frozenset())
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_MIN_WORDS", "3")
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_CUES", "y,que")
+    c = e._new_clauser()
+    assert (c.min_words, c.extra_cues) == (3, frozenset({"y", "que"}))

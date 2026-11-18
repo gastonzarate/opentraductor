@@ -189,6 +189,10 @@ class PipelineConfig:
     # seguidos del ASR y cerrada por coma/"pero"/"porque"/"o sea"... (mín. 5 palabras) se traduce y se habla antes del
     # fin de frase; en el endpoint solo se traduce el resto. Env OPENTRADUCTOR_MT_SIMUL=1/0 manda. Off = camino de hoy.
     mt_simul_clauses: bool = False
+    # Mínimo de palabras por cláusula y palabras extra que abren cláusula (separadas por coma, p. ej. "y,que").
+    # Env OPENTRADUCTOR_MT_SIMUL_MIN_WORDS / OPENTRADUCTOR_MT_SIMUL_CUES mandan. Defaults = reglas de 02512a5.
+    mt_simul_min_words: int = 5
+    mt_simul_extra_cues: str = ""
     endpoint_short_ms: float = 96.0
     endpoint_long_ms: float = 480.0
     vad_threshold: float = 0.5

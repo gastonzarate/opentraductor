@@ -5,7 +5,7 @@ coinciden hasta ella. Sobre el prefijo confirmado se busca un límite de cláusu
 "entonces", "o sea"...). La cláusula anterior al límite ya no puede cambiar y se manda a traducir mientras la
 persona sigue hablando. El resto de la frase se traduce en el endpoint, como hoy.
 
-Nada de esto está conectado al pipeline todavía.
+Conectado en pipeline._asr_loop detrás de ``mt_simul_clauses`` (env OPENTRADUCTOR_MT_SIMUL).
 """
 from __future__ import annotations
 
@@ -31,17 +31,19 @@ def agreed_prefix(prev: str, cur: str) -> list[str]:
     return b[:n]
 
 
-def next_clause_end(words: list[str], start: int, min_words: int = 5) -> int | None:
+def next_clause_end(words: list[str], start: int, min_words: int = 5,
+                    extra_cues: frozenset[str] = frozenset()) -> int | None:
     """Fin (exclusivo) de la próxima cláusula cerrada dentro de ``words[start:]``, o None.
 
     Límites: palabra que termina en ``, ; :`` (corte después) o una palabra/par de ``CLAUSE_CUES`` /
     ``CLAUSE_CUE_PAIRS`` (corte antes). La cláusula debe tener al menos ``min_words`` palabras, para no mandar
     a traducir fragmentos que el traductor no puede resolver solos. El límite debe estar confirmado entero: para
-    un par, las dos palabras tienen que estar en ``words``."""
+    un par, las dos palabras tienen que estar en ``words``. ``extra_cues`` suma palabras que abren cláusula
+    (p. ej. "y", "que"; config ``mt_simul_extra_cues``)."""
     for i in range(start, len(words)):
         w = _norm(words[i])
         if i - start >= min_words:
-            if w in CLAUSE_CUES:
+            if w in CLAUSE_CUES or w in extra_cues:
                 return i
             if i + 1 < len(words) and (w, _norm(words[i + 1])) in CLAUSE_CUE_PAIRS:
                 return i
@@ -53,8 +55,9 @@ def next_clause_end(words: list[str], start: int, min_words: int = 5) -> int | N
 class ClauseCommitter:
     """Estado por segmento: último parcial, cuántas palabras ya se confirmaron como cláusulas."""
 
-    def __init__(self, min_words: int = 5) -> None:
+    def __init__(self, min_words: int = 5, extra_cues: frozenset[str] | set[str] | tuple = ()) -> None:
         self.min_words = min_words
+        self.extra_cues = frozenset(_norm(w.strip()) for w in extra_cues if _norm(w.strip()))
         self.prev = ""
         self.committed = 0  # palabras ya entregadas como cláusulas
         self.words: list[str] = []  # esas palabras, tal como se mandaron a traducir
@@ -68,7 +71,7 @@ class ClauseCommitter:
             return []
         out = []
         while True:
-            end = next_clause_end(stable, self.committed, self.min_words)
+            end = next_clause_end(stable, self.committed, self.min_words, self.extra_cues)
             if end is None:
                 return out
             out.append(" ".join(stable[self.committed:end]))
