@@ -148,7 +148,6 @@ if (typeof module !== "undefined" && module.exports) module.exports = LiveRows;
     monitorHint: $("monitor-hint"),
     audioLatency: $("audio-latency"),
     voice: $("voice"),
-    engineMode: $("engine-mode"),
     src: $("src"),
     tgt: $("tgt"),
     backlog: $("backlog"),
@@ -274,7 +273,6 @@ if (typeof module !== "undefined" && module.exports) module.exports = LiveRows;
   function renderStatus(s) {
     const em = s.engine_mode || {};
     ui.ignored = Array.isArray(em.ignored_controls) ? em.ignored_controls : [];
-    el.engineMode.textContent = em.mode && em.mode !== "baseline" ? em.label || em.mode : "";
     el.models.textContent = "";
     const models = s.models || {};
     for (const key of Object.keys(models)) {

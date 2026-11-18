@@ -50,7 +50,6 @@ final class RuntimeProcess {
         let profile = EngineProfile.current
         env["OPENTRADUCTOR_ASR_BACKEND"] = profile.asrBackend
         env["OPENTRADUCTOR_MT_ENGINE"] = profile.mtEngine
-        env["OPENTRADUCTOR_ENGINE_MODE"] = profile.engineMode  // informativo: el modo lo fija --engine-mode (runtimeArgs)
         if profile.mtEngine == "qwen", let q = ModelManifest.qwenDir(profile.qwenModel) { env["OPENTRADUCTOR_QWEN_DIR"] = q.path }
         // BUG-7 (22e7f7a, validado por @qa en texto): normaliza cifras y traduce oración por oración.
         env["OPENTRADUCTOR_MT_NORMALIZE"] = "1"

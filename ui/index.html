@@ -15,7 +15,6 @@
     </div>
     <div class="session">
       <p>Sesión: <strong id="session-state">sin conexión</strong></p>
-      <p id="engine-mode" class="small" role="status"></p>
       <div class="buttons">
         <button id="start" type="button" disabled>Iniciar</button>
         <button id="stop" type="button" disabled>Parar</button>
@@ -24,18 +23,6 @@
   </header>
 
   <main class="grid">
-    <section id="license-card" class="card wide" aria-labelledby="h-license" hidden>
-      <h2 id="h-license">Licencia</h2>
-      <p id="license-state" role="status"></p>
-      <form id="license-form" hidden autocomplete="off">
-        <label for="license-key">Clave de licencia</label>
-        <input id="license-key" type="text" spellcheck="false" autocapitalize="off" maxlength="200" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX">
-        <p class="muted small" id="license-notice"></p>
-        <div class="buttons"><button id="license-activate" type="submit">Activar licencia</button></div>
-        <p id="license-msg" class="small" role="alert"></p>
-      </form>
-    </section>
-
     <section id="vmic-card" class="card wide" aria-labelledby="h-vmic">
       <h2 id="h-vmic">Micrófono virtual</h2>
       <p id="vmic-state" role="status">Comprobando…</p>

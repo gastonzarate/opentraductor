@@ -147,7 +147,6 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 .steps { margin: 8px 0; padding-left: 22px; }
 .steps li { margin: 8px 0; }
 .steps code { display: inline-block; margin-top: 4px; padding: 3px 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; user-select: all; }
-#license-key { width: 100%; padding: 6px; font-size: 0.95rem; font-family: ui-monospace, Menlo, monospace; }
 .state-ok { color: var(--ok); }
 .state-warn { color: var(--warn); }
 .state-bad { color: var(--danger); }
