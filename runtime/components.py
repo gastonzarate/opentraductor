@@ -406,9 +406,54 @@ QWEN_GUARD = ("Do not copy those Argentine words into the English: write their m
               "Translate the rest of the sentence as usual.")
 
 
-def qwen_glossary(text_es: str) -> list[str]:
-    """Entradas de QWEN_GLOSSARY cuyos términos aparecen en ``text_es`` (sin distinguir mayúsculas), en orden."""
-    return [g for pat, g in QWEN_GLOSSARY if re.search(pat, text_es, re.I)]
+# T-74 palanca 3 (OPENTRADUCTOR_GLOSSARY_EXT=1, apagada por defecto): ampliación con fuente general y licencia
+# compatible. Fuente única: Wiktionary en inglés, categorías «Rioplatense Spanish», «Argentine Spanish» y «Lunfardo»
+# (CC BY-SA 4.0; solo se toma la lista de lemas y su sentido, redactado aquí). Elegidas por uso en charlas de trabajo,
+# plata y reuniones; ninguna sale de los fallos del set del 17/11 ni del banco v1. Las polisémicas solo disparan con
+# el contexto que fija el sentido rioplatense (ver test_glossary_ext_literal).
+QWEN_GLOSSARY_EXT = (
+    (r"\bfunc(a|an|ó|aba|aban|ar|ando)\b", "funcar = to work, function (no funca = it doesn't work)"),
+    (r"\bponele\b", "ponele = let's say, say"),
+    (r"\bberretas?\b", "berreta = cheap, shoddy"),
+    (r"\bcos(o|ito)\b(?! de)", "coso = thingy, whatchamacallit"),
+    (r"\brelojea\w*", "relojear = to eye, check out"),
+    (r"\bchusme(ar|o|á|ás|aste|é|ó|ando)\b", "chusmear = to snoop, take a quick look; to gossip"),
+    (r"\bengrup\w*", "engrupir = to fool, con"),
+    (r"\bdeschav\w*", "deschavar = to give away, reveal"),
+    (r"\bes un montón\b", "es un montón = it's a lot, it's too much"),
+    (r"\bcuentapropistas?\b", "cuentapropista = self-employed, freelancer"),
+    (r"\bmonotributistas?\b", "monotributista = self-employed contractor (Argentine simplified tax regime)"),
+    (r"\bel cepo\b|\bcepo cambiario\b", "el cepo = Argentina's currency controls"),
+    (r"\bd[óo]lar mep\b", "dólar MEP = MEP dollar (keep 'MEP'; legal stock-market exchange rate)"),
+    (r"\b(tiene|tenés|tengo|tienen|tenemos|con|falta|le falta|les falta) (mucha |poca )?cancha\b", "tener cancha = to be experienced, savvy"),
+    (r"\bcancher[oa]s?\b", "canchero = savvy, self-assured"),
+    (r"\bfuler[oa]s?\b", "fulero = ugly, bad, dodgy"),
+    (r"\bbarde(ar|ó|aron|ás|a|ando)\b", "bardear = to trash-talk, mess with"),
+    (r"\bghoste\w*", "ghostear = to ghost"),
+    (r"\bpon(er|é|emos|ele|erle|gan|gamos)(le)? (más |un poco de |toda la )?onda\b", "ponerle onda = to put some effort, enthusiasm into it"),
+    (r"\bhech[oa]s? pelota\b", "hecho pelota = wrecked, exhausted"),
+    (r"\bno te hagas problema\b", "no te hagas problema = don't worry about it"),
+    (r"\bse me prendió la lamparita\b|\bprend\w* la lamparita\b", "prendérsele la lamparita = to have a bright idea"),
+    (r"\bsi te digo te miento\b", "si te digo te miento = honestly, I don't know"),
+    (r"\bde manual\b", "de manual = textbook, classic"),
+    (r"\bdato de color\b", "dato de color = fun fact, side detail"),
+    (r"\bgatill(ar|ó|ás|á|aste|amos|aron)\b", "gatillar = to pay up, shell out"),
+    (r"\bde cajón\b", "de cajón = obviously, a given"),
+    (r"\bsi (te |me |nos )?pinta\b", "si pinta = if we feel like it, if it works out"),
+    (r"\bni a cañonazos\b", "ni a cañonazos = no way, not a chance"),
+    (r"\b(hac\w+|mucha|pura) rosca\b", "rosca = backroom politics, scheming"),
+    (r"\b(en|sin) joda\b", "en joda = joking; sin joda = seriously"),
+    (r"\batenti\b", "atenti = heads up, pay attention"),
+)
+
+
+def qwen_glossary(text_es: str, ext: bool | None = None) -> list[str]:
+    """Entradas de QWEN_GLOSSARY cuyos términos aparecen en ``text_es`` (sin distinguir mayúsculas), en orden.
+    Con ``ext`` (por defecto, env OPENTRADUCTOR_GLOSSARY_EXT=1) suma QWEN_GLOSSARY_EXT al final."""
+    if ext is None:
+        ext = os.environ.get("OPENTRADUCTOR_GLOSSARY_EXT") == "1"
+    pats = QWEN_GLOSSARY + QWEN_GLOSSARY_EXT if ext else QWEN_GLOSSARY
+    return [g for pat, g in pats if re.search(pat, text_es, re.I)]
 
 
 class QwenMLX:

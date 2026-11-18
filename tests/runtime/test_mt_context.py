@@ -195,3 +195,32 @@ def test_glossary_t74_terms():
               "Pongan la camiseta en el lavarropas", "Baja la línea de producción"):
         assert K.qwen_glossary(s) == [], s
     assert K.qwen_glossary("es medio garca")[0].startswith("garca")
+
+
+def test_glossary_ext_off_by_default(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_GLOSSARY_EXT", raising=False)
+    assert K.qwen_glossary("no funca el build") == []
+    monkeypatch.setenv("OPENTRADUCTOR_GLOSSARY_EXT", "1")
+    assert K.qwen_glossary("no funca el build") == ["funcar = to work, function (no funca = it doesn't work)"]
+
+
+def test_glossary_ext_terms():
+    # T-74 palanca 3: Wiktionary (CC BY-SA 4.0), Rioplatense/Argentine Spanish/Lunfardo; no sale del 17/11 ni de v1
+    g = lambda s: K.qwen_glossary(s, ext=True)
+    assert g("ponele que son diez")[0].startswith("ponele")
+    assert g("el tipo tiene mucha cancha")[0].startswith("tener cancha")
+    assert g("quedé hecho pelota")[0].startswith("hecho pelota")
+    assert g("hay mucha rosca en el directorio")[0].startswith("rosca")
+    assert g("te lo digo sin joda")[0].startswith("en joda")
+    assert g("compré dólar MEP")[0].startswith("dólar MEP")
+    # la lista base no cambia con ext
+    assert g("Tranqui, te banco")[0].startswith("bancar =")
+
+
+def test_glossary_ext_literal():
+    # sentido literal o común: no disparan
+    for s in ("Los tests están verdes", "Jugamos en la cancha de fútbol", "La rosca del tornillo",
+              "Pasame el coso de la mesa", "El manual de usuario", "La pelota está pinchada",
+              "Me pinta la pared", "Hay un problema en el servidor", "El dólar oficial subió",
+              "El cajón del escritorio", "Una joda bárbara"):
+        assert [e for e in K.qwen_glossary(s, ext=True) if e not in K.qwen_glossary(s, ext=False)] == [], s
