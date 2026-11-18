@@ -2,7 +2,7 @@
 """T-69 (@bench): % de términos bien traducidos en charlas con contexto (scripts/eval/sets/charlas_ctx_ar.jsonl).
 
 Cada charla se traduce turno a turno con Qwen, como en el pipeline: los últimos N turnos (es, en propio) van de contexto.
-Brazos = valores de N (0 = sin contexto). Los flags del MT se toman del entorno, igual que en la app:
+Brazos = valores de N (0 = sin contexto). La MT se arma con PipelineConfig() del commit medido (como la app); el entorno manda:
 OPENTRADUCTOR_MT_GLOSSARY=0/1, OPENTRADUCTOR_MT_SENSE=0/1, OPENTRADUCTOR_MT_SESSION_KV=0/1.
 Un término acierta si ``must`` aparece y ``bad`` no. Mide también la MT por turno (sin prefill KV: orientativo, no es end_to_first).
 
@@ -72,13 +72,22 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     from runtime import components as K  # noqa: E402
+    from runtime.config import PipelineConfig  # noqa: E402
 
     charlas = [norm_charla(json.loads(line)) for line in open(a.set) if line.strip()]
-    q = K.QwenMLX(a.model)
+    # 18/11 (T-74): la MT se arma con la PipelineConfig del commit medido, igual que Engine (pipeline.py), y el env
+    # (OPENTRADUCTOR_MT_*) sigue mandando dentro de QwenMLX. Antes se usaban los defaults del constructor (todo apagado),
+    # y un brazo "sin flags" medía Qwen sin glosario aunque la config lo encendiera (D1 de 95bea57: 66/96 en vez de 91/96).
+    cfg = PipelineConfig()
+    q = K.QwenMLX(a.model, normalize=cfg.mt_normalize, sense_prompt=cfg.mt_sense_prompt,
+                  sense_glossary=cfg.mt_sense_glossary, session_kv=cfg.mt_session_kv, draft_dir=cfg.mt_draft_dir)
     q.translate("hola")  # calentamiento
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     summary = {"flags": {k: v for k, v in os.environ.items() if k.startswith("OPENTRADUCTOR_MT_")}, "prefill": a.prefill,
+               "efectivo": {"sense": q.system != K.QWEN_SYSTEM, "glossary": q.glossary, "session_kv": q.session_kv,
+                            "ext": os.environ.get("OPENTRADUCTOR_GLOSSARY_EXT", "1") != "0",
+                            "dom": os.environ.get("OPENTRADUCTOR_GLOSSARY_DOM", "1") != "0"},
                "set": a.set, "arms": {}}
     with open(out / "rows.jsonl", "w") as f:
         for n in [int(x) for x in a.ctx.split(",")]:
