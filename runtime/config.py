@@ -218,13 +218,15 @@ class PipelineConfig:
     mt_normalize: bool = False
     # Pedido de la persona (17/11), solo Qwen, apagados hasta el A/B (set de frases ambiguas, BLEU -1 máx.,
     # MT p50 +20 ms máx.): prompt de traducción por sentido y N frases previas ES->EN de la sesión como contexto.
-    mt_sense_prompt: bool = False
+    # T-74 (18/11): encendido por defecto (el 94,8 % del 17/11 se midió con SENSE+GLOSSARY+EXT+DOM). Env =0 lo apaga.
+    mt_sense_prompt: bool = True
     # T-58 opción acotada: solo a las frases con un término de QWEN_GLOSSARY, glosario + «mantener negaciones, sujeto,
     # tiempo, cifras y nombres» después del texto. Gate 2 de 70bb991 pasa en sentido (20->28/30, sin must_not nuevos;
     # BLEU 72.8->72.8), pero NO en latencia: en frases con modismo MT p95 +63 ms (límite +30), porque el glosario queda
     # fuera del prefijo del prefill KV. Ahora el glosario va antes del texto, armado con el parcial estable (dentro de
     # la caché); falta repetir gate 2 y latencia. Apagado por defecto; se enciende con env OPENTRADUCTOR_MT_GLOSSARY=1.
-    mt_sense_glossary: bool = False
+    # T-74 (18/11): encendido por defecto junto con mt_sense_prompt; env OPENTRADUCTOR_MT_GLOSSARY=0 lo apaga.
+    mt_sense_glossary: bool = True
     mt_context_turns: int = 0
     # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de
     # sus tokens nuevos. Con mt_context_turns > 0 la historia se recorta en bloque (n -> n/2) para no romper el prefijo.
