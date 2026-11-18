@@ -108,6 +108,24 @@ def test_glossary_on_goes_before_text_only_with_term():
     assert nxt.startswith(prev)
 
 
+def test_ctx_es_history_spanish_only_before_current_turn():
+    q = _qwen(False)
+    q.glossary, q.ctx_es = True, True
+    ctx = (("hablemos de pagos", "let's talk about payments"), ("dale", "OK"))
+    p = q.prompt("no hay plata", ctx)
+    assert "let's talk" not in p and "assistant:" not in p
+    assert p.startswith(f"system:{K.QWEN_SYSTEM}|user:{K.QWEN_CTX_ES}\nhablemos de pagos\ndale\n\n")
+    assert p.endswith("Spanish:\nno hay plata")
+    # sin contexto, igual que sin el flag; con una frase más, la historia anterior sigue siendo prefijo
+    assert q.prompt("hola") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nhola"
+    nxt = q.prompt("seguimos", ctx + (("no hay plata", "no money"),))
+    assert nxt.startswith(p[: p.index("dale\n") + len("dale\n")])
+    # el parcial estable entra en la caché de prefill(): anclado al último «Spanish:»
+    assert q.prompt("no hay plata y", ctx).startswith(p[: p.rindex("Spanish:\n")])
+    q.ctx_es = False
+    assert "assistant:let's talk about payments" in q.prompt("no hay plata", ctx)
+
+
 
 def _remember_engine(**cfg):
     """T-68: Engine._mt_remember con un MT que cuenta 1 token por carácter del español."""

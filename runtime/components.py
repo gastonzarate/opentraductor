@@ -297,6 +297,8 @@ QWEN_SENSE = (" Translate the meaning in the context of the conversation, not wo
               "luca = a thousand pesos, afano = rip-off/theft, al pedo = for nothing/pointless, "
               "fiaca = laziness). "
               "Earlier turns are context only: translate just the last Spanish message.")
+# T-74 palanca 2 (OPENTRADUCTOR_MT_CTX_ES=1): encabezado del bloque de historia en español, ver QwenMLX.prompt().
+QWEN_CTX_ES = "Earlier in the meeting (Spanish, context only, do not translate):"
 # T-58 opción acotada (17/11): QWEN_SENSE completo bajó el BLEU del gate 72,8 -> 64,6 (perdió «ni... ni», imperativos,
 # «gotta»). Con ``mt_sense_glossary`` solo las frases con un término de esta lista llevan, ANTES del texto y dentro
 # del prefijo que cachea prefill() (ver QwenMLX._user), el glosario de los términos que aparecen y QWEN_GUARD. Sin instrucción de parafrasear.
@@ -438,6 +440,8 @@ class QwenMLX:
         # T-58 contexto largo: caché KV de sesión (system + historia) que sobrevive entre frases. 1/0 lo fuerza.
         v = os.environ.get("OPENTRADUCTOR_MT_SESSION_KV")
         self.session_kv = (v == "1") if v in ("0", "1") else session_kv
+        v = os.environ.get("OPENTRADUCTOR_MT_CTX_ES")  # T-74: historia solo en español (A/B, apagado por defecto)
+        self.ctx_es = v == "1"
         self._sess = None  # (prompt_cache, tokens): prompt exacto de la última frase, sin lo generado
         self._post = None
         self.kv_stats = {"used": 0, "tail_tokens": []}
@@ -446,10 +450,16 @@ class QwenMLX:
         """``context``: pares (es, en) de las frases anteriores de la sesión, como turnos previos del chat.
         Van antes del turno actual, así que entran en el prefijo que carga ``prefill()``."""
         msgs = [{"role": "system", "content": getattr(self, "system", QWEN_SYSTEM)}]
+        kw = {"enable_thinking": False} if self._hybrid else {}
+        if context and getattr(self, "ctx_es", False):
+            # T-74 palanca 2: historia solo en español, en el mismo turno y antes del texto. Sin nuestro inglés
+            # previo como ejemplo. Cada frase nueva agrega una línea al final del bloque: sigue siendo prefijo.
+            hist = "\n".join(es for es, _ in context)
+            msgs.append({"role": "user", "content": f"{QWEN_CTX_ES}\n{hist}\n\n{self._user(text_es)}"})
+            return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
         for es, en in context:
             msgs += [{"role": "user", "content": self._user(es)}, {"role": "assistant", "content": en}]
         msgs.append({"role": "user", "content": self._user(text_es)})
-        kw = {"enable_thinking": False} if self._hybrid else {}
         return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
 
     def _user(self, text_es: str) -> str:
@@ -568,6 +578,8 @@ class QwenMLX:
 
     def turn_tokens(self, es: str, en: str) -> int:
         """T-68: tokens aprox. que suma un par (es, en) a la historia (turno user + assistant con su plantilla)."""
+        if getattr(self, "ctx_es", False):
+            return len(self._enc(es)) + 1
         return len(self._enc(self._user(es))) + len(self._enc(en)) + 10
 
     def prefill(self, partial_es: str, context: tuple = ()) -> None:
