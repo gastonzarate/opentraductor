@@ -16,12 +16,8 @@ Pensado para reuniones (Google Meet, Discord) a través de un micrófono virtual
 ## Privacidad
 
 - Todo el procesamiento es local. Tras el `setup`, el runtime fuerza modo offline para los modelos.
-- **Edición Mac App Store:** sin licencia propia ni activación (cobra la tienda). La única conexión de red es la descarga
-  de modelos del primer arranque, desde Hugging Face; no envía audio, textos ni datos del equipo. Después, cero red.
-- **Edición de descarga directa (con licencia): única conexión de red tras el setup: la activación de la licencia.** Se hace una sola vez, al ingresar la clave
-  (`POST https://api.lemonsqueezy.com/v1/licenses/activate`). Envía la clave y el nombre de esta Mac. **No envía audio,
-  textos, historial ni datos del equipo.** Después la app funciona sin red; no hay revalidación periódica. La prueba gratis
-  de 7 días no usa red: se cuenta en local desde la primera vez que abrís la app (`license.json`, junto al historial).
+- **Sin licencia ni activación.** La única conexión de red es la descarga de modelos del primer arranque, desde
+  Hugging Face; no envía audio, textos ni datos del equipo. Después, cero red.
 - **No se graba ni se guarda audio.** Solo se guardan textos (original y traducción) en una base SQLite local
   pequeña, que podés exportar o borrar desde la interfaz.
 - El micrófono se abre únicamente cuando pulsás **Iniciar** y se cierra al **Parar**.

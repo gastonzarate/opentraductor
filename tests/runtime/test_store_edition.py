@@ -86,7 +86,7 @@ def test_store_run_without_license_module(monkeypatch, tmp_path):
             seen["start"] = _call(srv, "POST", "/api/start")
 
     monkeypatch.setattr(main_mod, "threading", types.SimpleNamespace(Event=Ev))  # solo el Event de cmd_run
-    a = types.SimpleNamespace(db=str(tmp_path / "h.db"), port=0, engine_mode="baseline")
+    a = types.SimpleNamespace(db=str(tmp_path / "h.db"), port=0)
     assert main_mod.cmd_run(a) == 0
     assert seen["license"][0] == 404 and seen["license"][1]["error"]["code"] == "not_found"
     assert seen["activate"][0] == 404
