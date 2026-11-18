@@ -167,7 +167,7 @@ def test_glossary_general_no_false_positives():
 
 def test_glossary_t74_terms():
     # T-74: léxico general (AAL / Gobello), no sale del set del 17/11
-    assert K.qwen_glossary("Los cambio al blue")[0].startswith("dólar blue = the 'blue dollar'")
+    assert K.qwen_glossary("Los cambio al blue")[0].startswith("dólar blue = 'blue dollar'")
     assert K.qwen_glossary("así no me ahorco a fin de mes")[0].startswith("ahorcarse")
     assert K.qwen_glossary("me hizo precio") == ["hacer precio = to give a discount"]
     assert K.qwen_glossary("Tranqui, te banco")[0].startswith("bancar =")
