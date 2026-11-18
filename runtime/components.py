@@ -447,6 +447,45 @@ QWEN_GLOSSARY_EXT = (
 )
 
 
+# T-74 palanca 4 (OPENTRADUCTOR_MT_TOPIC=1, apagada por defecto): pista de tema. Con la historia de la sesión
+# (solo las frases anteriores, no el parcial: así no cambia mientras se habla y entra en la caché de prefill())
+# se elige un tema por vocabulario de dominio y el turno actual lleva una línea «Topic of the conversation: …».
+# Solo nombra el tema: no glosa palabras; QWEN_SENSE ya pide elegir el sentido que encaja con el tema.
+# Vocabulario general de cada dominio, escrito sin mirar el set del 17/11, el banco v1 ni sus fallos.
+QWEN_TOPICS = (
+    ("deploying and maintaining software", (
+        r"\bdeploy\w*", r"\bservidor(es)?\b", r"\bserver\b", r"\bproducci[óo]n\b", r"\bprod\b", r"\bstaging\b",
+        r"\brama\b", r"\bbranch\b", r"\bmerge\w*", r"\bcommit\w*", r"\brelease\b", r"\bversi[óo]n\b",
+        r"\bbase de datos\b", r"\bapi\b", r"\bbackend\b", r"\bfrontend\b", r"\bbugs?\b", r"\bpipeline\b",
+        r"\brepo\b", r"\bc[óo]digo\b", r"\bkubernetes\b", r"\bdocker\b", r"\bhotfix\b", r"\bmigraci[óo]n\b")),
+    ("payments and billing", (
+        r"\bpag(o|os|ar|amos|aron|ó)\b", r"\bfactur\w*", r"\btarjetas?\b", r"\btransferencias?\b", r"\bbancos?\b",
+        r"\bcuotas?\b", r"\bcobr(o|os|ar|amos|aron|ó)\b", r"\breembolsos?\b", r"\bcomisi[óo]n\b", r"\bafip\b",
+        r"\bimpuestos?\b", r"\biva\b", r"\bd[ée]bito\b", r"\bcr[ée]dito\b", r"\bmercado ?pago\b", r"\bcuenta corriente\b")),
+    ("a client project: budget, scope and deadlines", (
+        r"\bpresupuestos?\b", r"\bcotizaci[óo]n\b", r"\bclientes?\b", r"\bpropuestas?\b", r"\balcance\b",
+        r"\bhoras\b", r"\bentregas?\b", r"\bplazos?\b", r"\bcontratos?\b", r"\bestimaci[óo]n\b", r"\bmilestones?\b")),
+    ("renting a home", (
+        r"\balquiler\w*", r"\bdepto\b", r"\bdepartamento\b", r"\binquilin[oa]s?\b", r"\bdueñ[oa]\b",
+        r"\bpropietari[oa]\b", r"\binmobiliaria\b", r"\bexpensas\b", r"\bgarant[íi]a\b", r"\bmudanza\b")),
+    ("tech support for a computer or device", (
+        r"\bcomputadora\b", r"\bnotebook\b", r"\bcargador\b", r"\bbater[íi]a\b", r"\bpantalla\b", r"\bteclado\b",
+        r"\benchufe\b", r"\bwi-?fi\b", r"\bimpresora\b", r"\bcelular\b", r"\bmouse\b", r"\breinici\w*")),
+)
+
+
+def qwen_topic(history_es, last: int = 12) -> str | None:
+    """Tema de la charla según las últimas ``last`` frases en español: el dominio con más términos distintos,
+    con al menos 2 y sin empate. None si no hay un tema claro."""
+    text = " ".join(history_es[-last:]) if last else ""
+    if not text:
+        return None
+    score = sorted(((sum(1 for p in pats if re.search(p, text, re.I)), lbl) for lbl, pats in QWEN_TOPICS),
+                   reverse=True)
+    (s1, lbl), (s2, _) = score[0], score[1]
+    return lbl if s1 >= 2 and s1 > s2 else None
+
+
 def qwen_glossary(text_es: str, ext: bool | None = None) -> list[str]:
     """Entradas de QWEN_GLOSSARY cuyos términos aparecen en ``text_es`` (sin distinguir mayúsculas), en orden.
     Con ``ext`` (por defecto, env OPENTRADUCTOR_GLOSSARY_EXT=1) suma QWEN_GLOSSARY_EXT al final."""
@@ -487,6 +526,7 @@ class QwenMLX:
         self.session_kv = (v == "1") if v in ("0", "1") else session_kv
         v = os.environ.get("OPENTRADUCTOR_MT_CTX_ES")  # T-74: historia solo en español (A/B, apagado por defecto)
         self.ctx_es = v == "1"
+        self.topic = os.environ.get("OPENTRADUCTOR_MT_TOPIC") == "1"  # T-74 palanca 4: pista de tema (A/B)
         self._sess = None  # (prompt_cache, tokens): prompt exacto de la última frase, sin lo generado
         self._post = None
         self.kv_stats = {"used": 0, "tail_tokens": []}
@@ -496,15 +536,17 @@ class QwenMLX:
         Van antes del turno actual, así que entran en el prefijo que carga ``prefill()``."""
         msgs = [{"role": "system", "content": getattr(self, "system", QWEN_SYSTEM)}]
         kw = {"enable_thinking": False} if self._hybrid else {}
+        topic = qwen_topic([es for es, _ in context]) if context and getattr(self, "topic", False) else None
+        cur = f"Topic of the conversation: {topic}.\n{self._user(text_es)}" if topic else self._user(text_es)
         if context and getattr(self, "ctx_es", False):
             # T-74 palanca 2: historia solo en español, en el mismo turno y antes del texto. Sin nuestro inglés
             # previo como ejemplo. Cada frase nueva agrega una línea al final del bloque: sigue siendo prefijo.
             hist = "\n".join(es for es, _ in context)
-            msgs.append({"role": "user", "content": f"{QWEN_CTX_ES}\n{hist}\n\n{self._user(text_es)}"})
+            msgs.append({"role": "user", "content": f"{QWEN_CTX_ES}\n{hist}\n\n{cur}"})
             return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
         for es, en in context:
             msgs += [{"role": "user", "content": self._user(es)}, {"role": "assistant", "content": en}]
-        msgs.append({"role": "user", "content": self._user(text_es)})
+        msgs.append({"role": "user", "content": cur})
         return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
 
     def _user(self, text_es: str) -> str:

@@ -126,6 +126,44 @@ def test_ctx_es_history_spanish_only_before_current_turn():
     assert "assistant:let's talk about payments" in q.prompt("no hay plata", ctx)
 
 
+def test_topic_from_history_only():
+    # tema claro: 2+ términos distintos del dominio y sin empate; solo la historia, no el parcial actual
+    assert K.qwen_topic(["Hoy hacemos el deploy a producción", "Ojo con la rama de release"]) == \
+        "deploying and maintaining software"
+    assert K.qwen_topic(["El inquilino no pagó las expensas del depto"]) == "renting a home"
+    assert K.qwen_topic(["Hola, ¿cómo andás?", "Bien, todo tranqui"]) is None
+    assert K.qwen_topic(["Revisamos el servidor"]) is None  # 1 solo término
+    assert K.qwen_topic([]) is None
+
+
+def test_topic_flag_prompt():
+    q = _qwen(False)
+    ctx = (("Hoy hacemos el deploy a producción", "We deploy to production today"),
+           ("Revisá la rama antes del merge", "Check the branch before the merge"))
+    q.topic = False
+    off = q.prompt("dale, lo subo", ctx)
+    assert "Topic of the conversation" not in off
+    q.topic = True
+    p = q.prompt("dale, lo subo", ctx)
+    assert p.endswith("|user:Topic of the conversation: deploying and maintaining software.\nSpanish:\ndale, lo subo")
+    assert p[: p.rindex("|user:")] == off[: off.rindex("|user:")]  # historia igual: misma caché de sesión
+    # sin contexto o sin tema claro, el prompt no cambia
+    assert q.prompt("hola") == f"system:{K.QWEN_SYSTEM}|user:Spanish:\nhola"
+    assert "Topic" not in q.prompt("hola", (("che", "hey"),))
+    # el parcial estable sigue entrando en la caché de prefill()
+    assert q.prompt("dale, lo subo y", ctx).startswith(p[: p.rindex("Spanish:\n")])
+    # con historia en español (palanca 2) va después del bloque de historia
+    q.ctx_es = True
+    pe = q.prompt("dale, lo subo", ctx)
+    assert "rama antes del merge\n\nTopic of the conversation: deploying" in pe
+
+
+def test_topic_literal_controls_keep_no_glossary():
+    # los controles de sentido literal (seña como gesto, se me cayó el cargador) no reciben glosa: solo el tema
+    for s in ("Me hizo una seña con la mano para que pase", "Se me cayó el cargador atrás del escritorio"):
+        assert K.qwen_glossary(s, ext=True) == []
+
+
 
 def _remember_engine(**cfg):
     """T-68: Engine._mt_remember con un MT que cuenta 1 token por carácter del español."""
