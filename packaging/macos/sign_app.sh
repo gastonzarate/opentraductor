@@ -8,6 +8,8 @@ ENT="$HERE/entitlements.plist"
 TS=(--timestamp); [[ "$ID" == "-" ]] && TS=(--timestamp=none)
 [[ -d "$APP" ]] || { echo "No existe $APP. Ejecutá build_app.sh primero." >&2; exit 1; }
 xattr -cr "$APP"
+# Un smoke test con el python del bundle deja .pyc nuevos que rompen el sello; la app los evita con PYTHONDONTWRITEBYTECODE.
+find "$APP" -name '__pycache__' -type d -prune -exec rm -rf {} +
 n=0
 # 1) Todo Mach-O suelto (.so, .dylib, ejecutables) con los entitlements, el más profundo primero.
 while IFS= read -r f; do

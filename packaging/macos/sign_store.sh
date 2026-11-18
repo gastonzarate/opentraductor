@@ -27,6 +27,8 @@ PL="$APP/Contents/Info.plist"
 rm -rf "$APP/Contents/_CodeSignature"
 # Herramientas de compilación que no se usan en ejecución.
 find "$APP/Contents/Resources/python" -type f \( -name 'protoc' -o -name 'protoc-*' \) -delete
+# .pyc que deja un smoke test con el python del bundle: romperían el sello.
+find "$APP" -name '__pycache__' -type d -prune -exec rm -rf {} +
 # T-49: Moonshine es el ASR de la tienda (libmoonshine pide macOS 15, por eso LSMinimumSystemVersion=15.0). Ya no se quita.
 # Guía 2.4.5(vi): sin código de licencia propio en la tienda. Desde T-70 el runtime no tiene license.py; se verifica.
 RT="$APP/Contents/Resources/app/runtime"
