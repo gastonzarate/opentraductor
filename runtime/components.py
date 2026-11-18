@@ -475,7 +475,8 @@ QWEN_GLOSSARY_DOM = (
     (r"\b(retenci[óo]n|retenciones|percepci[óo]n|percepciones)\b.*\b(ganancias|iva|iibb|ingresos brutos|afip|impuestos?)\b"
      r"|\b(ganancias|iva|iibb|ingresos brutos|afip|impuestos?)\b.*\b(retenci[óo]n|retenciones|percepci[óo]n|percepciones)\b",
      "retención = tax withholding; percepción = tax collected in advance; ganancias = income tax"),
-    (r"\bacredit(a|ó|e|en|ar|aron|ado|ada)\b", "acreditarse (a payment, transfer) = to clear, post, come through"),
+    (r"\bacredit(a|ó|e|en|ar|aron|ado|ada)\b",
+     "acreditar (a salary, payment or transfer) = to be credited, deposited into the account"),
     (r"\b(cbu|cvu)\b", "CBU/CVU = bank account number (keep CBU/CVU)"),
     (r"\bcuotas sin inter[ée]s\b", "cuotas sin interés = interest-free installments"),
     (r"\b(\d+|un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|"
@@ -601,18 +602,22 @@ class QwenMLX:
             msgs.append({"role": "user", "content": f"{QWEN_CTX_ES}\n{hist}\n\n{cur}"})
             return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
         for es, en in context:
-            msgs += [{"role": "user", "content": self._user(es)}, {"role": "assistant", "content": en}]
+            msgs += [{"role": "user", "content": self._user(es, hist=True)}, {"role": "assistant", "content": en}]
         msgs.append({"role": "user", "content": cur})
         return self.tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **kw)
 
-    def _user(self, text_es: str) -> str:
+    def _user(self, text_es: str, hist: bool = False) -> str:
         """Turno de usuario. Con ``glossary`` y algún término de QWEN_GLOSSARY, el glosario y QWEN_GUARD van ANTES
         del texto. prefill() arma el glosario con el parcial estable, así queda dentro de la caché KV y translate()
         solo paga la cola (con el glosario después del texto, bench 70bb991 midió p95 +63 ms en las 28 frases con
         modismo). Si la última palabra trae un término nuevo, el prefijo común se corta en el glosario y se
         recalcula desde ahí: misma salida, más lento solo en ese caso. Los turnos de historia usan el mismo
-        formato, así la caché de sesión de la frase anterior sigue siendo prefijo de la siguiente."""
-        g = qwen_glossary(text_es) if getattr(self, "glossary", False) else []
+        formato, así la caché de sesión de la frase anterior sigue siendo prefijo de la siguiente.
+        T-74: en los turnos de historia (``hist``) no van las glosas de GLOSSARY_DOM: el sentido de dominio de una
+        frase se arrastraba a la siguiente (set sellado, ctx 200: «bajar = take down» del turno anterior volvió
+        «Bajá la pantalla» en «Take down the screen»). Costo: tras una frase con entrada DOM, la caché de sesión
+        se corta en ese turno y se recalcula desde ahí (solo esas frases)."""
+        g = (qwen_glossary(text_es, dom=False if hist else None) if getattr(self, "glossary", False) else [])
         if not g:
             return f"Spanish:\n{text_es}"
         return f"Meaning of the Argentine slang below: {'; '.join(g)}.\n{QWEN_GUARD}\n\nSpanish:\n{text_es}"
@@ -723,7 +728,7 @@ class QwenMLX:
         """T-68: tokens aprox. que suma un par (es, en) a la historia (turno user + assistant con su plantilla)."""
         if getattr(self, "ctx_es", False):
             return len(self._enc(es)) + 1
-        return len(self._enc(self._user(es))) + len(self._enc(en)) + 10
+        return len(self._enc(self._user(es, hist=True))) + len(self._enc(en)) + 10
 
     def prefill(self, partial_es: str, context: tuple = ()) -> None:
         """T-58: carga en una caché KV el prompt con el parcial SIN su última palabra (suele cambiar); el

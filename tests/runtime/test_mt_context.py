@@ -291,3 +291,16 @@ def test_glossary_dom_literal_controls():
     assert "plata = money" not in g and "de plata (an object) = made of silver" in g
     assert "plata = money" in K.qwen_glossary("No hay plata para el viaje", ext=True, dom=True)
     assert "plata = money" in K.qwen_glossary("Le regalé una cadena de plata", ext=True, dom=False)
+
+
+def test_glossary_dom_not_in_history_turns(monkeypatch):
+    # T-74: la glosa DOM va solo en la frase que la dispara, no en los turnos de historia (se arrastraba)
+    monkeypatch.setenv("OPENTRADUCTOR_GLOSSARY_DOM", "1")
+    q = _qwen(True)
+    q.glossary = True
+    ctx = (("Y si nada funciona, bajá el servicio entero", "If nothing works, roll back the whole service"),)
+    p = q.prompt("Bajá la pantalla de la notebook", ctx)
+    assert "roll back, take down" not in p
+    p2 = q.prompt("Bajá el release, volvemos a la 1.2.3", ctx)
+    assert p2.count("bajar (a deploy") == 1 and p2.rindex("bajar (a deploy") > p2.rindex("|user:")
+    assert any("credited, deposited" in g for g in _dom_only("Hoy me acreditaron el sueldo"))
