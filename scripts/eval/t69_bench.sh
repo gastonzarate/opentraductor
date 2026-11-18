@@ -5,6 +5,7 @@
 #   ARMS="nombre=VAR=1 VAR2=0;nombre2=VAR=0"   brazos en orden; cada uno es nombre=ENV (ENV puede ser vacío: "base=").
 #                                              Repetir nombres con sufijo (off;on;on2;off2) reparte la deriva. Por defecto: "base=".
 #   REPS=5            repeticiones del set de latencia (3 clips dev del gate, n=3×REPS por brazo)
+#   LAT_MANIFEST=<jsonl>  set de latencia (por defecto los 3 clips dev del gate, artifacts/benchmark/offline-review/manifest.jsonl)
 #   CTX=0,6           turnos de contexto de las charlas (0 = sin contexto); el pipeline usa mt_context_turns
 #   CFG='{...}'       config JSON de PipelineConfig para el adaptador (por defecto: tienda = Moonshine tiny + Qwen 4B)
 #   COMMIT=<sha>      mide ese commit (git archive en /tmp, con venvs/modelos/datos enlazados) y no el árbol de trabajo, que
@@ -27,7 +28,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
 OUT="${1:?uso: t69_bench.sh OUTDIR}"; case "$OUT" in /*) ;; *) OUT="$ROOT/$OUT";; esac; REPS="${REPS:-5}"; CTX="${CTX:-0,6}"; PYBIN="${PYBIN:-.venv-inc-llm/bin/python}"
 QWEN_DIR="${QWEN_DIR:-$ROOT/artifacts/analysis/llm-mp4-a/models/qwen3-4b-instruct-2507-4bit}"
 CFG="${CFG:-{\"asr_backend\":\"moonshine-tiny\",\"mt_engine\":\"qwen\",\"qwen_model_dir\":\"$QWEN_DIR\"}}"
-ARMS="${ARMS:-base=}"
+ARMS="${ARMS:-base=}"; LAT_MANIFEST="${LAT_MANIFEST:-$ROOT/artifacts/benchmark/offline-review/manifest.jsonl}"
+case "$LAT_MANIFEST" in /*) ;; *) LAT_MANIFEST="$ROOT/$LAT_MANIFEST";; esac
 mkdir -p "$OUT"; CODE="$ROOT"
 if [ -n "${COMMIT:-}" ]; then
   CODE="/tmp/ot-t69-$COMMIT"
@@ -40,7 +42,7 @@ fi
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH="$CODE" T69_CODE_ROOT="$CODE"
 { echo "$CINFO"; date; uptime
   lsof -iTCP:8877 -sTCP:LISTEN >/dev/null 2>&1 && echo ":8877 ABIERTA (app de la persona)" || echo ":8877 libre"
-  echo "ARMS=$ARMS REPS=$REPS CTX=$CTX"; echo "CFG=$CFG"; } | tee "$OUT/entorno.txt"
+  echo "ARMS=$ARMS REPS=$REPS CTX=$CTX LAT_MANIFEST=$LAT_MANIFEST"; echo "CFG=$CFG"; } | tee "$OUT/entorno.txt"
 IFS=';' read -ra ITEMS <<< "$ARMS"
 for it in "${ITEMS[@]}"; do
   name="${it%%=*}"; envs="${it#*=}"; D="$OUT/$name"; mkdir -p "$D"
@@ -48,7 +50,7 @@ for it in "${ITEMS[@]}"; do
   if [ -z "${SKIP_LAT:-}" ]; then
     if "$ROOT/scripts/eval/wait_quiet.sh" "${QUIET_MAX:-1.5}" 4 "${QUIET_TMO:-600}" | tee "$D/reposo.txt"; then :; else echo "NO REPOSO" >> "$D/reposo.txt"; fi
     uptime > "$D/load-start.txt"
-    (cd "$CODE" && env $envs "$PYBIN" -m benchmark run --manifest "$ROOT/artifacts/benchmark/offline-review/manifest.jsonl" --audio-root data/audio \
+    (cd "$CODE" && env $envs "$PYBIN" -m benchmark run --manifest "$LAT_MANIFEST" --audio-root data/audio \
       --split development --adapter runtime.adapters.baseline:BaselineAdapter --adapter-config "$CFG" \
       --repetitions "$REPS" --warmup 1 --out "$D/latency" --system-name "$name") > "$D/latency.log" 2>&1 || echo "latency rc!=0 ($name)" | tee -a "$OUT/entorno.txt"
     uptime > "$D/load-end.txt"
