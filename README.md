@@ -78,7 +78,7 @@ Source: internal benchmark by the project, 2026-11-16 to 2026-11-18. Same Mac, n
 
 Where the time goes in the median run: about 250 ms waiting for end of speech, 200 ms final recognition, 460 ms translation, 200 ms first synthesized audio.
 
-Not tested: a physical microphone end to end, long sessions, and Meet or Discord with real participants. The simultaneous (incremental) mode is not usable from a fresh clone, see Limitations.
+Not tested: a physical microphone end to end, long sessions, and Meet or Discord with real participants.
 
 ## Run the tests
 
@@ -110,7 +110,6 @@ Other tests that need model weights or the local `artifacts/` folder are describ
 - Latency is under one second, not the 300 ms the project first aimed for.
 - Only Argentine Spanish to US English. Rioplatense Spanish has no complete dedicated evaluation yet.
 - Output goes to one device. No echo cancellation, no mixing of several voices.
-- The experimental incremental mode (`--engine-mode incremental_experimental`) depends on local files that are not in this repository. It does not run from a fresh clone.
 - Mac only, Apple Silicon only. No Windows or Linux.
 
 ## Contributing
