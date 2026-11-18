@@ -12,14 +12,6 @@ Pensado para reuniones (Google Meet, Discord) a través de un micrófono virtual
 > Ambas quedan por encima de 300 ms, y el objetivo no está certificado: los límites de anotación son estimados y la
 > muestra es de 4 hablantes. No hay prueba con micrófono físico ni en Meet o Discord. El servicio y la interfaz están
 > probados con motor y audio **falsos** (pruebas automáticas).
->
-> **Modo incremental experimental** (`--engine-mode incremental_experimental`): integrado en la CLI y la interfaz, con
-> el modo baseline como valor por defecto. Pasó pruebas de infraestructura con MLX y una prueba real de integración de
-> `RuntimeService`, la fábrica del modo y el puente, con un audio público de control y su reinicio. En esa prueba la captura
-> y la salida son inyectadas en memoria: no se abrió micrófono, dispositivo de salida ni Meet. No valida calidad ni latencia.
-> Su piloto de 3 audios muestra latencia alta (no es una validación de latencia) y siguen pendientes las pruebas con
-> micrófono, interfaz con modelos y Meet o Discord. Las cifras de arriba son del perfil baseline y no se trasladan a este modo;
-> no se prueba 300 ms. Ver [`docs/uso.md`](docs/uso.md#modo-incremental-experimental).
 
 ## Privacidad
 
@@ -85,21 +77,6 @@ uv run --extra runtime python -m runtime run         # abre http://127.0.0.1:887
 El perfil baseline vigente (C2) y sus cifras están en [`docs/uso.md`](docs/uso.md). El piloto T2, una configuración anterior
 ya superada, se conserva con su comando y su medición en [`docs/historial-perfiles.md`](docs/historial-perfiles.md).
 
-### Modo incremental experimental
-
-Es una alternativa al motor baseline, elegida solo por CLI. Corre en un entorno aislado, `.venv-inc-llm`, que ya existe en el
-repositorio. No lo recrees ni lo modifiques con `uv sync`: esa orden gestiona el entorno `.venv` de los extras del proyecto.
-
-```bash
-.venv-inc-llm/bin/python -m runtime check --engine-mode incremental_experimental   # solo lectura, no carga modelos
-.venv-inc-llm/bin/python -m runtime run --engine-mode incremental_experimental     # abre http://127.0.0.1:8877/
-```
-
-Sin `--engine-mode`, o con `--engine-mode baseline`, nada cambia. Las rutas de la variante, del motor base y del modelo, y sus
-huellas (hash), están fijas para esta máquina y no se pasan por flags. Los flags propios del baseline (`--asr-backend`,
-`--endpoint-ms`, `--skip-silent-tail`, `--tts-*`, `--normalize-asr-text`, `--no-warmup`) se rechazan en este modo. Detalle,
-flujo y límites: [`docs/uso.md`](docs/uso.md#modo-incremental-experimental).
-
 La guía completa del perfil candidato, con su comando, la configuración de audio y las limitaciones, está en `docs/uso.md`.
 
 La clonación de voz tiene un piloto fuera de la app ([RESULTS](artifacts/benchmark/crosslingual-pilot/RESULTS.md)).
@@ -162,6 +139,5 @@ Adaptador de la baseline: `runtime.adapters.baseline:BaselineAdapter`.
 
 - Latencia por encima de 300 ms en las dos corridas finales (ver `docs/uso.md`, sección «Estado actual»).
   El endpoint y el cierre del ASR son los mayores costos.
-- El modo incremental experimental tiene validada la integración real del servicio con captura y salida inyectadas, sin hardware. No tiene latencia validada (su piloto de 3 audios muestra latencia alta) ni pruebas con micrófono, interfaz con modelos o Meet; no se prueba 300 ms.
 - Audio de salida solo en el dispositivo elegido; sin cancelación de eco ni mezcla de varias voces.
 - Español rioplatense sin evaluación específica completa; ver informes del benchmark.

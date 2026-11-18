@@ -1,7 +1,7 @@
-"""Edición Mac App Store (OPENTRADUCTOR_EDITION=store): arranca sin runtime/license.py y /api/license* da 404.
+"""Edición Mac App Store (OPENTRADUCTOR_EDITION=store) y fuera de ella: sin licencia (T-70, repo open source).
 
-sign_store.sh borra runtime/license.py del bundle de tienda (guía 2.4.5(vi)); estas pruebas lo simulan
-bloqueando el import con sys.modules["runtime.license"] = None.
+En la tienda /api/license da 404; fuera, solo GET con state=disabled (la UI web oculta la tarjeta). /api/start nunca
+pide licencia. sign_store.sh corta si el bundle lleva código de licencia (guía 2.4.5(vi)).
 """
 
 from __future__ import annotations
@@ -59,7 +59,6 @@ def _call(srv, method, path):
 
 def test_store_run_without_license_module(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENTRADUCTOR_EDITION", "store")
-    monkeypatch.setitem(sys.modules, "runtime.license", None)  # import -> ImportError, como sin el archivo
     monkeypatch.setattr(preflight_mod, "force_offline", lambda: None)
     monkeypatch.setattr(signal, "signal", lambda *a, **k: None)
     cfg = types.SimpleNamespace(asr_backend="parakeet")
@@ -89,33 +88,22 @@ def test_store_run_without_license_module(monkeypatch, tmp_path):
     monkeypatch.setattr(main_mod, "threading", types.SimpleNamespace(Event=Ev))  # solo el Event de cmd_run
     a = types.SimpleNamespace(db=str(tmp_path / "h.db"), port=0, engine_mode="baseline")
     assert main_mod.cmd_run(a) == 0
-    assert servers[0]._license is None
     assert seen["license"][0] == 404 and seen["license"][1]["error"]["code"] == "not_found"
     assert seen["activate"][0] == 404
     assert seen["start"][0] == 200  # sin compuerta de licencia
 
 
-def test_store_server_ignores_license_manager():
-    class Lic:
-        def allows_use(self):
-            return False
-
-    with http_mod.ControlServer(_Svc(), port=0, license=Lic(), store=True) as srv:
-        assert _call(srv, "GET", "/api/license")[0] == 404
-        assert _call(srv, "POST", "/api/start")[0] == 200  # sin compuerta 402 de licencia en la tienda
-
-
-def test_only_main_imports_license_and_only_inside_a_function():
-    for f in RUNTIME.glob("*.py"):
-        if f.name == "license.py":
-            continue
+def test_no_license_module_nor_gate():
+    assert not (RUNTIME / "license.py").exists()
+    for f in RUNTIME.rglob("*.py"):
         tree = ast.parse(f.read_text())
         for node in ast.walk(tree):
-            names = []
             if isinstance(node, ast.ImportFrom):
-                names = [node.module or ""] + [n.name for n in node.names if node.module in (None, "")]
-            elif isinstance(node, ast.Import):
-                names = [n.name for n in node.names]
-            if any(n in ("license", "runtime.license") for n in names):
-                assert f.name == "__main__.py", f"{f.name} importa license"
-                assert node not in tree.body, "__main__ importa license a nivel de módulo"
+                assert not (node.module or "").endswith("license") and "license" not in [n.name for n in node.names], f
+    with http_mod.ControlServer(_Svc(), port=0) as srv:
+        st, body = _call(srv, "GET", "/api/license")
+        assert st == 200 and body["state"] == "disabled"
+        assert _call(srv, "POST", "/api/license/activate")[0] == 404
+        assert _call(srv, "POST", "/api/start")[0] == 200
+    with http_mod.ControlServer(_Svc(), port=0, store=True) as srv:
+        assert _call(srv, "GET", "/api/license")[0] == 404

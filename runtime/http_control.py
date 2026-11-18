@@ -95,11 +95,9 @@ class ControlServer:
         port: int = 8877,
         ui_dir: Path | None = None,
         token: str | None = None,
-        license: Any | None = None,  # noqa: A002 - LicenseManager; None = sin prueba ni licencia (pruebas, modo desarrollo)
-        store: bool = False,  # edición Mac App Store: /api/license* no existe (404)
+        store: bool = False,  # edición Mac App Store: /api/license no existe (404)
     ) -> None:
         self._service = service
-        self._license = None if store else license
         self._store = store
         self._ui_dir = Path(ui_dir) if ui_dir else UI_DIR
         self._token = token or secrets.token_urlsafe(32)
@@ -382,26 +380,10 @@ class _Handler(BaseHTTPRequestHandler):
 
             return self._json(HTTPStatus.OK, virtual_mic.detect(svc.devices()))
 
-        if path in ("/api/license", "/api/license/activate"):
-            if self.ctl._store:  # tienda: sin licencia propia (guía 2.4.5(vi)); la ruta no existe
+        if path == "/api/license":  # T-70: sin licencia; queda solo para que la UI web oculte su tarjeta (sacarla con la UI)
+            if self.ctl._store or method != "GET":
                 return self._error(HTTPStatus.NOT_FOUND, "not_found", "Ruta no encontrada.")
-            lic = self.ctl._license
-            if lic is None:  # sin gestor de licencia (pruebas o desarrollo): todo permitido
-                if path == "/api/license":
-                    return self._json(HTTPStatus.OK, {"state": "disabled", "licensed": False, "can_use": True})
-                return self._error(HTTPStatus.NOT_FOUND, "not_found", "Ruta no encontrada.")
-            if path == "/api/license":
-                if method != "GET":
-                    return self._error(HTTPStatus.METHOD_NOT_ALLOWED, "method_not_allowed", "Método no permitido.")
-                return self._json(HTTPStatus.OK, lic.status())
-            if method != "POST":
-                return self._error(HTTPStatus.METHOD_NOT_ALLOWED, "method_not_allowed", "Método no permitido.")
-            body = self._read_json_body()
-            if body is None:
-                return
-            if not isinstance(body, dict):
-                return self._error(HTTPStatus.BAD_REQUEST, "bad_body", "Se esperaba un objeto JSON.")
-            return self._json(HTTPStatus.OK, lic.activate(body.get("license_key")))
+            return self._json(HTTPStatus.OK, {"state": "disabled", "licensed": False, "can_use": True})
 
         routes_get = {
             "/api/status": lambda: svc.status(),
@@ -426,12 +408,6 @@ class _Handler(BaseHTTPRequestHandler):
         if path in ("/api/start", "/api/stop"):
             if method != "POST":
                 return self._error(HTTPStatus.METHOD_NOT_ALLOWED, "method_not_allowed", "Método no permitido.")
-            if path == "/api/start" and self.ctl._license is not None and not self.ctl._license.allows_use():
-                return self._error(
-                    HTTPStatus.PAYMENT_REQUIRED,
-                    "license_required",
-                    "Terminó la prueba gratis de 7 días. Ingresá tu clave de licencia para seguir traduciendo.",
-                )
             result = svc.start() if path == "/api/start" else svc.stop()
             # El servicio puede devolver el status actualizado; si no, respuesta mínima.
             return self._json(HTTPStatus.OK, result if isinstance(result, dict) else {"ok": True})

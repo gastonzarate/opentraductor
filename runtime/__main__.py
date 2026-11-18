@@ -27,16 +27,11 @@ def cmd_check(a) -> int:
     from .config import PipelineConfig
     from .preflight import run_checks
 
-    if a.engine_mode == "incremental_experimental":
-        from . import inc_mode
-
-        cs = inc_mode.checks(_inc_options(a))
-    else:
-        cs = run_checks(PipelineConfig(
-            asr_backend=a.asr_backend,
-            mt_engine=_mt_engine(a),
-            qwen_model_dir=getattr(a, "qwen_dir", None),
-        ))
+    cs = run_checks(PipelineConfig(
+        asr_backend=a.asr_backend,
+        mt_engine=_mt_engine(a),
+        qwen_model_dir=getattr(a, "qwen_dir", None),
+    ))
     for c in cs:
         print(("OK    " if c.ok else "FALTA "), c.name, "-", c.detail)
     return 0 if all(c.ok for c in cs) else 1
@@ -47,13 +42,6 @@ def cmd_devices(a) -> int:
 
     print(json.dumps(devices_payload(), ensure_ascii=False, indent=2))
     return 0
-
-
-def _inc_options(a):
-    from . import inc_mode
-
-    db = Path(a.db) if getattr(a, "db", None) else default_db()
-    return inc_mode.IncOptions(store_path=db.with_name("incremental_units.sqlite3"))  # rutas y pines fijos de esta Mac
 
 
 def _tts_trim_tail(a) -> bool:
@@ -116,13 +104,7 @@ def build_service(a):
     if a.audio_latency is not None:
         explicit.add("audio_latency")
     db = Path(a.db) if a.db else default_db()
-    extra = {}
-    if a.engine_mode == "incremental_experimental":  # import perezoso: el baseline nunca toca inc_mode ni la variante
-        from . import inc_mode
-
-        factory, info, pre = inc_mode.build(_inc_options(a))
-        extra = {"engine_factory": factory, "engine_mode": info, "preflight": pre}
-    return RuntimeService(db, pipeline_cfg=cfg, explicit=explicit, audio_latency=a.audio_latency, **extra), cfg
+    return RuntimeService(db, pipeline_cfg=cfg, explicit=explicit, audio_latency=a.audio_latency), cfg
 
 
 def cmd_run(a) -> int:
@@ -138,27 +120,16 @@ def cmd_run(a) -> int:
         if not c.ok:
             print(f"FALTA {c.name} - {c.detail}")
     db = Path(a.db) if a.db else default_db()
-    # La licencia vive junto a la base de datos: con --db o OPENTRADUCTOR_DATA apuntando a otra carpeta,
-    # la prueba y la clave quedan ahí (útil para pruebas de QA con una prueba nueva o vencida).
-    # Edición de la Mac App Store: la tienda cobra y la guía 2.4.5(vi) prohíbe claves propias. Sin licencia, sin red,
-    # y sin importar runtime/license.py (sign_store.sh lo borra del bundle de tienda).
+    # Sin licencia ni red (repo open source, T-70). La edición de la Mac App Store solo cambia el texto de inicio.
     store = os.environ.get("OPENTRADUCTOR_EDITION") == "store"
-    lic = None
-    if not store:
-        from .license import LicenseManager, default_license_path
-
-        lic = LicenseManager(db.with_name("license.json") if a.db else default_license_path())
     try:
-        srv = ControlServer(svc, port=a.port, license=lic, store=store)
+        srv = ControlServer(svc, port=a.port, store=store)
         srv.start()
     except OSError as exc:
         svc.close()  # el servicio ya creó hilos y una base: se cierran antes de salir
         print(f"No se pudo abrir el puerto {a.port}: {exc}. Probá otro con --port.", file=sys.stderr)
         return 1
-    if a.engine_mode == "incremental_experimental":
-        print("MODO INCREMENTAL EXPERIMENTAL (sin promesa de 300 ms; audio entregado, no reproduccion verificada).")
-    print(f"opentraductor en {srv.url}  ("
-          + ("local; sin conexiones tras la descarga de modelos)" if store else "local; única conexión: la activación de la licencia, una vez)"))
+    print(f"opentraductor en {srv.url}  (local; sin conexiones tras la descarga de modelos)")
     print(f"historial de textos: {db}")
     print("Ctrl+C para salir. El micrófono se abre solo al pulsar Iniciar.")
     stop = threading.Event()
@@ -219,14 +190,6 @@ def _endpoint_ms(text: str) -> float:
     return v
 
 
-ENGINE_MODES = ("baseline", "incremental_experimental")
-
-
-def _add_mode_args(sp) -> None:
-    sp.add_argument("--engine-mode", choices=ENGINE_MODES, default="baseline",
-                    help="baseline (por defecto, estable) o incremental_experimental (ejecutar con .venv-inc-llm; rutas y pines fijos; sin promesa de 300 ms)")
-
-
 def _add_engine_args(sp) -> None:
     sp.add_argument("--asr-backend", choices=ASR_BACKENDS, default="parakeet",
                     help="motor de reconocimiento (por defecto parakeet; moonshine-* es experimental)")
@@ -245,7 +208,6 @@ def build_parser():
     sub = p.add_subparsers(dest="cmd", required=True)
     ck = sub.add_parser("check")
     _add_engine_args(ck)
-    _add_mode_args(ck)
     _add_mt_args(ck)
     ck.set_defaults(fn=cmd_check)
     sub.add_parser("devices").set_defaults(fn=cmd_devices)
@@ -256,7 +218,6 @@ def build_parser():
                    help="silencio para cerrar un segmento; si se indica, prevalece sobre el valor guardado")
     r.add_argument("--no-warmup", action="store_true", help="no precalentar modelos al iniciar")
     _add_engine_args(r)
-    _add_mode_args(r)
     r.add_argument("--tts-trim-lead-ms", type=_nonneg_ms_or_off, default=None,
                    help="recorta el silencio inicial del TTS, conservando este margen en ms; 'off' lo desactiva. "
                         "Sin el flag: default de PipelineConfig (30)")
@@ -286,12 +247,6 @@ def build_parser():
 def main(argv=None) -> int:
     p = build_parser()
     a = p.parse_args(argv)
-    if a.cmd == "run" and a.engine_mode == "incremental_experimental":
-        from . import inc_mode
-
-        bad = inc_mode.reject_baseline_only_flags(a)
-        if bad:  # no se ofrecen controles que el modo incremental ignoraria
-            p.error("no aplican en modo incremental_experimental: " + ", ".join(bad))
     return a.fn(a)
 
 

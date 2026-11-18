@@ -43,7 +43,7 @@ ENV = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
 NO_VALID_BASE = ("Latencia motor", "ASR WER", "MT petición→mt_final p95")
 
 # T-58: la base de la config de tienda vive en scripts/eval/store_baseline.json (la escribe @bench tras medir con
-# scripts/eval/t58_baseline.sh). Si existe, las filas con base dejan de salir SIN BASE y se comparan contra su umbral.
+# scripts/eval/t58_baseline.sh, retirado en T-70 con el modo incremental). Si existe, las filas con base dejan de salir SIN BASE y se comparan contra su umbral.
 # Formato: {"config": {...adapter-config de la tienda...}, "python": ".venv-inc-llm/bin/python", "latency_reps": 7,
 #           "latency_p50_ms": {"base": N, "threshold": N}, "latency_p95_ms": {...}, "mt_p95_ms": {...}, "asr_wer": {...}}
 STORE_BASE_FILE = ROOT / "scripts/eval/store_baseline.json"

@@ -29,8 +29,6 @@ from . import audio_io as default_audio
 from . import config as C
 from .config import PipelineConfig
 from .http_control import ServiceError
-from .inc_history import IncHistory, IncHistoryError, legacy_key, merge_json, merge_txt
-from .inc_history import default_path as inc_default_path
 from .text_store import TextStore, TextStoreError
 
 HOT_FIELDS = {"monitor_volume", "monitor_id", "endpoint_silence_ms"}
@@ -96,11 +94,7 @@ class RuntimeService:
         explicit: frozenset[str] | set[str] = frozenset(),
         audio_latency: str | None = None,  # None: rige el guardado o 'default'; si se indica, prevalece
         first_block_timeout_s: float = FIRST_BLOCK_TIMEOUT_S,
-        inc_db_path: str | Path | None = None,  # por defecto junto al historial (incremental_units.sqlite3)
-        engine_mode: dict | None = None,  # informacion del modo (baseline por defecto); ver runtime/inc_mode.py
     ) -> None:
-        self._engine_mode = dict(engine_mode) if engine_mode else {"mode": "baseline", "experimental": False, "label": "",
-                                                                  "ignored_controls": [], "applied": None}
         self._first_block_timeout_s = float(first_block_timeout_s)
         # latencia y blocksize que informó el último stream abierto (no es medición física)
         self._audio_info: dict[str, Any] = {}
@@ -115,7 +109,6 @@ class RuntimeService:
         self._audio = audio or default_audio
         self._preflight = preflight or self._default_preflight
         self._store = TextStore(db_path, max_records=max_records)
-        self._inc = IncHistory(inc_db_path or inc_default_path(db_path))  # textos incrementales: ruta explicita; no crea la base
         self._lock = threading.RLock()
         self._state = "idle"
         self._error: str | None = None
@@ -324,9 +317,6 @@ class RuntimeService:
 
     def engine_config(self) -> dict:
         """Configuración efectiva del motor (sin audio). Se registra en status y en cada sesión."""
-        if self._engine_mode.get("mode") != "baseline":
-            # en otros modos PipelineConfig no se aplica: se informa lo que SI rige (no campos baseline engañosos)
-            return {"mode": self._engine_mode["mode"], **(self._engine_mode.get("applied") or {})}
         d = asdict(self._pcfg)
         d["asr_context"] = list(d["asr_context"])
         return d
@@ -344,7 +334,6 @@ class RuntimeService:
                 "models": {k: dict(v) for k, v in self._models.items()},
                 "config": dict(self._cfg),
                 "engine": self.engine_config(),
-                "engine_mode": dict(self._engine_mode),
                 # latencia y blocksize REALES del último stream abierto (no los pedidos)
                 "audio": {"latency_mode": self._audio_latency, **{k: dict(v) for k, v in self._audio_info.items()}},
                 "metrics": self.metrics(),
@@ -394,8 +383,6 @@ class RuntimeService:
         def bad(msg):
             raise ServiceError("invalid", msg, 400)
 
-        if k in self._engine_mode.get("ignored_controls", ()):
-            bad(f"{k} no aplica en el modo {self._engine_mode.get('mode')}.")
         if k in ("input_id", "output_id", "monitor_id"):
             if v is None or v == "":
                 if k == "monitor_id":
@@ -497,12 +484,6 @@ class RuntimeService:
             # snapshot de la sesión: ajustes de la UI más la configuración efectiva del motor
             self._session_id = self._store.start_session({**cfg, "engine": self.engine_config()})
             self._stream_id = f"live-{self._session_id[:8]}"
-            if self._engine_mode.get("mode") != "baseline":  # mapping explicito stream -> sesion del historial (no se asume el prefijo)
-                try:
-                    self._inc.map_session(self._stream_id, self._session_id)
-                except IncHistoryError as exc:
-                    self._publish({"type": "error", "message": f"No se registró el mapping de sesión incremental ({exc}); "
-                                   "el borrado por sesión de los textos incrementales no estará disponible para esta sesión."})
             self._pending_es.clear()
             self._pending_raw.clear()
             self._shown_es.clear()
@@ -821,65 +802,24 @@ class RuntimeService:
     def export_history(self, format: str) -> str:  # noqa: A002
         self._flush_writer()
         try:
-            base = self._store.export(format)
+            return self._store.export(format)
         except TextStoreError as exc:
             raise ServiceError("invalid", str(exc), 400) from exc
-        try:
-            inc = self._inc.read()  # tambien en baseline si quedo una base incremental previa; no la crea
-        except IncHistoryError as exc:
-            raise ServiceError("storage", f"No se pudieron leer los textos incrementales ({exc}). Exportación no generada.", 500) from exc
-        if not inc["lines"] and not inc["units"]:
-            return base
-        return merge_json(base, inc) if format == "json" else merge_txt(base, inc)
-
-    def _incremental_active(self) -> bool:
-        return self._engine_mode.get("mode") != "baseline" and (self._session_id is not None or self._state in ("starting", "running", "stopping"))
 
     def delete_history(self, session_id: str | None) -> int:
-        """Borra el historial habitual Y los textos incrementales. Si algo falla no se dice borrado completo: el error indica que parte quedo.
-        La comprobacion de actividad y el borrado ocurren bajo ``self._lock`` (el mismo que usa start): no puede abrirse una sesion entre medias."""
+        """Borra todo el historial (``session_id=None``) o una sesión. La comprobación y el borrado ocurren bajo
+        ``self._lock`` (el mismo que usa start): no puede abrirse una sesión entre medias."""
         self._flush_writer()
         with self._lock:
-            return self._delete_history_locked(session_id)
-
-    def _delete_history_locked(self, session_id: str | None) -> int:
-        try:
-            if session_id is None:
-                if self._incremental_active():  # evita que el puente reescriba textos recien borrados
-                    raise ServiceError("conflict", "No se puede borrar todo mientras hay una sesión incremental activa. Pará la sesión primero.", 409)
-                try:
-                    n_inc = self._inc.delete(None)
-                except IncHistoryError as exc:
-                    raise ServiceError("storage", f"No se borró nada: falló el borrado de los textos incrementales ({exc}).", 500) from exc
-                try:
-                    return self._store.delete_all() + n_inc
-                except TextStoreError as exc:
-                    raise ServiceError("storage", f"Borrado PARCIAL: los textos incrementales se borraron, el historial habitual NO ({exc}).", 500) from exc
-            if self._incremental_active() and self._session_id is not None and session_id == self._session_id:
-                raise ServiceError("conflict", "La sesión está activa: pará la sesión antes de borrarla.", 409)
             try:
-                plan = self._inc.resolve(session_id)  # mapping explicito; el legado solo se resuelve si la sesion existe
-            except IncHistoryError as exc:
-                raise ServiceError("storage", f"No se borró nada: no se pudo leer el mapping incremental ({exc}).", 500) from exc
-            streams = list(plan["mapped"])
-            if not streams and plan["legacy"]:
-                import json as _json
-                ids = {d["session_id"] for d in _json.loads(self._store.export("json"))}
-                same = [i for i in ids if legacy_key(i) == plan["legacy"]]
-                if session_id in ids and len(same) == 1:
-                    streams = [plan["legacy"]]
-                elif len(same) > 1 and session_id in ids:
-                    raise ServiceError("conflict", "Datos incrementales anteriores al mapping con clave ambigua entre sesiones: no se borra por sesión "
-                                       "para no borrar textos de otra. Usá «Borrar todo».", 409)
-                # sesion desconocida: nunca se borra por prefijo de un id que no existe
-            ok = self._store.delete_session(session_id)  # una sesion abierta se rechaza aqui, antes de tocar nada incremental
-            try:
-                n_inc = self._inc.delete_streams(streams, session_id)
-            except IncHistoryError as exc:
-                raise ServiceError("storage", f"Borrado PARCIAL: el historial habitual de la sesión se borró, los textos incrementales NO ({exc}).", 500) from exc
-            return 1 if (ok or n_inc) else 0
-        except TextStoreError as exc:
-            raise ServiceError("conflict", str(exc), 409) from exc
+                if session_id is None:
+                    try:
+                        return self._store.delete_all()
+                    except TextStoreError as exc:
+                        raise ServiceError("storage", f"No se borró el historial ({exc}).", 500) from exc
+                return 1 if self._store.delete_session(session_id) else 0  # una sesión abierta se rechaza aquí
+            except TextStoreError as exc:
+                raise ServiceError("conflict", str(exc), 409) from exc
 
     def _flush_writer(self, timeout: float = 2.0) -> None:
         ev = threading.Event()

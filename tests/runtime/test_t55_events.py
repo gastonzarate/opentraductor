@@ -1,15 +1,11 @@
 """T-55: contrato de eventos de frase (memory/decisiones/t55-contrato-eventos-frase.md).
 
-Las 4 secuencias que hacían desaparecer frases de la pantalla, del motor a /events:
-1. incremental: el parcial «live» de la frase N se pisaba con la N+1 (un solo id live);
-2. baseline: ASR final vacío publicaba `partial ""` y la fila quedaba en blanco;
-3. baseline: frase bajo min_speech_ms se descartaba sin aviso;
-4. incremental: unidad cancelada o sin PCM quedaba sin traducción y sin explicación.
+Secuencias que hacían desaparecer frases de la pantalla, del motor a /events (el modo incremental salió en T-70):
+1. ASR final vacío publicaba `partial ""` y la fila quedaba en blanco;
+2. frase bajo min_speech_ms se descartaba sin aviso.
 """
 import asyncio
-from types import SimpleNamespace
 
-from runtime.inc_app.bridge import IncrementalEngineBridge
 from tests.runtime.test_service import svc  # noqa: F401  fixture
 
 
@@ -21,44 +17,6 @@ def published(svc):
     ev = []
     svc.subscribe(ev.append)
     return ev
-
-
-class Recorder:
-    def __init__(self):
-        self.events = []
-
-    async def __call__(self, kind, f):
-        self.events.append((kind, dict(f)))
-
-
-def make_bridge():
-    rec = Recorder()
-    b = IncrementalEngineBridge(SimpleNamespace(input_queue_chunks=8), adapter=None, emit=rec)
-    b._sid = "s1"
-    return b, rec
-
-
-def ev(kind, **kw):
-    return SimpleNamespace(kind=kind, stream_id="s1", **kw)
-
-
-def test_incremental_each_phrase_has_own_live_row_and_commit_reassigns_it(svc):  # noqa: F811
-    b, rec = make_bridge()
-
-    async def flow():
-        await b._handle(ev("asr_partial", text="hola", audio_pos_s=0.5))
-        await b._handle(ev("asr_final", text="hola mundo", commit_id="c1"))
-        await b._handle(ev("asr_partial", text="cómo", audio_pos_s=1.5))
-    asyncio.run(flow())
-
-    out = published(svc)
-    for kind, f in rec.events:
-        run(svc, kind, **f)
-    partials = [e for e in out if e["type"] == "partial"]
-    assert [p["seg_id"] for p in partials] == ["s1:live:0", "c1", "s1:live:1"]
-    assert partials[1]["from_seg_id"] == "s1:live:0"  # la UI reasigna la fila, no crea otra
-    assert "from_seg_id" not in partials[2]
-    assert partials[2]["text_es"] == "cómo"  # la frase N+1 no pisa la fila de N
 
 
 def test_empty_asr_final_never_publishes_empty_partial_and_marks_row_discarded(svc):  # noqa: F811
@@ -75,28 +33,6 @@ def test_short_phrase_is_published_as_discarded(svc):  # noqa: F811
     run(svc, "asr_partial", seg_id=3, text="eh")
     run(svc, "discarded", seg_id=3, text="eh", reason="short")
     assert out[-1] == {"type": "discarded", "seg_id": "3", "text_es": "eh", "reason": "short"}
-
-
-def test_cancelled_or_pcm_less_unit_is_published_as_discarded_with_its_text(svc):  # noqa: F811
-    b, rec = make_bridge()
-
-    async def flow():
-        await b._handle(ev("asr_partial", text="una", audio_pos_s=0.2))
-        await b._handle(ev("asr_final", text="una frase", commit_id="c1"))
-        await b._handle(ev("unit_cancelled", commit_id="c1"))
-        await b._handle(ev("asr_final", text="otra frase", commit_id="c2"))
-        await b._handle(ev("unit_done", commit_id="c2", unit_n_chunks=0))
-    asyncio.run(flow())
-
-    out = published(svc)
-    for kind, f in rec.events:
-        run(svc, kind, **f)
-    disc = [e for e in out if e["type"] == "discarded"]
-    assert disc == [
-        {"type": "discarded", "seg_id": "c1", "text_es": "una frase", "reason": "cancelled"},
-        {"type": "discarded", "seg_id": "c2", "text_es": "otra frase", "reason": "cancelled"},
-    ]
-    assert not [e for e in out if e["type"] == "segment"]
 
 
 def test_unknown_discard_reason_is_normalized_and_unseen_rows_carry_empty_text(svc):  # noqa: F811

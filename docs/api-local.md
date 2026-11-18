@@ -3,16 +3,11 @@
 Contrato entre el motor y la UI. Solo escucha en 127.0.0.1 y pide el token de sesión (`Authorization: Bearer …`).
 Este archivo documenta cambios de comportamiento y rutas nuevas; la lista completa está en `http_control.py`.
 
-## /api/license y /api/license/activate
+## /api/license (sin licencia desde T-70)
 
-| Edición | `GET /api/license` | `POST /api/license/activate` |
-|---|---|---|
-| Directa (Lemon Squeezy) | estado de la prueba o la licencia | activa una clave |
-| Sin gestor de licencia (pruebas, desarrollo) | `{"state": "disabled", "can_use": true}` | 404 |
-| Tienda (`OPENTRADUCTOR_EDITION=store`) | **404 `not_found`** | **404 `not_found`** |
-
-En la edición tienda el motor no importa `runtime/license.py` (sign_store.sh lo borra del bundle, guía 2.4.5(vi))
-y `/api/start` no tiene compuerta de licencia: cobra la App Store. La UI nativa de la tienda no llama a estas rutas.
+El repo es open source: no hay prueba, clave ni compuerta en `/api/start`, y `runtime/license.py` ya no existe.
+`GET /api/license` devuelve `{"state": "disabled", "can_use": true}` solo para que la UI web oculte su tarjeta
+(se quita junto con esa tarjeta). En la tienda (`OPENTRADUCTOR_EDITION=store`) da 404; `POST /api/license/activate` da 404 siempre.
 
 ## /events: eventos de frase (T-55)
 
@@ -20,9 +15,9 @@ Contrato completo: `memory/decisiones/t55-contrato-eventos-frase.md`. Un `seg_id
 
 | Evento | Campos | Cambio |
 |---|---|---|
-| `partial` | `seg_id`, `text_es`, `from_seg_id?` | `text_es` nunca llega vacío. En modo incremental la fila en vivo es `"{sid}:live:{n}"` (una por frase). El primer `partial` con el id de commit trae `from_seg_id` = id live que reemplaza: la UI reasigna esa fila, no crea otra. |
+| `partial` | `seg_id`, `text_es`, `from_seg_id?` | `text_es` nunca llega vacío. `from_seg_id` solo lo mandaba el modo incremental (retirado en T-70); la UI puede seguir aceptándolo. |
 | `segment` | `seg_id`, `text_es`, `text_es_raw`, `text_en`, `ts` | Sin cambios. Solo cierra la fila de su `seg_id`. |
-| `discarded` (nuevo) | `seg_id`, `text_es`, `reason` | `reason` ∈ `short` (bajo `min_speech_ms`), `empty` (ASR final vacío), `cancelled` (unidad incremental cancelada o sin audio). La fila queda visible como descartada. Si no hay fila y `text_es` es `""`, no se muestra nada. Clientes viejos lo ignoran. |
+| `discarded` (nuevo) | `seg_id`, `text_es`, `reason` | `reason` ∈ `short` (bajo `min_speech_ms`), `empty` (ASR final vacío). `cancelled` ya no se emite (era del modo incremental, retirado en T-70). La fila queda visible como descartada. Si no hay fila y `text_es` es `""`, no se muestra nada. Clientes viejos lo ignoran. |
 
 Con `mt_stream_first_chunk` (T-58, apagado por defecto, solo Qwen) el audio del 1.er fragmento de una frase puede empezar a sonar antes de que llegue su `segment` (el `text_en` completo llega igual, unos ms después). Ese 1.er `tts_chunk` trae `planned_text_en` nulo; los siguientes traen el texto completo. Las rutas y los campos no cambian. `describe` suma `mt_stream` (segments, head_early, mismatch, lead_ms, tts_in_mt_ms).
 

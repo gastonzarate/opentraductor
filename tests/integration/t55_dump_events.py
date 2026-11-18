@@ -1,6 +1,6 @@
 """T-55 integración runtime → UI: graba lo que publica /events para frases reales del flujo.
 
-Usa el código real del runtime (RuntimeService._on_engine_event, IncrementalEngineBridge._handle y
+Usa el código real del runtime (RuntimeService._on_engine_event y
 Engine baseline con ASR/MT/TTS falsos) y escribe tests/fixtures/t55_runtime_events.json.
 Ese archivo lo reproducen la web (tests/ui/t55_integration.test.js) y la app de la tienda
 (packaging/macos/Tests/main.swift): así la UI se prueba con la secuencia que sale del motor, no con
@@ -13,10 +13,8 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 
 from runtime.config import PipelineConfig
-from runtime.inc_app.bridge import IncrementalEngineBridge
 from runtime.pipeline import Engine
 from runtime.service import RuntimeService
 from tests.runtime.test_service import FakeAudio, FakeEngine, ok_preflight
@@ -45,68 +43,6 @@ async def to_service(svc, engine_events):
 def ui_events(out):
     # Sin "ts" (cambia en cada corrida) para que el fixture sea estable en git.
     return [{k: v for k, v in e.items() if k != "ts"} for e in out if e.get("type") in UI_KINDS]
-
-
-# ------------------------------------------------------------------ incremental (bridge real)
-class Recorder:
-    def __init__(self):
-        self.events = []
-
-    async def __call__(self, kind, f):
-        self.events.append((kind, dict(f)))
-
-
-def incremental(steps):
-    rec = Recorder()
-    b = IncrementalEngineBridge(SimpleNamespace(input_queue_chunks=8), adapter=None, emit=rec)
-    b._sid = "s1"
-
-    async def flow():
-        for kind, kw in steps:
-            await b._handle(SimpleNamespace(kind=kind, stream_id="s1", **kw))
-    asyncio.run(flow())
-    return rec.events
-
-
-def pcm():
-    return {"pcm": b"\x00\x00" * 160, "sample_rate": 24000, "planned_text_en": None}
-
-
-INC_STEPS = [
-    # Frase 1 se confirma y se traduce mientras la persona ya dice la frase 2 (el caso de la persona).
-    ("asr_partial", {"text": "buenos días", "audio_pos_s": 0.4}),
-    ("asr_partial", {"text": "buenos días quisiera", "audio_pos_s": 0.8}),
-    ("asr_final", {"text": "Buenos días, quisiera una mesa.", "commit_id": "c1"}),
-    ("asr_partial", {"text": "para dos", "audio_pos_s": 1.6}),
-    ("mt_partial", {"text": "Good morning, I'd like a table.", "commit_id": "c1"}),
-    ("tts_chunk", {"commit_id": "c1", **pcm()}),
-    ("asr_partial", {"text": "para dos personas", "audio_pos_s": 2.0}),
-    ("unit_done", {"commit_id": "c1", "unit_n_chunks": 1}),
-    # Frase 2 se confirma y se cancela (barge-in): queda visible como descartada.
-    ("asr_final", {"text": "Para dos personas.", "commit_id": "c2"}),
-    ("asr_partial", {"text": "eh", "audio_pos_s": 3.0}),
-    ("unit_cancelled", {"commit_id": "c2"}),
-    # Frase 3 se confirma pero termina sin PCM: también visible como descartada.
-    ("asr_final", {"text": "Eh, perdón.", "commit_id": "c3"}),
-    ("unit_done", {"commit_id": "c3", "unit_n_chunks": 0}),
-]
-
-
-def scenario_incremental(tmp):
-    svc, out = new_service(tmp)
-    try:
-        asyncio.run(to_service(svc, incremental(INC_STEPS)))
-    finally:
-        svc.close()
-    return {
-        "name": "incremental: commit, barge-in y unidad sin PCM",
-        "events": ui_events(out),
-        "expect": [
-            ["c1", "final", "Buenos días, quisiera una mesa.", "Good morning, I'd like a table."],
-            ["c2", "discarded:cancelled", "Para dos personas.", ""],
-            ["c3", "discarded:cancelled", "Eh, perdón.", ""],
-        ],
-    }
 
 
 # ------------------------------------------------------------------ baseline (service real)
@@ -178,7 +114,6 @@ def scenario_pipeline(tmp, name, final, min_speech_ms, expect):
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         scenarios = [
-            scenario_incremental(Path(tmp) / "a"),
             scenario_baseline_overlap(Path(tmp) / "b"),
         ]
         scenarios += [
@@ -187,7 +122,7 @@ def main():
             scenario_pipeline(Path(tmp) / "e", "pipeline: ASR final vacío", "", 0, None),
         ]
     # En el pipeline el seg_id lo asigna el motor: la expectativa usa el id que salió.
-    for sc, st, en in zip(scenarios[2:], ("final", "discarded:short", "discarded:empty"), ("EN hola", "", "")):
+    for sc, st, en in zip(scenarios[1:], ("final", "discarded:short", "discarded:empty"), ("EN hola", "", "")):
         ids = list(dict.fromkeys(str(e["seg_id"]) for e in sc["events"]))
         if len(ids) != 1:
             sys.exit(f"{sc['name']}: esperaba 1 frase, salieron {ids}")
