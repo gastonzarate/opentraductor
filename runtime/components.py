@@ -342,10 +342,16 @@ class QwenMLX:
     Qwen no omite la 2.ª oración y partirla costaría una llamada más)."""
 
     def __init__(self, model_dir, normalize: bool = False, sense_prompt: bool = False,
-                 session_kv: bool = False, sense_glossary: bool = False) -> None:
+                 session_kv: bool = False, sense_glossary: bool = False, draft_dir=None,
+                 num_draft_tokens: int = 3) -> None:
         from mlx_lm import load
 
         self.model, self.tok = load(str(model_dir))
+        # T-68 decodificación especulativa: Qwen3 chico (mismo tokenizer) como borrador; greedy da la misma salida.
+        # La caché KV es la del modelo + la del borrador en una sola lista (como la espera mlx-lm). Env manda.
+        draft_dir = os.environ.get("OPENTRADUCTOR_MT_DRAFT_DIR", draft_dir) or None
+        self.draft = load(str(draft_dir))[0] if draft_dir else None
+        self.num_draft_tokens = int(os.environ.get("OPENTRADUCTOR_MT_DRAFT_TOKENS", num_draft_tokens))
         self.normalize = normalize
         v = os.environ.get("OPENTRADUCTOR_MT_SENSE")  # 1/0 fuerza el prompt por sentido (A/B y gate sin tocar configs)
         sense_prompt = (v == "1") if v in ("0", "1") else sense_prompt
@@ -421,6 +427,8 @@ class QwenMLX:
         if self.normalize:
             text_es = mt_normalize_numbers(text_es)
         prompt, kw = self.prompt(text_es, context), {"max_tokens": 3 * len(text_es.split()) + 16}
+        if getattr(self, "draft", None) is not None:
+            kw.update(draft_model=self.draft, num_draft_tokens=self.num_draft_tokens)
         kv, self._kv = self._kv, None  # un solo uso, sea de esta frase o no
         session = getattr(self, "session_kv", False)
         if kv is None and session:
@@ -446,7 +454,7 @@ class QwenMLX:
             from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache
 
             if used is None:
-                cache = make_prompt_cache(self.model)
+                cache = self._new_cache()
                 if can_trim_prompt_cache(cache):
                     full = self._enc(prompt) if isinstance(prompt, str) else full
                     prompt, kw, used = full, {**kw, "prompt_cache": cache}, cache
@@ -463,17 +471,29 @@ class QwenMLX:
         from mlx_lm.models.cache import trim_prompt_cache
 
         cache, full = post
-        off = getattr(cache[0], "offset", None)
-        if not isinstance(off, int) or off < len(full):
-            self._sess = None
-            return
-        if off > len(full):
-            trim_prompt_cache(cache, off - len(full))
+        # Por capa (modelo y borrador pueden quedar con offsets distintos tras el especulativo).
+        for c in cache:
+            off = getattr(c, "offset", None)
+            if not isinstance(off, int) or off < len(full):
+                self._sess = None
+                return
+            if off > len(full):
+                trim_prompt_cache([c], off - len(full))
         self._sess = (cache, full)
         self.kv_stats["session_tokens"] = len(full)
 
     def _enc(self, s: str) -> list[int]:
         return list(self.tok.encode(s, add_special_tokens=False))
+
+    def _new_cache(self) -> list:
+        from mlx_lm.models.cache import make_prompt_cache
+
+        d = getattr(self, "draft", None)
+        return make_prompt_cache(self.model) + (make_prompt_cache(d) if d is not None else [])
+
+    def turn_tokens(self, es: str, en: str) -> int:
+        """T-68: tokens aprox. que suma un par (es, en) a la historia (turno user + assistant con su plantilla)."""
+        return len(self._enc(self._user(es))) + len(self._enc(en)) + 10
 
     def prefill(self, partial_es: str, context: tuple = ()) -> None:
         """T-58: carga en una caché KV el prompt con el parcial SIN su última palabra (suele cambiar); el
@@ -502,16 +522,22 @@ class QwenMLX:
             while n < min(len(cached), len(toks) - 1) and cached[n] == toks[n]:
                 n += 1
             if n == 0:
-                cache = make_prompt_cache(self.model)
+                cache = self._new_cache()
             elif len(cached) > n:
                 trim_prompt_cache(cache, len(cached) - n)
         else:
-            cache = make_prompt_cache(self.model)
+            cache = self._new_cache()
         if not can_trim_prompt_cache(cache):
             self._kv = None
             self.prewarm()
             return
-        self.model(mx.array(toks[n:])[None], cache=cache)
+        x = mx.array(toks[n:])[None]
+        if getattr(self, "draft", None) is None:
+            self.model(x, cache=cache)
+        else:
+            k = len(self.model.layers)
+            self.model(x, cache=cache[:k])
+            self.draft(x, cache=cache[k:])
         mx.eval([c.state for c in cache])
         self._kv = (cache, toks)
 

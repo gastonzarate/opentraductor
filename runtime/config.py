@@ -229,6 +229,13 @@ class PipelineConfig:
     # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de
     # sus tokens nuevos. Con mt_context_turns > 0 la historia se recorta en bloque (n -> n/2) para no romper el prefijo.
     mt_session_kv: bool = False
+    # T-68 contexto largo por tokens: tope (aprox.) de tokens de historia en el prompt de Qwen. Al pasarlo se descartan
+    # las frases más viejas hasta quedar en la mitad (recorte en bloque: la caché de sesión se rehace solo entonces).
+    # 0 = solo mt_context_turns. Con este tope, mt_context_turns es el máximo de frases (poner alto, p. ej. 200).
+    mt_context_tokens: int = 0
+    # T-68 decodificación especulativa: carpeta de un Qwen3 chico (0.6B 4bit) como borrador del 4B. None = sin borrador.
+    # También por env OPENTRADUCTOR_MT_DRAFT_DIR (y OPENTRADUCTOR_MT_DRAFT_TOKENS, default 3).
+    mt_draft_dir: str | None = None
     # T-51: traductor. "marian" (CTranslate2, CPU) = camino de hoy | "qwen" (Qwen3 4bit MLX, en el hilo GPU con Kokoro).
     mt_engine: str = "marian"
     # Carpeta del Qwen MLX (config.json + model.safetensors + tokenizer). None = $OPENTRADUCTOR_QWEN_DIR.

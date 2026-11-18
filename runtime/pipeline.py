@@ -254,7 +254,8 @@ class Engine:
             self.mt = await self.gpu.run(lambda: timed("mt", lambda: K.QwenMLX(qwen_model_dir(c), normalize=c.mt_normalize,
                                                                                          sense_prompt=c.mt_sense_prompt,
                                                                                          sense_glossary=c.mt_sense_glossary,
-                                                                                         session_kv=c.mt_session_kv)))
+                                                                                         session_kv=c.mt_session_kv,
+                                                                                         draft_dir=c.mt_draft_dir)))
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)
@@ -528,6 +529,19 @@ class Engine:
             return
         h = self._mt_ctx.setdefault(stream_id, [])
         h.append((es.strip(), en.strip()))
+        v = os.environ.get("OPENTRADUCTOR_MT_CONTEXT_TOKENS")  # A/B de bench sin tocar configs
+        cap = int(v) if v and v.isdigit() else self.cfg.mt_context_tokens
+        if cap > 0 and hasattr(self.mt, "turn_tokens"):  # T-68: tope por tokens, recorte en bloque hasta cap/2
+            sizes = [self.mt.turn_tokens(a, b) for a, b in h]
+            if sum(sizes) > cap:
+                tot, k = sum(sizes), 0
+                while k < len(h) - 1 and tot > cap // 2:
+                    tot -= sizes[k]
+                    k += 1
+                del h[:k]
+            if len(h) > n:
+                del h[: len(h) - max(1, n // 2)]
+            return
         if self.cfg.mt_session_kv:  # recorte en bloque: el prefijo (y la caché KV de sesión) cambia solo cada n/2 frases
             if len(h) > n:
                 del h[: len(h) - max(1, n // 2)]

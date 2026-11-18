@@ -107,3 +107,41 @@ def test_glossary_on_goes_before_text_only_with_term():
     nxt = q.prompt("Seguimos", (("Dale, no hay plata", "OK, there's no money"),))
     assert nxt.startswith(prev)
 
+
+
+def _remember_engine(**cfg):
+    """T-68: Engine._mt_remember con un MT que cuenta 1 token por carácter del español."""
+    from types import SimpleNamespace
+
+    from runtime.config import PipelineConfig
+    from runtime.pipeline import Engine
+
+    e = SimpleNamespace(cfg=PipelineConfig(mt_engine="qwen", **cfg), _mt_ctx={},
+                        mt=SimpleNamespace(turn_tokens=lambda es, en: len(es)))
+    return e, (lambda es: Engine._mt_remember(e, "s", es, "en"))
+
+
+def test_context_tokens_block_trim_to_half():
+    e, rem = _remember_engine(mt_context_turns=200, mt_context_tokens=100, mt_session_kv=True)
+    for i in range(10):
+        rem(f"{i}" * 10)  # 10 tokens cada una: 100 no pasa el tope
+    assert len(e._mt_ctx["s"]) == 10
+    rem("x" * 10)  # 110 > 100: quedan las más nuevas hasta <= 50
+    h = e._mt_ctx["s"]
+    assert [es for es, _ in h] == ["6" * 10, "7" * 10, "8" * 10, "9" * 10, "x" * 10]
+    rem("y" * 10)  # 60: no recorta (el prefijo de la caché de sesión no cambia)
+    assert len(e._mt_ctx["s"]) == 6
+
+
+def test_context_tokens_keeps_last_turn_even_if_huge():
+    e, rem = _remember_engine(mt_context_turns=200, mt_context_tokens=100)
+    rem("a" * 10)
+    rem("b" * 500)
+    assert [es for es, _ in e._mt_ctx["s"]] == ["b" * 500]
+
+
+def test_context_tokens_off_keeps_turn_rule():
+    e, rem = _remember_engine(mt_context_turns=2)
+    for t in "abc":
+        rem(t)
+    assert [es for es, _ in e._mt_ctx["s"]] == ["b", "c"]
