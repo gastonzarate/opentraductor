@@ -294,6 +294,10 @@ class PipelineConfig:
     # VAD despierta la GPU durante endpoint + ASR finish y la MT de la frase corre en caliente (309). Solo Qwen y con
     # el ASR fuera del hilo MLX. $OPENTRADUCTOR_MT_PREWARM=1/0 lo fuerza (para medir sin tocar la UI).
     mt_prewarm_on_pause: bool = False
+    # T-67 sonda d): al empezar la voz de cada frase, si el hilo MLX está ocioso hace >= mt_prewarm_idle_s, una
+    # síntesis descartada de un fonema de Kokoro (KokoroTTS.prewarm) para que el 1.er fragmento no pague Kokoro frío.
+    # Solo con el ASR fuera del hilo MLX (Moonshine). Apagado; $OPENTRADUCTOR_TTS_PREWARM=1/0 manda.
+    tts_prewarm_on_speech: bool = False
     mt_prewarm_silence_ms: float = 32.0  # silencio VAD para lanzarlo (< endpoint_silence_ms)
     mt_prewarm_idle_s: float = 1.0  # solo si el hilo MLX lleva al menos esto sin trabajo
     # T-58: en vez del forward de 1 token, prefill KV del prompt con el parcial sin su última palabra (mismo

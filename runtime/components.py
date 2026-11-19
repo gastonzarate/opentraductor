@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -129,6 +130,23 @@ class ParakeetStreamer:
         return text
 
 
+def asr_ort_provider() -> str:
+    """T-67 sonda a): $OPENTRADUCTOR_ASR_ORT_PROVIDER=coreml|cpu (solo Moonshine). Sin env o inválido = "cpu"."""
+    v = os.environ.get("OPENTRADUCTOR_ASR_ORT_PROVIDER", "").strip().lower()
+    return "coreml" if v == "coreml" else "cpu"
+
+
+def coreml_cache_dir():
+    """Caché de modelos CoreML compilados: ``$OPENTRADUCTOR_COREML_CACHE`` o ``models_dir()/coreml-cache``
+    (dentro del contenedor de la app en el sandbox). Se crea si no existe."""
+    from .config import models_dir
+
+    d = os.environ.get("OPENTRADUCTOR_COREML_CACHE")
+    p = Path(d).expanduser() if d else models_dir() / "coreml-cache"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 class MoonshineStreamer:
     """ASR streaming con Moonshine (CPU/ONNX, ``moonshine-voice``). Misma
     interfaz que ``ParakeetStreamer`` (start/add/finish).
@@ -149,11 +167,22 @@ class MoonshineStreamer:
             ) from exc
 
         self.update_interval = update_interval
-        self.tr = Transcriber(
-            model_path=str(model_dir),
-            model_arch=getattr(ModelArch, arch),
-            update_interval=update_interval,
-        )
+        # T-67 sonda a): proveedor de ONNX Runtime para Moonshine. "cpu" = camino de hoy; "coreml" = CoreML
+        # (Neural Engine/CPU según el grafo), para dejar la GPU solo a Qwen y Kokoro. Si la build de
+        # libmoonshine no trae CoreML (o falla al crear), vuelve a CPU y lo deja en provider_error.
+        self.ort_provider = asr_ort_provider()
+        self.provider_error: str | None = None
+        kw = dict(model_path=str(model_dir), model_arch=getattr(ModelArch, arch), update_interval=update_interval)
+        if self.ort_provider == "cpu":
+            self.tr = Transcriber(**kw)
+        else:
+            try:
+                self.tr = Transcriber(**kw, options={"ort_provider": self.ort_provider,
+                                                     "coreml_cache_dir": str(coreml_cache_dir())})
+            except Exception as exc:  # noqa: BLE001
+                self.provider_error = f"{type(exc).__name__}: {exc}"
+                self.ort_provider = "cpu"
+                self.tr = Transcriber(**kw)
         self._stream = None
         self._lines: dict[int, str] = {}
         self.last_latency_ms = 0
@@ -1120,6 +1149,19 @@ class KokoroTTS:
                     first = False
                     head = False
                     yield self._chunk(float_to_pcm(x), clause)
+
+    def prewarm(self, text: str = "a") -> float:
+        """T-67 sonda d): síntesis descartada de un fonema para que el 1.er fragmento de la frase no pague Kokoro
+        frío (kernels/caché MLX). No emite nada ni toca last_trim_ms. Devuelve ms."""
+        import time
+
+        import mlx.core as mx
+
+        t = time.perf_counter()
+        for r in self.pipe(text, voice=self.voice, speed=self.speed, split_pattern=None):
+            if r.audio is not None:
+                mx.eval(r.audio)
+        return (time.perf_counter() - t) * 1000
 
     def _synth_capped(self, clauses: list[str], first: bool, cap_ms: float):
         """T-67 pausa entre fragmentos: Kokoro abre cada cláusula con ~300 ms de silencio y la cierra con ~430; sin

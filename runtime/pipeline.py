@@ -24,6 +24,7 @@ import collections
 import concurrent.futures as cf
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
@@ -308,6 +309,11 @@ class Engine:
         c = self.cfg
         await self.gpu.run(lambda: _apply_mlx_cache_limit(c))  # T-50: antes de cargar nada en MLX
         self.asr = await self.asr_worker.run(lambda: timed("asr", self._make_asr))
+        # T-67 sonda a): con qué proveedor quedó Moonshine (coreml o cpu si CoreML falló).
+        self.asr_info = {"ort_provider": getattr(self.asr, "ort_provider", None),
+                         "provider_error": getattr(self.asr, "provider_error", None)}
+        if self.asr_info["provider_error"]:
+            print(f"[asr] CoreML no disponible, sigue en CPU: {self.asr_info['provider_error']}", file=sys.stderr)
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
                                                    tts_first_words(c), c.tts_bind_conjunctions,
                                                    c.tts_trim_tail, c.tts_trim_lead_all_clauses)))
@@ -468,6 +474,7 @@ class Engine:
                     pre = b"".join(st.preroll)
                     st.preroll.clear()
                     await st.asr_q.put(("start", (st.seg, pre)))
+                    self._maybe_tts_prewarm()
                     if not appended:
                         st.asr_buf.extend(pcm)
                         appended = True
@@ -836,6 +843,37 @@ class Engine:
         t = asyncio.ensure_future(g.run(_timed_call, self.mt.prewarm))
         self._prewarm_tasks.add(t)
         t.add_done_callback(self._prewarm_done)
+
+    @property
+    def _tts_prewarm_enabled(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_TTS_PREWARM")
+        return (v == "1") if v in ("0", "1") else self.cfg.tts_prewarm_on_speech
+
+    def _maybe_tts_prewarm(self) -> None:
+        """T-67 sonda d): al abrir un segmento de voz, Kokoro sintetiza un fonema descartado si el hilo MLX está
+        ocioso hace >= mt_prewarm_idle_s. Corre durante la frase (>= 1 s de voz), lejos del endpoint."""
+        if not self._tts_prewarm_enabled or self.tts is None or not hasattr(self.tts, "prewarm"):
+            return
+        g = self.gpu
+        ps = self.prewarm_stats.setdefault("tts", {"started": 0, "skipped_hot": 0, "error": 0, "cost_ms": []})
+        if self.asr_worker is g or g.inflight or time.monotonic() - g.last_done < self.cfg.mt_prewarm_idle_s:
+            ps["skipped_hot"] += 1
+            return
+        ps["started"] += 1
+        t = asyncio.ensure_future(g.run(self.tts.prewarm))
+        self._prewarm_tasks.add(t)
+
+        def done(t: asyncio.Future) -> None:
+            self._prewarm_tasks.discard(t)
+            if t.cancelled():
+                return
+            if t.exception() is not None:
+                ps["error"] += 1
+                return
+            ps["cost_ms"].append(round(t.result(), 1))
+            del ps["cost_ms"][:-64]
+
+        t.add_done_callback(done)
 
     def _prewarm_done(self, t: asyncio.Future) -> None:
         self._prewarm_tasks.discard(t)
