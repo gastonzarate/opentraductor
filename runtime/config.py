@@ -267,8 +267,8 @@ class PipelineConfig:
     # se cierra el stream del ASR (finish) sin esperar al endpoint. Si el endpoint llega sin voz nueva, ese texto ES el
     # final; si vuelve la voz, se reabre el stream y se le re-pasa el audio del segmento. Sonda 7b1b37b (Moonshine,
     # tiempo real): hit 9/9, finish 153-201 ms desde la pausa. $OPENTRADUCTOR_ASR_SPEC_FINISH=1/0 lo fuerza.
-    # T-67 (19/11): encendido por defecto junto con asr_spec_finish_silence_ms=32 (hit 66/71, miss 0 en t67-asrfin).
-    asr_spec_finish_on_pause: bool = True
+    # T-67 (19/11): queda apagado (decisión de @lead): sobre stream4adapt64 da -4 ms, dentro del ruido. Env =1 lo enciende.
+    asr_spec_finish_on_pause: bool = False
     # T-58: MT en streaming hacia Kokoro (solo Qwen). El 1.er fragmento se sintetiza entre pasos del decode apenas el
     # prefijo lo fija (components.first_clause_final) y sale antes del mt_final. Mismos cortes y texto que el camino
     # normal. Apagado hasta el A/B de @bench. $OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK=1/0 lo fuerza.
@@ -281,7 +281,7 @@ class PipelineConfig:
     # relanza con ese. Si vuelve la voz, se descarta. Acierto con comparación normalizada (minúsculas, sin
     # puntuación). Implica speculative_mt_tts. Evento spec_result por frase. $OPENTRADUCTOR_SPEC_ON_SILENCE=1/0.
     spec_on_silence: bool = False
-    asr_spec_finish_silence_ms: float = 32.0  # T-67 (19/11): 32 (antes 80): el decode final corre durante la espera
+    asr_spec_finish_silence_ms: float = 80.0
     spec_silence_ms: float = 64.0  # silencio VAD mínimo para especular (< endpoint_silence_ms)
     spec_max_entries: int = 4  # entradas en caché simultáneas (acotado)
     # T-58 GPU fría: tras >=1 s de GPU ociosa la 1.ª generación de Qwen tarda ~170 ms más (sonda t58_mt_gpu_probe:
