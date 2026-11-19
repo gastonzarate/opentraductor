@@ -98,6 +98,9 @@ class BaselineAdapter(Adapter):
             if self.engine else {},
             "mt_stream": dict(self.engine.mt_stream_stats, enabled=self.engine._mt_stream_enabled)
             if self.engine else {},
+            "asr_tail": dict(getattr(self.engine, "asr_tail_stats", {}) or {}) if self.engine else {},
+            "turn": dict(getattr(self.engine, "turn_stats", {}) or {},
+                         enabled=bool(getattr(cfg, "endpoint_turn", False))) if self.engine else {},
         }
 
     @staticmethod
