@@ -101,3 +101,11 @@ def test_smart_turn_real_model():
     m = K.SmartTurn()
     p = m.prob((np.zeros(16000, dtype=np.int16)).tobytes())
     assert 0.0 <= p <= 1.0
+
+
+def test_asr_tail_stats_counts():
+    """T-67 sonda b): cuenta si el parcial del endpoint ya era el final (techo de la especulación)."""
+    e = _engine(None)
+    e._asr_tail_count(Segment(1, 0.0, ep_partial="hola que tal", ep_caught_up=True, text_es_raw="Hola que tal."))
+    e._asr_tail_count(Segment(2, 0.0, ep_partial="hola que", ep_caught_up=False, text_es_raw="hola que tal"))
+    assert e.asr_tail_stats == {"n": 2, "caught_up": 1, "eq": 1, "eq_caught_up": 1}

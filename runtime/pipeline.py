@@ -152,6 +152,8 @@ class Segment:
     # -1 = resto de una frase con cláusulas ya habladas (text_es = frase entera, mt_text = lo que falta traducir).
     clause: int = 0
     mt_text: str | None = None
+    ep_partial: str = ""  # T-67 sonda b): parcial del ASR en el endpoint
+    ep_caught_up: bool = False  # T-67 sonda b): el ASR ya había procesado toda la voz en el endpoint
 
 
 @dataclass
@@ -247,6 +249,9 @@ class Engine:
         self._spec_seg: dict[tuple, dict] = {}  # T-73: por frase (stream, gen, seg_id) -> n lanzadas, wasted_ms
         self.turn: K.SmartTurn | None = None  # T-67 sonda c): solo con OPENTRADUCTOR_ENDPOINT_TURN=1
         self.turn_stats: dict[str, Any] = {"calls": 0, "turn": 0, "error": 0, "cost_ms": []}
+        # T-67 sonda b): techo de la especulación sobre el parcial. n = finales; caught_up = el ASR ya había procesado
+        # toda la voz en el endpoint; eq = parcial del endpoint == final (normalizados); eq_caught_up = las dos.
+        self.asr_tail_stats: dict[str, int] = {"n": 0, "caught_up": 0, "eq": 0, "eq_caught_up": 0}
         self.prewarm_stats: dict[str, Any] = {"started": 0, "skipped_hot": 0, "error": 0, "cost_ms": []}
         self._prewarm_tasks: set[asyncio.Future] = set()
         self._mt_ctx: dict[str, list[tuple[str, str]]] = {}  # stream_id -> últimas frases (es, en) emitidas
@@ -578,6 +583,14 @@ class Engine:
                 st.ep_wait = (c.endpoint_silence_ms, "base")
         return st.ep_wait[0]
 
+    def _asr_tail_count(self, seg: Segment) -> None:
+        a = self.asr_tail_stats
+        eq = K.normalize_asr_text(seg.ep_partial).lower() == K.normalize_asr_text(seg.text_es_raw).lower()
+        a["n"] += 1
+        a["caught_up"] += seg.ep_caught_up
+        a["eq"] += eq
+        a["eq_caught_up"] += eq and seg.ep_caught_up
+
     @property
     def _endpoint_turn(self) -> bool:
         v = os.environ.get("OPENTRADUCTOR_ENDPOINT_TURN")
@@ -626,6 +639,8 @@ class Engine:
         seg.end_s = st.last_speech_end_s
         seg.endpoint_pos_s = pos_s
         seg.forced = forced
+        seg.ep_partial = st.last_partial
+        seg.ep_caught_up = st.asr_pending_s <= 1e-9 and st.asr_done_pos_s >= st.last_speech_end_s
         if st.asr_buf:
             tail_start_s = st.buf_end_s - len(st.asr_buf) / 2 / SR
             # Cola solo-silencio: el VAD ya vio silencio desde last_speech_end_s y
@@ -818,6 +833,7 @@ class Engine:
                         {"stream_id": st.stream_id, "text": seg.text_es, "text_raw": seg.text_es_raw,
                          "seg_id": seg.seg_id},
                     )
+                    self._asr_tail_count(seg)
                     self._simul_rest(st, seg)
                     await self._enqueue_segment(st, seg)
                     cur = None
