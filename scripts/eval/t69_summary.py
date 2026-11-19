@@ -19,7 +19,7 @@ for d in sorted(p for p in out.iterdir() if p.is_dir()):
     if not s.exists():
         continue
     txt = s.read_text()
-    m = re.search(r"^\| todas \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \|", txt, re.M)
+    m = re.search(r"^\| todas \| (\d+) \| (-?\d+) \| (-?\d+) \| (-?\d+) \| (-?\d+) \| (\d+) \|", txt, re.M)
     p95 = re.search(r"p95 todas:.*total (\d+)", txt)
     rep = (d / "reposo.txt").read_text() if (d / "reposo.txt").exists() else ""
     quiet = "NO REPOSO" if "NO REPOSO" in rep else ("reposo" if "reposo:" in rep else "?")
