@@ -34,12 +34,14 @@ def write(path: Path, pcm: bytes, sr: int) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--pause-ms", type=float, default=None, help="tts_clause_pause_ms (default: sin tope)")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     c = PipelineConfig()
     tts = KokoroTTS(c.voice, c.speed, trim_lead_margin_ms=c.tts_trim_lead_margin_ms,
                     first_chunk_max_words=c.tts_first_chunk_max_words, bind_conjunctions=c.tts_bind_conjunctions,
                     trim_tail=c.tts_trim_tail, trim_lead_all_clauses=c.tts_trim_lead_all_clauses)
+    tts.clause_pause_ms = a.pause_ms
     list(tts.synth("Warm up."))
     notes = []
     for i, text in enumerate(SENTENCES, 1):

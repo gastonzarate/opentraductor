@@ -70,6 +70,17 @@ def endpoint_short_ms(cfg: PipelineConfig) -> float:
     return cfg.endpoint_short_ms
 
 
+def tts_clause_pause_ms(cfg: PipelineConfig) -> float | None:
+    """T-67 tope de la pausa entre fragmentos TTS a mitad de frase (KokoroTTS._synth_capped).
+    $OPENTRADUCTOR_TTS_CLAUSE_PAUSE_MS=N lo fuerza (entero >= 0; "off" lo apaga). Sin env = cfg (None = camino de hoy)."""
+    v = os.environ.get("OPENTRADUCTOR_TTS_CLAUSE_PAUSE_MS", "").strip().lower()
+    if v == "off":
+        return None
+    if v.isdigit():
+        return float(v)
+    return cfg.tts_clause_pause_ms
+
+
 def asr_spec_finish_ms(cfg: PipelineConfig) -> float:
     """T-67 silencio VAD para el finish especulativo del ASR (T-58). $OPENTRADUCTOR_ASR_SPEC_FINISH_MS=N lo fuerza
     (entero > 0): con el fin de frase adaptativo la espera corta (96) cae en la misma ventana que el de 80, y el
@@ -273,7 +284,7 @@ class Engine:
         c = self.cfg
         return (c.voice, c.speed, c.tts_trim_lead_margin_ms, tts_first_words(c),
                 c.tts_bind_conjunctions, c.asr_normalize_text, c.tts_trim_tail, c.mt_normalize, c.mt_engine,
-                c.tts_trim_lead_all_clauses)
+                c.tts_trim_lead_all_clauses, tts_clause_pause_ms(c))
 
     def backlog(self) -> dict:
         """Estado de colas para métricas (valores medidos, no estimados)."""
@@ -300,6 +311,7 @@ class Engine:
         self.tts = await self.gpu.run(lambda: timed("tts", lambda: K.KokoroTTS(c.voice, c.speed, c.tts_trim_lead_margin_ms,
                                                    tts_first_words(c), c.tts_bind_conjunctions,
                                                    c.tts_trim_tail, c.tts_trim_lead_all_clauses)))
+        self.tts.clause_pause_ms = tts_clause_pause_ms(c)
         if c.mt_engine == "qwen":  # T-51: Qwen MLX comparte el hilo GPU con Kokoro
             from .config import qwen_model_dir
 

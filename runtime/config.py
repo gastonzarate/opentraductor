@@ -218,6 +218,11 @@ class PipelineConfig:
     # de la frase. Kokoro abre cada cláusula con ~300-380 ms de silencio: sin esto, cortar el 1.er fragmento más corto
     # mete pausas >=300 ms a mitad de frase. False = camino de hoy.
     tts_trim_lead_all_clauses: bool = False
+    # T-67: tope (ms) de la pausa entre fragmentos TTS a mitad de frase. Kokoro deja ~430 ms de cola + ~300 de
+    # arranque por fragmento: sin tope cada corte suena como ~730 ms de pausa. Con N: arranque de cada cláusula a
+    # tts_trim_lead_margin_ms y cola a N (corte por palabras) o max(N, 200) (tras , ; :); fin de oración sin tocar.
+    # None = camino de hoy. Env OPENTRADUCTOR_TTS_CLAUSE_PAUSE_MS=N / off manda.
+    tts_clause_pause_ms: float | None = None
     # BUG-7: antes de Marian, "120 mil" -> "120.000" y una llamada por oración (Marian omitía la 2.ª).
     # False = camino de hoy. Reversible por flag (--mt-normalize off) o env OPENTRADUCTOR_MT_NORMALIZE.
     mt_normalize: bool = False

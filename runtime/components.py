@@ -1024,6 +1024,20 @@ class TTSChunk:
     text: str
 
 
+CLAUSE_PAUSE_PUNCT_MS = 200.0  # T-67: pausa interna mínima tras coma / punto y coma / dos puntos
+
+
+def clause_pause_keep_ms(clause: str, cap_ms: float, lead_margin_ms: float) -> float | None:
+    """T-67: ms de silencio a conservar al final de ``clause`` para que la pausa hasta la siguiente (cola + arranque
+    recortado a ``lead_margin_ms``) sea ~``cap_ms`` en un corte por cantidad de palabras y ~max(cap_ms, 200) tras
+    , ; :. None = no tocar la cola (cierre de oración . ? ! o texto vacío)."""
+    t = clause.rstrip().rstrip("\"'”’)»")
+    if not t or t[-1] in ".?!…":
+        return None
+    pause = max(cap_ms, CLAUSE_PAUSE_PUNCT_MS) if t[-1] in ",;:" else cap_ms
+    return max(0.0, pause - lead_margin_ms)
+
+
 class KokoroTTS:
     SAMPLE_RATE = 24000
 
@@ -1080,6 +1094,10 @@ class KokoroTTS:
 
         if first:
             self.last_trim_ms = 0.0
+        cap = getattr(self, "clause_pause_ms", None)
+        if cap is not None:  # T-67: tope a la pausa interna (ver clause_pause_keep_ms); off = camino de hoy
+            yield from self._synth_capped(clauses, first, cap)
+            return
         for clause in clauses:
             head = True  # 1.er chunk con audio de esta cláusula
             for r in self.pipe(
@@ -1102,6 +1120,42 @@ class KokoroTTS:
                     first = False
                     head = False
                     yield self._chunk(float_to_pcm(x), clause)
+
+    def _synth_capped(self, clauses: list[str], first: bool, cap_ms: float):
+        """T-67 pausa entre fragmentos: Kokoro abre cada cláusula con ~300 ms de silencio y la cierra con ~430; sin
+        recorte, cada corte a mitad de frase suena como ~730 ms de pausa. Acá el arranque de CADA cláusula se recorta
+        a trim_lead_margin_ms y la cola del último chunk de cada cláusula a clause_pause_keep_ms(clause, cap_ms).
+        Las cláusulas que cierran oración (. ? !) conservan su cola (pausa entre frases igual que hoy)."""
+        import mlx.core as mx
+
+        margin = self.trim_lead_margin_ms if self.trim_lead_margin_ms is not None else 30.0
+        for clause in clauses:
+            keep_ms = clause_pause_keep_ms(clause, cap_ms, margin)
+            held = None  # último chunk de la cláusula: se emite al saber que no viene otro
+            for r in self.pipe(clause, voice=self.voice, speed=self.speed, split_pattern=None):
+                a = r.audio
+                if a is None:
+                    continue
+                mx.eval(a)
+                x = np.asarray(a, dtype=np.float32).reshape(-1)
+                if x.size and held is None:  # 1.er chunk con audio de esta cláusula
+                    cut = max(0, lead_silence_samples(x, self.SAMPLE_RATE) - int(self.SAMPLE_RATE * margin / 1000))
+                    if cut < x.size:
+                        x = x[cut:]
+                        if first:
+                            self.last_trim_ms = cut / self.SAMPLE_RATE * 1000
+                if not x.size:
+                    continue
+                first = False
+                if held is not None:
+                    yield held
+                held = self._chunk(float_to_pcm(x), clause)
+            if held is not None:
+                if keep_ms is not None:
+                    pcm = held.pcm
+                    k = tail_keep_samples(np.frombuffer(pcm, dtype="<i2"), self.SAMPLE_RATE, margin_ms=keep_ms)
+                    held = self._chunk(pcm[: 2 * k], clause)
+                yield held
 
     def _chunk(self, pcm: bytes, clause: str) -> "TTSChunk":
         # T-47: el tail trim NO va acá (cada chunk es una cláusula: recortarlo acortaba las pausas entre frases).
