@@ -19,7 +19,7 @@ Mac con Apple Silicon (probado en M5 Pro, macOS 26), Python 3.12 y [uv](https://
 ## Instalación
 
 ```bash
-git clone https://github.com/<owner>/opentraductor.git
+git clone https://github.com/gastonzarate/opentraductor.git
 cd opentraductor
 uv sync --extra runtime
 uv run --extra runtime python -m runtime.setup    # descarga modelos (único paso con red)

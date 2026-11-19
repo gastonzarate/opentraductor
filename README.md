@@ -29,7 +29,7 @@ mic ──► VAD (Silero) ──► ASR (Parakeet or Moonshine) ──► trans
 ## Install
 
 ```bash
-git clone https://github.com/<owner>/opentraductor.git
+git clone https://github.com/gastonzarate/opentraductor.git
 cd opentraductor
 
 uv sync --extra runtime
