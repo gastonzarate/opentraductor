@@ -10,6 +10,12 @@ from runtime import components as K
 from runtime.config import PipelineConfig
 from runtime.pipeline import Engine
 
+# T-67 (19/11): estos tests cubren el camino previo a encender adapt+stream+spec_finish por defecto; se fija
+# explícito y cada test enciende lo que mide.
+LEGACY_T67 = dict(endpoint_adaptive=False, endpoint_short_ms=96.0, asr_spec_finish_on_pause=False,
+                  asr_spec_finish_silence_ms=80.0, mt_stream_tts=False, tts_first_chunk_max_words=8)
+
+
 WIN = 512
 
 
@@ -75,7 +81,7 @@ async def run_segment(*, partial, final, spec=True, backend="moonshine-tiny", mt
         events.append((kind, f))
 
     cfg = PipelineConfig(asr_backend=backend, speculative_mt_tts=spec, endpoint_silence_ms=160,
-                         asr_chunk_ms=160, min_speech_ms=0, **cfg_kw)
+                         asr_chunk_ms=160, min_speech_ms=0, **{**LEGACY_T67, **cfg_kw})
     e = Engine(cfg, emit)
     e.asr, e.mt, e.tts = FakeASR(partial, final), mt or FakeMT(), tts or FakeTTS()
     e.vad_proto = FakeVAD(speech)
@@ -197,7 +203,7 @@ def test_busy_confirmed_work_has_priority():
 
         async def emit(k, f): events.append((k, f))
 
-        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, endpoint_silence_ms=160, min_speech_ms=0), emit)
+        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, endpoint_silence_ms=160, min_speech_ms=0, **LEGACY_T67), emit)
         e.asr, e.mt, e.tts, e.vad_proto = FakeASR("hola", "hola"), mt, FakeTTS(), FakeVAD(10)
         e._out_q = asyncio.Queue(maxsize=8)
         e._speaking = True  # hay audio confirmado en curso
@@ -244,7 +250,7 @@ def test_stale_generation_never_claims_new_entry():
 
         async def emit(k, f): events.append((k, f))
 
-        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True), emit)
+        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, **LEGACY_T67), emit)
         e.mt, e.tts = FakeMT(), FakeTTS()
         from runtime.pipeline import Segment, SpecEntry
         ent = SpecEntry("s", 1, "hola", gen=2, fp=e._spec_fp())
@@ -264,7 +270,7 @@ def test_config_change_invalidates_cache():
 
         async def emit(k, f): events.append((k, f))
 
-        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, endpoint_silence_ms=160, min_speech_ms=0), emit)
+        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, endpoint_silence_ms=160, min_speech_ms=0, **LEGACY_T67), emit)
         e.asr, e.mt, e.tts, e.vad_proto = FakeASR("hola", "hola"), mt, tts, FakeVAD(10)
         e._out_q = asyncio.Queue(maxsize=8)
         e._out_task = asyncio.ensure_future(e._speaker_loop())
@@ -292,7 +298,7 @@ def test_known_miss_does_not_wait_or_launch_new_tts():
 
         async def emit(k, f): events.append((k, f))
 
-        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, endpoint_silence_ms=160, min_speech_ms=0), emit)
+        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=True, endpoint_silence_ms=160, min_speech_ms=0, **LEGACY_T67), emit)
         e.asr, e.mt, e.tts, e.vad_proto = FakeASR("hola", "hola mundo"), mt, tts, FakeVAD(10)
         e._out_q = asyncio.Queue(maxsize=8)
         e._out_task = asyncio.ensure_future(e._speaker_loop())
@@ -376,7 +382,7 @@ def test_queued_segments_of_closed_session_are_purged(monkeypatch):
 
         async def emit(k, f): events.append((k, f))
 
-        e = Engine(PipelineConfig(asr_backend="moonshine-tiny"), emit)
+        e = Engine(PipelineConfig(asr_backend="moonshine-tiny", **LEGACY_T67), emit)
         from runtime.pipeline import Segment
         e._out_q = asyncio.Queue(maxsize=8)
         e._live_gen = {"a": 1, "b": 1}

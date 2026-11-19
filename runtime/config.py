@@ -184,7 +184,8 @@ class PipelineConfig:
     # En cada ventana de silencio se elige la espera según el último parcial del ASR: endpoint_long_ms si termina en
     # conector/preposición/artículo/muletilla/coma ("y", "que", "pero", "o sea", "de", "este"...);
     # endpoint_short_ms si el ASR ya procesó toda la voz y el parcial puede cerrar frase; si no, endpoint_silence_ms.
-    endpoint_adaptive: bool = False
+    # T-67 (19/11): encendido por defecto. A/B t67-asrfin/n2 (3801bd9, dev16 n=80): stream4adapt64fin p50 695 vs off 837.
+    endpoint_adaptive: bool = True
     # T-67 paso 2: traducción simultánea por cláusulas (runtime/simul.py). Una cláusula confirmada por dos parciales
     # seguidos del ASR y cerrada por coma/"pero"/"porque"/"o sea"... (mín. 5 palabras) se traduce y se habla antes del
     # fin de frase; en el endpoint solo se traduce el resto. Env OPENTRADUCTOR_MT_SIMUL=1/0 manda. Off = camino de hoy.
@@ -193,7 +194,7 @@ class PipelineConfig:
     # Env OPENTRADUCTOR_MT_SIMUL_MIN_WORDS / OPENTRADUCTOR_MT_SIMUL_CUES mandan. Defaults = reglas de 02512a5.
     mt_simul_min_words: int = 5
     mt_simul_extra_cues: str = ""
-    endpoint_short_ms: float = 96.0
+    endpoint_short_ms: float = 64.0  # T-67 (19/11): 64 (antes 96); cortes falsos iguales al control en t67-asrfin
     endpoint_long_ms: float = 480.0
     vad_threshold: float = 0.5
     min_speech_ms: float = 120.0
@@ -253,7 +254,7 @@ class PipelineConfig:
     # T-50: tope de la caché de buffers libres de MLX (MB), para todo el proceso (Qwen + Kokoro + Parakeet). None = sin tope.
     mlx_cache_limit_mb: float | None = MLX_CACHE_LIMIT_MB_DEFAULT
     # Primer fragmento del TTS: máx. de palabras (None = solo por puntuación). Ayuda con ASR sin puntuación.
-    tts_first_chunk_max_words: int | None = 8  # T-58: default 8 (antes None)
+    tts_first_chunk_max_words: int | None = 4  # T-67 (19/11): 4 (antes 8, T-58), junto con mt_stream_tts
     # Con el anterior: no cortar justo antes/después de and/or/but/nor/yet (conjunción dentro de su grupo).
     tts_bind_conjunctions: bool = True  # T-58: default activo
     # Normaliza el texto ASR para MT (mayúscula inicial + punto final; sin comas). El crudo se conserva aparte.
@@ -266,19 +267,21 @@ class PipelineConfig:
     # se cierra el stream del ASR (finish) sin esperar al endpoint. Si el endpoint llega sin voz nueva, ese texto ES el
     # final; si vuelve la voz, se reabre el stream y se le re-pasa el audio del segmento. Sonda 7b1b37b (Moonshine,
     # tiempo real): hit 9/9, finish 153-201 ms desde la pausa. $OPENTRADUCTOR_ASR_SPEC_FINISH=1/0 lo fuerza.
-    asr_spec_finish_on_pause: bool = False
+    # T-67 (19/11): encendido por defecto junto con asr_spec_finish_silence_ms=32 (hit 66/71, miss 0 en t67-asrfin).
+    asr_spec_finish_on_pause: bool = True
     # T-58: MT en streaming hacia Kokoro (solo Qwen). El 1.er fragmento se sintetiza entre pasos del decode apenas el
     # prefijo lo fija (components.first_clause_final) y sale antes del mt_final. Mismos cortes y texto que el camino
     # normal. Apagado hasta el A/B de @bench. $OPENTRADUCTOR_MT_STREAM_FIRST_CHUNK=1/0 lo fuerza.
     mt_stream_first_chunk: bool = False
     # T-73 Idea B: alias de mt_stream_first_chunk con el nombre de la tarea ($OPENTRADUCTOR_MT_STREAM_TTS=1/0).
-    mt_stream_tts: bool = False
+    # T-67 (19/11): encendido por defecto (solo actúa con Qwen). t67-asrfin: 0/80 huecos, mismo texto que off.
+    mt_stream_tts: bool = True
     # T-73 Idea A: especulación por PAUSA (no una vez por frase). En cada pausa VAD con el ASR al día se lanza MT + 1.er
     # fragmento TTS del parcial; si llega el finish especulativo del ASR (asr_spec_finish_on_pause) con otro texto, se
     # relanza con ese. Si vuelve la voz, se descarta. Acierto con comparación normalizada (minúsculas, sin
     # puntuación). Implica speculative_mt_tts. Evento spec_result por frase. $OPENTRADUCTOR_SPEC_ON_SILENCE=1/0.
     spec_on_silence: bool = False
-    asr_spec_finish_silence_ms: float = 80.0
+    asr_spec_finish_silence_ms: float = 32.0  # T-67 (19/11): 32 (antes 80): el decode final corre durante la espera
     spec_silence_ms: float = 64.0  # silencio VAD mínimo para especular (< endpoint_silence_ms)
     spec_max_entries: int = 4  # entradas en caché simultáneas (acotado)
     # T-58 GPU fría: tras >=1 s de GPU ociosa la 1.ª generación de Qwen tarda ~170 ms más (sonda t58_mt_gpu_probe:

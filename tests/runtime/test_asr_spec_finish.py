@@ -6,6 +6,12 @@ from runtime.pipeline import Engine
 
 from test_speculative import WIN, FakeMT, FakeTTS
 
+# T-67 (19/11): estos tests cubren el camino previo a encender adapt+stream+spec_finish por defecto; se fija
+# explícito y cada test enciende lo que mide.
+LEGACY_T67 = dict(endpoint_adaptive=False, endpoint_short_ms=96.0, asr_spec_finish_on_pause=False,
+                  asr_spec_finish_silence_ms=80.0, mt_stream_tts=False, tts_first_chunk_max_words=8)
+
+
 
 class PatternVAD:
     """Probabilidad por ventana según un patrón de 1 (voz) y 0 (silencio); silencio al terminarse."""
@@ -52,7 +58,7 @@ async def _run(pattern, mt=None, **cfg_kw):
         events.append((kind, f))
 
     cfg = PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=False, endpoint_silence_ms=160,
-                         asr_chunk_ms=160, min_speech_ms=0, mt_kv_prefill_on_pause=False, **cfg_kw)
+                         asr_chunk_ms=160, min_speech_ms=0, mt_kv_prefill_on_pause=False, **{**LEGACY_T67, **cfg_kw})
     e = Engine(cfg, emit)
     e.asr, e.mt, e.tts = RecASR(), mt or FakeMT(), FakeTTS()
     e.vad_proto = PatternVAD(pattern)

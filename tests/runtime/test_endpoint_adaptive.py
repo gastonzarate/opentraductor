@@ -10,6 +10,12 @@ from runtime.pipeline import Engine
 from test_asr_spec_finish import PatternVAD
 from test_speculative import WIN, FakeMT, FakeTTS
 
+# T-67 (19/11): estos tests cubren el camino previo a encender adapt+stream+spec_finish por defecto; se fija
+# explícito y cada test enciende lo que mide.
+LEGACY_T67 = dict(endpoint_adaptive=False, endpoint_short_ms=96.0, asr_spec_finish_on_pause=False,
+                  asr_spec_finish_silence_ms=80.0, mt_stream_tts=False, tts_first_chunk_max_words=8)
+
+
 
 @pytest.mark.parametrize("text,kind", [
     ("", "unknown"),
@@ -58,7 +64,7 @@ async def _run(pattern, partial, **cfg_kw):
         events.append((kind, f))
 
     cfg = PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=False, endpoint_silence_ms=160,
-                         asr_chunk_ms=160, min_speech_ms=0, mt_kv_prefill_on_pause=False, **cfg_kw)
+                         asr_chunk_ms=160, min_speech_ms=0, mt_kv_prefill_on_pause=False, **{**LEGACY_T67, **cfg_kw})
     e = Engine(cfg, emit)
     e.asr, e.mt, e.tts = TextASR(partial), FakeMT(), FakeTTS()
     e.vad_proto = PatternVAD(pattern)
@@ -91,6 +97,22 @@ def _no_env(monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_ENDPOINT_ADAPTIVE", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_ASR_SPEC_FINISH", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_ENDPOINT_SHORT_MS", raising=False)
+
+
+def test_t67_defaults_on():
+    """T-67 (19/11): fin de frase adaptativo con espera corta 64, MT en streaming a Kokoro (1.er fragmento de 4
+    palabras) y finish especulativo del ASR a 32 ms, encendidos por defecto tras el A/B t67-asrfin/n2."""
+    c = PipelineConfig()
+    assert c.endpoint_adaptive is True and c.endpoint_short_ms == 64.0 and c.endpoint_long_ms == 480.0
+    assert c.mt_stream_tts is True and c.tts_first_chunk_max_words == 4
+    assert c.asr_spec_finish_on_pause is True and c.asr_spec_finish_silence_ms == 32.0
+
+
+def test_default_engine_closes_complete_at_64():
+    e, ev = _go([1] * 10, "el granizo destruyó la plantación", **{k: getattr(PipelineConfig(), k) for k in LEGACY_T67})
+    eps = _endpoints(ev)
+    assert len(eps) == 1 and eps[0]["wait_reason"] == "complete" and eps[0]["wait_ms"] == 64
+    assert e.asr.finishes[-1] == 10 * 2 * WIN  # no se pierde voz
 
 
 def test_off_by_default_is_fixed():
