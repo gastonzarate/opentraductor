@@ -150,6 +150,20 @@ def silero_vad_onnx_path() -> Path:
     return vendored  # no existe: el que llama falla con un mensaje claro
 
 
+def smart_turn_onnx_path() -> Path:
+    """T-67 sonda c): modelo smart-turn v3 (ONNX). ``$OPENTRADUCTOR_SMART_TURN_ONNX``, si no
+    ``models_dir()/smartturn/smart-turn-v3.2-cpu.onnx`` y, en desarrollo, ``<repo>/models/smartturn/``."""
+    override = os.environ.get("OPENTRADUCTOR_SMART_TURN_ONNX")
+    if override:
+        return Path(override).expanduser()
+    name = "smart-turn-v3.2-cpu.onnx"
+    cand = models_dir() / "smartturn" / name
+    if cand.exists():
+        return cand
+    dev = Path(__file__).resolve().parent.parent / "models" / "smartturn" / name
+    return dev if dev.exists() else cand
+
+
 def snapshot(repo: str, rev: str, required: tuple[str, ...] = ("config.json",)) -> Path:
     """Directorio del snapshot fijado por revisión, solo desde disco.
 
@@ -196,6 +210,13 @@ class PipelineConfig:
     mt_simul_extra_cues: str = ""
     endpoint_short_ms: float = 64.0  # T-67 (19/11): 64 (antes 96); cortes falsos iguales al control en t67-asrfin
     endpoint_long_ms: float = 480.0
+    # T-67 sonda c): en los casos "base" (parcial que puede cerrar pero ASR atrasado, o vacío) se consulta una vez
+    # por pausa al detector de fin de turno por audio (SmartTurn, smart-turn v3 ONNX) a los endpoint_turn_silence_ms
+    # de silencio; si da p >= endpoint_turn_threshold, la espera pasa a la corta (motivo "turn"). Apagado: env
+    # OPENTRADUCTOR_ENDPOINT_TURN=1/0 manda; OPENTRADUCTOR_ENDPOINT_TURN_P=0.x fija el umbral.
+    endpoint_turn: bool = False
+    endpoint_turn_threshold: float = 0.5
+    endpoint_turn_silence_ms: float = 32.0
     vad_threshold: float = 0.5
     min_speech_ms: float = 120.0
     max_segment_s: float = 20.0  # corte forzado de seguridad

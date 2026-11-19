@@ -1240,3 +1240,80 @@ class TailHold:
         ms = len(self.pending) / 2 / self.sr * 1000
         self.pending = b""
         return ms
+
+
+# --------------------------------------------------------------------------- T-67 sonda c): fin de turno por audio
+_MEL_CACHE: dict[tuple[int, int, int], np.ndarray] = {}
+
+
+def _slaney_mel_filters(sr: int = 16000, n_fft: int = 400, n_mels: int = 80) -> np.ndarray:
+    """Banco mel de Whisper (librosa.filters.mel, htk=False, norm='slaney'): (n_mels, n_fft // 2 + 1)."""
+    key = (sr, n_fft, n_mels)
+    if key in _MEL_CACHE:
+        return _MEL_CACHE[key]
+    fftfreqs = np.linspace(0, sr / 2, n_fft // 2 + 1)
+    f_sp, min_log_hz = 200.0 / 3, 1000.0
+    min_log_mel, logstep = min_log_hz / f_sp, np.log(6.4) / 27.0
+
+    def hz_to_mel(f):
+        f = np.asarray(f, dtype=np.float64)
+        m = f / f_sp
+        return np.where(f >= min_log_hz, min_log_mel + np.log(np.maximum(f, 1e-10) / min_log_hz) / logstep, m)
+
+    def mel_to_hz(m):
+        m = np.asarray(m, dtype=np.float64)
+        return np.where(m >= min_log_mel, min_log_hz * np.exp(logstep * (m - min_log_mel)), f_sp * m)
+
+    mel_f = mel_to_hz(np.linspace(hz_to_mel(0.0), hz_to_mel(sr / 2), n_mels + 2))
+    fdiff = np.diff(mel_f)
+    ramps = mel_f[:, None] - fftfreqs[None, :]
+    lower = -ramps[:-2] / fdiff[:-1, None]
+    upper = ramps[2:] / fdiff[1:, None]
+    w = np.maximum(0, np.minimum(lower, upper))
+    w *= (2.0 / (mel_f[2: n_mels + 2] - mel_f[:n_mels]))[:, None]
+    _MEL_CACHE[key] = w.astype(np.float32)
+    return _MEL_CACHE[key]
+
+
+def whisper_log_mel(audio: np.ndarray, n_samples: int = 8 * 16000) -> np.ndarray:
+    """Log-mel de 80 bandas como ``WhisperFeatureExtractor(chunk_length=8)(..., padding='max_length',
+    do_normalize=True)`` sin transformers: normaliza la voz (media 0, varianza 1), rellena con ceros a la derecha
+    hasta ``n_samples`` y devuelve (80, n_samples // 160) float32."""
+    x = np.asarray(audio, dtype=np.float32)[-n_samples:]
+    if x.size:
+        x = (x - x.mean()) / np.sqrt(x.var() + 1e-7)
+    x = np.pad(x, (0, n_samples - x.size)).astype(np.float64)
+    n_fft, hop = 400, 160
+    xp = np.pad(x, (n_fft // 2, n_fft // 2), mode="reflect")
+    n_frames = 1 + (xp.size - n_fft) // hop
+    idx = np.arange(n_fft)[None, :] + hop * np.arange(n_frames)[:, None]
+    win = 0.5 - 0.5 * np.cos(2 * np.pi * np.arange(n_fft) / n_fft)  # hann periódica
+    spec = np.abs(np.fft.rfft(xp[idx] * win, axis=1)) ** 2  # (frames, 201)
+    mel = _slaney_mel_filters() @ spec[:-1].T.astype(np.float32)  # Whisper descarta el último frame
+    logm = np.log10(np.maximum(mel, 1e-10))
+    logm = np.maximum(logm, logm.max() - 8.0)
+    return ((logm + 4.0) / 4.0).astype(np.float32)
+
+
+class SmartTurn:
+    """Pipecat smart-turn v3 (BSD-2, ONNX ~8 MB, CPU): probabilidad de que el hablante terminó el turno, mirando
+    los últimos 8 s de audio de la frase. onnxruntime en CPU con 1 hilo, sin torch ni transformers."""
+
+    def __init__(self, path: Path | None = None) -> None:
+        import onnxruntime as ort
+
+        path = Path(path) if path else C.smart_turn_onnx_path()
+        if not path.exists():
+            raise FileNotFoundError(f"Falta el modelo smart-turn en {path} (OPENTRADUCTOR_SMART_TURN_ONNX).")
+        opts = ort.SessionOptions()
+        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = 1
+        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self._sess = ort.InferenceSession(str(path), sess_options=opts, providers=["CPUExecutionProvider"])
+        self._input = self._sess.get_inputs()[0].name
+
+    def prob(self, pcm16: bytes) -> float:
+        audio = np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
+        feats = whisper_log_mel(audio)[None, :, :]
+        return float(np.asarray(self._sess.run(None, {self._input: feats})[0]).reshape(-1)[0])

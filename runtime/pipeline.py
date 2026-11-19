@@ -71,6 +71,20 @@ def endpoint_short_ms(cfg: PipelineConfig) -> float:
     return cfg.endpoint_short_ms
 
 
+_TURN_MAX_BYTES = 8 * SR * 2  # smart-turn mira los últimos 8 s
+
+
+def endpoint_turn_threshold(cfg: PipelineConfig) -> float:
+    """T-67 sonda c): umbral de fin de turno. $OPENTRADUCTOR_ENDPOINT_TURN_P=0.x lo fuerza; si no, el de config."""
+    try:
+        v = float(os.environ.get("OPENTRADUCTOR_ENDPOINT_TURN_P", ""))
+        if 0.0 < v < 1.0:
+            return v
+    except ValueError:
+        pass
+    return cfg.endpoint_turn_threshold
+
+
 def tts_clause_pause_ms(cfg: PipelineConfig) -> float | None:
     """T-67 tope de la pausa entre fragmentos TTS a mitad de frase (KokoroTTS._synth_capped).
     $OPENTRADUCTOR_TTS_CLAUSE_PAUSE_MS=N lo fuerza (entero >= 0; "off" lo apaga). Sin env = cfg (None = camino de hoy)."""
@@ -195,6 +209,9 @@ class StreamState:
     ep_flush_pause: tuple | None = None  # T-67: (seg_id, last_speech_end_s) de la pausa ya mandada entera al ASR
     ep_wait: tuple = (0.0, "")  # T-67: (espera ms, motivo) elegida en la última ventana de silencio
     gen: int = 0  # generación (cada start_stream incrementa; separa sesiones con el mismo id)
+    turn_buf: bytearray = field(default_factory=bytearray)  # T-67 sonda c): audio de la frase (últimos 8 s)
+    turn_pause: tuple | None = None  # (seg_id, last_speech_end_s) ya consultada al detector de fin de turno
+    turn_p: float | None = None  # probabilidad de fin de turno de esa pausa
     clauser: object | None = None  # T-67 paso 2: simul.ClauseCommitter del segmento actual (None = flag off)
 
 
@@ -228,6 +245,8 @@ class Engine:
             "replaced": 0, "cancel_voice": 0, "from_finish": 0, "hit_norm": 0, "late_ms": 0.0,
         }
         self._spec_seg: dict[tuple, dict] = {}  # T-73: por frase (stream, gen, seg_id) -> n lanzadas, wasted_ms
+        self.turn: K.SmartTurn | None = None  # T-67 sonda c): solo con OPENTRADUCTOR_ENDPOINT_TURN=1
+        self.turn_stats: dict[str, Any] = {"calls": 0, "turn": 0, "error": 0, "cost_ms": []}
         self.prewarm_stats: dict[str, Any] = {"started": 0, "skipped_hot": 0, "error": 0, "cost_ms": []}
         self._prewarm_tasks: set[asyncio.Future] = set()
         self._mt_ctx: dict[str, list[tuple[str, str]]] = {}  # stream_id -> últimas frases (es, en) emitidas
@@ -329,6 +348,8 @@ class Engine:
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)
+        if self._endpoint_turn:
+            self.turn = timed("turn", K.SmartTurn)
         self._out_q = asyncio.Queue(maxsize=max(1, c.max_pending_segments))
         self._out_task = asyncio.ensure_future(self._speaker_loop())
         if c.warmup_in_open:
@@ -454,8 +475,11 @@ class Engine:
         chunk_end_s = (base + len(pcm) // 2) / SR + st.t_base_s
         st.buf_end_s = chunk_end_s
         appended = False  # ¿ya se añadió este chunk al buffer del ASR?
+        turn_on = self.turn is not None and self._endpoint_turn
         if st.in_speech:
             st.asr_buf.extend(pcm)
+            if turn_on:
+                st.turn_buf.extend(pcm)
             appended = True
         for consumed, p in st.vad.probs(pcm):
             end_s = (base + consumed) / SR + st.t_base_s
@@ -475,8 +499,12 @@ class Engine:
                     st.preroll.clear()
                     await st.asr_q.put(("start", (st.seg, pre)))
                     self._maybe_tts_prewarm()
+                    if turn_on:
+                        st.turn_buf = bytearray(pre)
                     if not appended:
                         st.asr_buf.extend(pcm)
+                        if turn_on:
+                            st.turn_buf.extend(pcm)
                         appended = True
             elif st.in_speech:
                 st.silence_ms += win_s * 1000
@@ -491,6 +519,8 @@ class Engine:
                 await self._endpoint(st, end_s, forced=True)
                 appended = False
         st.pos_samples += len(pcm) // 2
+        if turn_on and len(st.turn_buf) > _TURN_MAX_BYTES:
+            del st.turn_buf[: len(st.turn_buf) - _TURN_MAX_BYTES]
         await self._maybe_ep_flush(st)
         await self._maybe_spec_finish(st)
         self._maybe_speculate(st)
@@ -541,8 +571,41 @@ class Engine:
         elif kind == "complete" and caught_up:
             st.ep_wait = (min(endpoint_short_ms(c), c.endpoint_silence_ms), "complete")
         else:
-            st.ep_wait = (c.endpoint_silence_ms, "base")
+            p = self._turn_prob(st)
+            if p is not None and p >= endpoint_turn_threshold(c):
+                st.ep_wait = (min(endpoint_short_ms(c), c.endpoint_silence_ms), "turn")
+            else:
+                st.ep_wait = (c.endpoint_silence_ms, "base")
         return st.ep_wait[0]
+
+    @property
+    def _endpoint_turn(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_ENDPOINT_TURN")
+        return (v == "1") if v in ("0", "1") else self.cfg.endpoint_turn
+
+    def _turn_prob(self, st: StreamState) -> float | None:
+        """T-67 sonda c): una consulta por pausa al detector de fin de turno, al llegar a endpoint_turn_silence_ms.
+        Corre en el event loop (~10-20 ms de CPU, medido en turn_stats['cost_ms']). None si no aplica."""
+        if self.turn is None or not self._endpoint_turn or st.seg is None:
+            return None
+        if st.silence_ms < self.cfg.endpoint_turn_silence_ms:
+            return None
+        pause = (st.seg.seg_id, st.last_speech_end_s)
+        if pause == st.turn_pause:
+            return st.turn_p
+        st.turn_pause, st.turn_p = pause, None
+        t = time.perf_counter()
+        try:
+            st.turn_p = self.turn.prob(bytes(st.turn_buf))
+        except Exception as e:  # noqa: BLE001 - la sonda nunca corta el audio
+            self.turn_stats["error"] += 1
+            print(f"[turn] error: {e}", file=sys.stderr)
+            return None
+        self.turn_stats["calls"] += 1
+        self.turn_stats["cost_ms"].append(round((time.perf_counter() - t) * 1000, 2))
+        if st.turn_p >= endpoint_turn_threshold(self.cfg):
+            self.turn_stats["turn"] += 1
+        return st.turn_p
 
     async def _maybe_ep_flush(self, st: StreamState) -> None:
         """T-67: una vez por pausa (>= 1 ventana VAD de silencio) manda al ASR la voz que quedó en el buffer, para
@@ -582,7 +645,9 @@ class Engine:
         await self.emit(
             "endpoint",
             {"stream_id": st.stream_id, "audio_pos_s": pos_s, "forced": forced,
-             "seg_id": seg.seg_id, "wait_ms": st.ep_wait[0], "wait_reason": st.ep_wait[1]},
+             "seg_id": seg.seg_id, "wait_ms": st.ep_wait[0], "wait_reason": st.ep_wait[1],
+             **({"turn_p": round(st.turn_p, 3)}
+                if st.turn_p is not None and st.turn_pause == (seg.seg_id, st.last_speech_end_s) else {})},
         )
         st.in_speech = False
         st.seg = None
