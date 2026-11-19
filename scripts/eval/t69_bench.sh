@@ -14,6 +14,7 @@
 #   PREFILL=1         prefill() antes de cada turno (camino del pipeline; necesario para medir OPENTRADUCTOR_MT_SESSION_KV)
 #                     Con CTX=n y OPENTRADUCTOR_MT_CONTEXT_TOKENS=cap el historial se recorta igual que Engine._mt_remember.
 #   SKIP_LAT=1 / SKIP_CHARLAS=1   saltar una de las dos mediciones
+#   EXPORT_AUDIO=1    guarda los WAV de SALIDA (TTS) de cada brazo en OUTDIR/<brazo>/audio (benchmark --export-audio-dir; solo audio sintético)
 #   QUIET_MAX=1.5 QUIET_TMO=600   reposo (loadavg 1 min) y espera máxima; si vence se mide igual y queda marcado NO REPOSO
 # Ejemplos:
 #   ARMS="off=OPENTRADUCTOR_MT_GLOSSARY=0;on=OPENTRADUCTOR_MT_GLOSSARY=1" scripts/eval/t69_bench.sh artifacts/t69-glosario
@@ -52,7 +53,7 @@ for it in "${ITEMS[@]}"; do
     uptime > "$D/load-start.txt"
     (cd "$CODE" && env $envs "$PYBIN" -m benchmark run --manifest "$LAT_MANIFEST" --audio-root data/audio \
       --split development --adapter runtime.adapters.baseline:BaselineAdapter --adapter-config "$CFG" \
-      --repetitions "$REPS" --warmup 1 --out "$D/latency" --system-name "$name") > "$D/latency.log" 2>&1 || echo "latency rc!=0 ($name)" | tee -a "$OUT/entorno.txt"
+      --repetitions "$REPS" --warmup 1 --out "$D/latency" --system-name "$name" ${EXPORT_AUDIO:+--export-audio-dir "$D/audio"}) > "$D/latency.log" 2>&1 || echo "latency rc!=0 ($name)" | tee -a "$OUT/entorno.txt"
     uptime > "$D/load-end.txt"
     "$PYBIN" "$ROOT/scripts/eval/t58_stage_breakdown.py" "$D/latency" > "$D/stages.md" 2>&1 || true
   fi
