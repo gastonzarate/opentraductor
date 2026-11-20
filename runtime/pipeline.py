@@ -385,11 +385,16 @@ class Engine:
 
         from .asr_process import ProcessMoonshineStreamer, asr_process_enabled
 
-        cls = ProcessMoonshineStreamer if asr_process_enabled(c.asr_process) else K.MoonshineStreamer
-        return cls(
-            moonshine_model_dir(c.asr_backend), MOONSHINE_MODELS[c.asr_backend][1],
-            c.moonshine_update_interval_s,
-        )
+        args = (moonshine_model_dir(c.asr_backend), MOONSHINE_MODELS[c.asr_backend][1],
+                c.moonshine_update_interval_s)
+        if asr_process_enabled(c.asr_process):
+            try:
+                return ProcessMoonshineStreamer(*args)
+            except (EOFError, OSError, RuntimeError) as exc:
+                # Si el hijo no arranca (p. ej. el sandbox lo mata), el motor sigue con el ASR en proceso.
+                print(f"[asr_process] hijo no disponible, ASR en proceso: {type(exc).__name__}: {exc}",
+                      file=sys.stderr, flush=True)
+        return K.MoonshineStreamer(*args)
 
     async def _warmup(self) -> None:
         silence = bytes(2 * SR // 2)

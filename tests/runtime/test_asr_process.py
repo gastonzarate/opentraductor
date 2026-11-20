@@ -36,3 +36,22 @@ def test_make_asr_elige_proceso(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_ASR_PROCESS", "0")
     eng._make_asr()
     assert made["cls"] == "MoonshineStreamer"
+
+def test_make_asr_respaldo_si_el_hijo_falla(monkeypatch, capsys):
+    from runtime import pipeline as P
+
+    class Muere:
+        def __init__(self, *a):
+            raise EOFError("hijo muerto")
+
+    class EnProceso:
+        def __init__(self, *a):
+            pass
+
+    monkeypatch.setattr(asr_process, "ProcessMoonshineStreamer", Muere)
+    monkeypatch.setattr(P.K, "MoonshineStreamer", EnProceso)
+    eng = P.Engine.__new__(P.Engine)
+    eng.cfg = PipelineConfig(asr_backend="moonshine-tiny")
+    monkeypatch.setenv("OPENTRADUCTOR_ASR_PROCESS", "1")
+    assert isinstance(eng._make_asr(), EnProceso)
+    assert "ASR en proceso" in capsys.readouterr().err
