@@ -41,7 +41,7 @@ def test_defaults_come_from_pipeline_config(tmp_path):
     try:
         assert cfg.asr_backend == "parakeet" and cfg.asr_skip_silent_tail is True
         assert cfg.tts_trim_lead_margin_ms == 30.0 and cfg.endpoint_silence_ms == 160.0
-        assert cfg.tts_first_chunk_max_words == 4 and cfg.tts_bind_conjunctions is True
+        assert cfg.tts_first_chunk_max_words == 2 and cfg.tts_bind_conjunctions is True
     finally:
         svc.close()
 
@@ -150,7 +150,7 @@ def test_new_flags_default_and_reach_config(tmp_path):
     assert a.tts_first_chunk_max_words is None and a.normalize_asr_text is False
     svc, cfg = cli.build_service(a)
     try:
-        assert cfg.tts_first_chunk_max_words == 4 and cfg.asr_normalize_text is False
+        assert cfg.tts_first_chunk_max_words == 2 and cfg.asr_normalize_text is False
     finally:
         svc.close()
     a = _args("--tts-first-chunk-max-words", "5", "--normalize-asr-text", db=tmp_path / "h.sqlite3")

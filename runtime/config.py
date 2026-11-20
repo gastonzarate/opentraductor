@@ -224,9 +224,13 @@ class PipelineConfig:
     asr_backend: str = "parakeet"
     moonshine_update_interval_s: float = 0.1
     asr_chunk_ms: float = 160.0
-    # T-67: Moonshine en un proceso aparte (runtime/asr_process.py), fuera del GIL del motor. Apagado hasta el A/B.
+    # T-67: Moonshine en un proceso aparte (runtime/asr_process.py), fuera del GIL del motor. Default activo desde el
+    # A/B final (artifacts/t67-final, junto con tts_first_chunk_max_words=2 y switch_interval_ms=1).
     # $OPENTRADUCTOR_ASR_PROCESS=1/0 manda. Sin efecto con parakeet.
-    asr_process: bool = False
+    asr_process: bool = True
+    # T-67: switch interval del GIL (ms, 1-50) que fija el Engine al crearse; None = no se toca (5 ms de Python).
+    # $OPENTRADUCTOR_SWITCH_INTERVAL_MS=N lo fuerza; "off" lo apaga.
+    switch_interval_ms: int | None = 1
     asr_context: tuple[int, int] = (256, 256)  # (izq, der) en frames de 80 ms; derecho pequeño degrada el texto
     # Al endpoint, no pasar al ASR la cola de audio que es solo silencio (toda la voz ya se procesó).
     asr_skip_silent_tail: bool = True  # T-58: default activo (WER sin cambio en el A/B)
@@ -283,7 +287,7 @@ class PipelineConfig:
     # T-50: tope de la caché de buffers libres de MLX (MB), para todo el proceso (Qwen + Kokoro + Parakeet). None = sin tope.
     mlx_cache_limit_mb: float | None = MLX_CACHE_LIMIT_MB_DEFAULT
     # Primer fragmento del TTS: máx. de palabras (None = solo por puntuación). Ayuda con ASR sin puntuación.
-    tts_first_chunk_max_words: int | None = 4  # T-67 (19/11): 4 (antes 8, T-58), junto con mt_stream_tts
+    tts_first_chunk_max_words: int | None = 2  # T-67 (20/11): 2 (antes 4; 8 en T-58), A/B final artifacts/t67-final
     # Con el anterior: no cortar justo antes/después de and/or/but/nor/yet (conjunción dentro de su grupo).
     tts_bind_conjunctions: bool = True  # T-58: default activo
     # Normaliza el texto ASR para MT (mayúscula inicial + punto final; sin comas). El crudo se conserva aparte.

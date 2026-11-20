@@ -106,13 +106,17 @@ def asr_spec_finish_ms(cfg: PipelineConfig) -> float:
     return cfg.asr_spec_finish_silence_ms
 
 
-def _switch_interval_s() -> float | None:
-    """T-67: $OPENTRADUCTOR_SWITCH_INTERVAL_MS=N (entero 1-50) baja el switch interval del GIL del proceso
-    (por defecto 5 ms). En la sonda t67_asr_tail_probe, con un hilo ocupando el GIL, el finish de Moonshine
-    bajó de ~400 a ~115 ms con 1 ms. Sin env (o valor inválido) = None y no se toca."""
-    v = os.environ.get("OPENTRADUCTOR_SWITCH_INTERVAL_MS", "").strip()
+def _switch_interval_s(cfg_ms: int | None = None) -> float | None:
+    """T-67: switch interval del GIL del proceso (Python trae 5 ms). En la sonda t67_asr_tail_probe, con un hilo
+    ocupando el GIL, el finish de Moonshine bajó de ~400 a ~115 ms con 1 ms. $OPENTRADUCTOR_SWITCH_INTERVAL_MS=N
+    (entero 1-50) lo fuerza y "off" lo apaga; si no, cfg_ms (PipelineConfig.switch_interval_ms). None = no se toca."""
+    v = os.environ.get("OPENTRADUCTOR_SWITCH_INTERVAL_MS", "").strip().lower()
+    if v == "off":
+        return None
     if v.isdigit() and 1 <= int(v) <= 50:
         return int(v) / 1000
+    if cfg_ms is not None and 1 <= int(cfg_ms) <= 50:
+        return int(cfg_ms) / 1000
     return None
 
 
@@ -231,9 +235,9 @@ class Engine:
     def __init__(self, cfg: PipelineConfig, emit: Emit) -> None:
         self.cfg = cfg
         self.emit = emit
-        si = _switch_interval_s()
+        si = _switch_interval_s(cfg.switch_interval_ms)
         if si is not None:
-            sys.setswitchinterval(si)  # global del proceso; solo con el env (T-67)
+            sys.setswitchinterval(si)  # global del proceso (T-67)
         self.gpu = ModelWorker("mlx")
         self.cpu = ModelWorker("cpu")
         # Parakeet usa MLX (hilo GPU dedicado, compartido con el TTS). Moonshine

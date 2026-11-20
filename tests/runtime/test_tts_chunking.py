@@ -63,7 +63,7 @@ def test_normalize_asr_text():
 
 def test_config_flags_default_off():
     c = PipelineConfig()
-    assert c.tts_first_chunk_max_words == 4 and c.asr_normalize_text is False  # T-67 (19/11): 4 (T-58: 8)
+    assert c.tts_first_chunk_max_words == 2 and c.asr_normalize_text is False  # T-67 (20/11): 2 (19/11: 4; T-58: 8)
     c = PipelineConfig.from_dict({"tts_first_chunk_max_words": 8, "asr_normalize_text": True})
     assert c.tts_first_chunk_max_words == 8 and c.asr_normalize_text
 

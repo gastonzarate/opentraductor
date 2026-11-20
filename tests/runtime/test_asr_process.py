@@ -3,9 +3,9 @@ from runtime import asr_process
 from runtime.config import PipelineConfig
 
 
-def test_flag_default_off(monkeypatch):
+def test_flag_default_on(monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_ASR_PROCESS", raising=False)
-    assert PipelineConfig().asr_process is False
+    assert PipelineConfig().asr_process is True
     assert asr_process.asr_process_enabled(False) is False
     assert asr_process.asr_process_enabled(True) is True
 

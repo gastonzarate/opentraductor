@@ -104,7 +104,7 @@ def test_t67_defaults_on():
     palabras), encendidos por defecto tras el A/B t67-asrfin/n2. El finish especulativo del ASR queda apagado."""
     c = PipelineConfig()
     assert c.endpoint_adaptive is True and c.endpoint_short_ms == 64.0 and c.endpoint_long_ms == 480.0
-    assert c.mt_stream_tts is True and c.tts_first_chunk_max_words == 4
+    assert c.mt_stream_tts is True and c.tts_first_chunk_max_words == 2
     assert c.asr_spec_finish_on_pause is False and c.asr_spec_finish_silence_ms == 80.0
 
 
