@@ -2,7 +2,7 @@
 
 Traductor de voz **local** de español argentino a inglés de EE. UU. para macOS con Apple Silicon. Hablás en español y la Mac lo dice en inglés un instante después. Todo corre en tu equipo: reconocimiento de voz, traducción y síntesis.
 
-> **Estado: experimental.** Hoy la demora entre el fin de tu frase y el primer audio en inglés es de poco menos de un segundo. No hay promesa de 300 ms. Documentación completa en inglés: [README.md](README.md).
+> **Estado: experimental.** Hoy la demora entre el fin de tu frase y el primer audio en inglés es de unos 0,6 segundos (mediana). No hay promesa de 300 ms. Documentación completa en inglés: [README.md](README.md).
 
 ## Qué hace
 
@@ -31,7 +31,7 @@ El perfil más rápido (Moonshine + Qwen3) y el micrófono virtual están explic
 
 ## Resultados medidos
 
-Mediana desde el fin de habla hasta el primer audio: unos 930 ms (p95 cerca de 1 s), 21 corridas con 3 audios, en una Mac con otras tareas abiertas. WER del reconocimiento: 0,047. Términos bien traducidos: 69 % sin contexto y 77 % con unos 500 tokens de charla previa. Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones largas ni Meet o Discord con personas reales.
+Mediana desde el fin de habla hasta el primer audio: 594 ms (p95 691 ms), 96 corridas (8 audios x 12 rondas, A/B intercalado), en una Mac con otras tareas abiertas. WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 84,4 % sin contexto y 94,8 % con unos 200 tokens de charla previa (96 términos). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones largas ni Meet o Discord con personas reales.
 
 ## Cómo contribuir
 

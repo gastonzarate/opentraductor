@@ -5,7 +5,7 @@ You speak Spanish, and your Mac says it in English a moment later. Nothing leave
 
 It is built for meetings: the English voice goes to a virtual microphone, so Google Meet or Discord can pick it up.
 
-> **Status: experimental.** It works on the author's Mac, and the numbers below are honest but small samples. There is no 300 ms promise: today the delay between the end of your sentence and the first English audio is a bit under one second.
+> **Status: experimental.** It works on the author's Mac, and the numbers below are honest but small samples. There is no 300 ms promise: today the delay between the end of your sentence and the first English audio is about 0.6 seconds (median, p95 about 0.7 s).
 > Spanish version: [README.es.md](README.es.md).
 
 ## What it does
@@ -69,14 +69,16 @@ Source: internal benchmark by the project, 2026-11-16 to 2026-11-18. Same Mac, n
 
 | Measure | Value | Sample |
 |---|---|---|
-| Delay from end of speech to first English audio, median (Moonshine tiny + Qwen3-4B + Kokoro) | about 930 ms (p95 about 1.0 s) | 21 runs, 3 clips |
-| Same, without the KV-prefill option | about 1060 ms (p95 about 1.2 s) | 21 runs, 3 clips |
+| Delay from end of speech to first English audio, median (Moonshine tiny + Qwen3-4B + Kokoro, current defaults) | 594 ms (p95 691 ms) | 96 runs: 8 clips x 12 rounds |
+| Same, before the last three defaults (TTS first chunk of 2 words, ASR in its own process, 1 ms GIL switch interval) | 635 ms (p95 743 ms) | same 96 runs, interleaved A/B |
 | Speech recognition error rate (WER), Moonshine tiny | 0.047 | 3 clips |
-| Technical terms translated correctly, no context | 69 % | internal set of ambiguous phrases |
-| Technical terms translated correctly, with about 500 tokens of earlier talk | 77 % | same set |
+| Technical terms translated correctly in conversations, no earlier context | 84.4 % (81 of 96 terms) | 7 short scripted conversations |
+| Same, with about 200 tokens of earlier talk | 94.8 % (91 of 96 terms) | same conversations |
 | Voice naturalness proxy (UTMOSv2, not a human opinion) | 4.03 | 6 utterances |
 
-Where the time goes in the median run: about 250 ms waiting for end of speech, 200 ms final recognition, 460 ms translation, 200 ms first synthesized audio.
+Where the time goes in the median run (ms after the end of speech): about 150 waiting for end of speech, 180 final recognition, 335 translation. The first audio starts before the translation ends (streaming), so synthesis adds no extra step at the median.
+
+The two delay rows come from an interleaved A/B (the arms alternate every round, so the Mac's background load hits both), with load average between 2 and 5.5. The paired difference is -35 ms. Details and the raw per-round numbers: [`docs/latency-final.md`](docs/latency-final.md). The terms set is small and was written by the project; it is not a public benchmark.
 
 Not tested: a physical microphone end to end, long sessions, and Meet or Discord with real participants.
 
@@ -107,7 +109,7 @@ Other tests that need model weights or the local `artifacts/` folder are describ
 
 ## Limitations
 
-- Latency is under one second, not the 300 ms the project first aimed for.
+- Latency is about 0.6 s at the median, not the 300 ms the project first aimed for. Two of the 8 test clips (24 of 96 runs) are split into two segments at a long pause, the same in every arm.
 - Only Argentine Spanish to US English. Rioplatense Spanish has no complete dedicated evaluation yet.
 - Output goes to one device. No echo cancellation, no mixing of several voices.
 - Mac only, Apple Silicon only. No Windows or Linux.
