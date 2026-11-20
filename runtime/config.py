@@ -224,6 +224,9 @@ class PipelineConfig:
     asr_backend: str = "parakeet"
     moonshine_update_interval_s: float = 0.1
     asr_chunk_ms: float = 160.0
+    # T-67: Moonshine en un proceso aparte (runtime/asr_process.py), fuera del GIL del motor. Apagado hasta el A/B.
+    # $OPENTRADUCTOR_ASR_PROCESS=1/0 manda. Sin efecto con parakeet.
+    asr_process: bool = False
     asr_context: tuple[int, int] = (256, 256)  # (izq, der) en frames de 80 ms; derecho pequeño degrada el texto
     # Al endpoint, no pasar al ASR la cola de audio que es solo silencio (toda la voz ya se procesó).
     asr_skip_silent_tail: bool = True  # T-58: default activo (WER sin cambio en el A/B)

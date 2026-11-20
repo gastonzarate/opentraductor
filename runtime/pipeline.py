@@ -366,7 +366,10 @@ class Engine:
             return K.ParakeetStreamer(c.asr_context)
         from .config import MOONSHINE_MODELS, moonshine_model_dir
 
-        return K.MoonshineStreamer(
+        from .asr_process import ProcessMoonshineStreamer, asr_process_enabled
+
+        cls = ProcessMoonshineStreamer if asr_process_enabled(c.asr_process) else K.MoonshineStreamer
+        return cls(
             moonshine_model_dir(c.asr_backend), MOONSHINE_MODELS[c.asr_backend][1],
             c.moonshine_update_interval_s,
         )
