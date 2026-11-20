@@ -44,10 +44,11 @@ APP_ENT="$OUTD/app.entitlements"; CHILD_ENT="$OUTD/child.entitlements"
 cp "$HERE/store/app.entitlements" "$APP_ENT"; cp "$HERE/store/child.entitlements" "$CHILD_ENT"
 if [[ "$ID" != "-" ]]; then
   cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
-  for E in "$APP_ENT" "$CHILD_ENT"; do
-    /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $TEAMID.$BUNDLE_ID" "$E"
-    /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAMID" "$E"
-  done
+  # Solo la app: los ejecutables hijos llevan exactamente app-sandbox + inherit. application-identifier es un permiso
+  # restringido que pide perfil, y un ejecutable suelto no tiene uno: el sistema lo mataría al lanzarlo (python y el
+  # hijo ASR de T-67, que es el mismo python3.12).
+  /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $TEAMID.$BUNDLE_ID" "$APP_ENT"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAMID" "$APP_ENT"
 fi
 
 echo "==> firmando de adentro hacia afuera"
