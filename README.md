@@ -69,8 +69,9 @@ Source: internal benchmark by the project, 2026-11-16 to 2026-11-18. Same Mac, n
 
 | Measure | Value | Sample |
 |---|---|---|
-| Delay from end of speech to first English audio, median (Moonshine tiny + Qwen3-4B + Kokoro, current defaults) | 562 ms (p95 673 ms) | 64 runs: 8 clips x 8 rounds |
+| Delay from end of speech to first English audio, median (Moonshine tiny + Qwen3-4B + Kokoro, wait after a complete sentence 64 ms) | 562 ms (p95 673 ms) | 64 runs: 8 clips x 8 rounds |
 | Same, with translation by clauses turned off (`OPENTRADUCTOR_MT_SIMUL=0`) | 599 ms (p95 763 ms) | same 64 runs, interleaved A/B |
+| Same, with the end-of-sentence wait at 32 ms (current default) | 558 ms (p95 730 ms) | 64 runs, 8 clips x 8 rounds, separate interleaved run |
 | Speech recognition error rate (WER), Moonshine tiny | 0.047 | 3 clips |
 | Technical terms translated correctly in conversations, no earlier context | 82.3 % (79 of 96 terms) | 7 short scripted conversations |
 | Same, with about 200 tokens of earlier talk | 93.8 % (90 of 96 terms) | same conversations |
@@ -78,11 +79,11 @@ Source: internal benchmark by the project, 2026-11-16 to 2026-11-18. Same Mac, n
 
 Where the time goes in the median run (ms after the end of speech): about 150 waiting for end of speech, 180 final recognition, 335 translation. The first audio starts before the translation ends (streaming), so synthesis adds no extra step at the median.
 
-The two delay rows come from an interleaved A/B (the arms alternate every round, so the Mac's background load hits both), with load average between 1.7 and 5.3. The median difference is -37 ms (599 to 562) and the p95 difference is -90 ms (763 to 673). Details and the raw per-round numbers: [`docs/latency-final.md`](docs/latency-final.md). The terms set is small and was written by the project; it is not a public benchmark.
+The 562 and 599 ms rows come from an interleaved A/B (the arms alternate every round, so the Mac's background load hits both), with load average between 1.7 and 5.3. The median difference is -37 ms (599 to 562) and the p95 difference is -90 ms (763 to 673). Details and the raw per-round numbers: [`docs/latency-final.md`](docs/latency-final.md). The terms set is small and was written by the project; it is not a public benchmark.
 
 The median is pulled down by long sentences: with translation by clauses, the English voice starts before the end of the annotated sentence in 24 of 64 runs (16 of 64 before). In the 33 runs with the new version that fall between 556 and 752 ms (short sentences), the median is 619 ms; with the old version the 48 non-negative runs have a median of 617 ms. Short sentences did not get faster. For sentences longer than 5 s, the first English audio comes 4.3 s after the speaker starts talking, against 6.3 s before (16 runs per side, 2 clips).
 
-These runs were measured on commit `4806494`, when the wait after a complete sentence was 64 ms. The current default is 32 ms (`OPENTRADUCTOR_ENDPOINT_SHORT_MS=64` brings the old value back): in a separate bench of short clips it lowered the median by 37 ms (n=40 per arm). It has not been re-measured on the 8-clip set yet.
+The 562 and 599 ms rows were measured on commit `4806494`, when the wait after a complete sentence was 64 ms. The 558 ms row was measured later on the current code with the default 32 ms wait (`OPENTRADUCTOR_ENDPOINT_SHORT_MS=64` brings the old value back), in a separate interleaved run of the same 8 clips that also had a 64 ms arm: 556 ms (p95 827 ms) with 64 ms against 558 ms (p95 730 ms) with 32 ms. On these 8 clips the shorter wait did not move the median (paired difference +13 ms over 8 rounds); the lower p95 comes from one run set and is not a claim. In a separate bench of short clips it lowered the median by 37 ms (n=40 per arm). The median of a single round varies from 285 to 614 ms in the 32 ms arm, so differences of a few tens of ms are within the noise. Load average in that run: median 3.6, up to 4.9.
 
 Not tested: a physical microphone end to end, long sessions, and Meet or Discord with real participants.
 

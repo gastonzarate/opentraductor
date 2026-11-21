@@ -58,6 +58,17 @@ False cuts in conversations (114 turns, synthetic audio): 99 without clauses, 10
 
 ### Wait after a complete sentence: 64 ms to 32 ms (T-81)
 
-`endpoint_short_ms` is 32 ms by default. In an interleaved A/B on short clips (5 rounds x 8 clips, n=40 per arm) the median was 335 ms against 372 ms with 64 ms (-37 ms), p95 625 against 604 ms, false cuts in conversations 99 against 100. Translation does not change. To go back: `OPENTRADUCTOR_ENDPOINT_SHORT_MS=64`. This is a different clip set from the table above and the 562 ms figure was not re-measured with the 32 ms wait.
+`endpoint_short_ms` is 32 ms by default. In an interleaved A/B on short clips (5 rounds x 8 clips, n=40 per arm) the median was 335 ms against 372 ms with 64 ms (-37 ms), p95 625 against 604 ms, false cuts in conversations 99 against 100. Translation does not change. To go back: `OPENTRADUCTOR_ENDPOINT_SHORT_MS=64`. This is a different clip set from the T-80 table above, whose 562 ms was measured with the 64 ms wait.
+
+#### Re-measured on the 8-clip set (T-82)
+
+Measured 2026-11-21 on the code in this repository (32 ms wait, translation by clauses on). Same 8 clips, 8 interleaved rounds, 64 runs per arm, load average median 3.6, up to 4.9. The two arms differ only in `OPENTRADUCTOR_ENDPOINT_SHORT_MS`. The source commit also had an option to keep the first 96 ms of trailing silence for recognition (not in this repository); it was turned off in both arms, which is the behaviour of this code.
+
+| Arm | n | Median | p95 | Wait for end of speech (median) | Final recognition | Translation |
+|---|---|---|---|---|---|---|
+| wait 64 ms | 64 | 556 ms | 827 ms | 154 ms | 193 ms | 320 ms |
+| wait 32 ms (**current default**) | 64 | **558 ms** | **730 ms** | 152 ms | 187 ms | 324 ms |
+
+Paired by round, the median difference is +13 ms (n=8 rounds), that is, no gain at the median on these clips; p95 is 97 ms lower with 32 ms in this run. The median of one round goes from 285 to 614 ms in the 32 ms arm (it is 286 to 590 ms with 64 ms), so the 2 ms and 97 ms differences are inside the noise of a Mac that was running other work. The raw `artifacts/` folder is not in this repository.
 
 The T-67 table above stays as history: it measured the arm before clauses were turned on.

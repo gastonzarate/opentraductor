@@ -31,7 +31,7 @@ El perfil más rápido (Moonshine + Qwen3) y el micrófono virtual están explic
 
 ## Resultados medidos
 
-Mediana desde el fin de habla hasta el primer audio: 562 ms (p95 673 ms), 64 corridas (8 audios x 8 rondas, A/B intercalado), en una Mac con otras tareas abiertas. La versión anterior, en la misma prueba, dio 599 ms (p95 763). WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 82,3 % sin contexto y 93,8 % con unos 200 tokens de charla previa (96 términos). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones largas ni Meet o Discord con personas reales.
+Mediana desde el fin de habla hasta el primer audio: 562 ms (p95 673 ms), 64 corridas (8 audios x 8 rondas, A/B intercalado), en una Mac con otras tareas abiertas. La versión anterior, en la misma prueba, dio 599 ms (p95 763). Esas cifras se midieron con espera de 64 ms al cerrar una frase completa; con la espera actual de 32 ms, en otra corrida intercalada de los mismos 8 audios, la mediana fue 558 ms (p95 730) y con 64 ms 556 ms (p95 827): en esos 8 audios la espera más corta no movió la mediana. WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 82,3 % sin contexto y 93,8 % con unos 200 tokens de charla previa (96 términos). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones largas ni Meet o Discord con personas reales.
 
 ## Cómo contribuir
 
