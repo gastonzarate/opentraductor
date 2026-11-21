@@ -103,15 +103,15 @@ def test_t67_defaults_on():
     """T-67 (19/11): fin de frase adaptativo con espera corta 64 y MT en streaming a Kokoro (1.er fragmento de 4
     palabras), encendidos por defecto tras el A/B t67-asrfin/n2. El finish especulativo del ASR queda apagado."""
     c = PipelineConfig()
-    assert c.endpoint_adaptive is True and c.endpoint_short_ms == 64.0 and c.endpoint_long_ms == 480.0
+    assert c.endpoint_adaptive is True and c.endpoint_short_ms == 32.0 and c.endpoint_long_ms == 480.0
     assert c.mt_stream_tts is True and c.tts_first_chunk_max_words == 2
     assert c.asr_spec_finish_on_pause is False and c.asr_spec_finish_silence_ms == 80.0
 
 
-def test_default_engine_closes_complete_at_64():
+def test_default_engine_closes_complete_at_32():
     e, ev = _go([1] * 10, "el granizo destruyó la plantación", **{k: getattr(PipelineConfig(), k) for k in LEGACY_T67})
     eps = _endpoints(ev)
-    assert len(eps) == 1 and eps[0]["wait_reason"] == "complete" and eps[0]["wait_ms"] == 64
+    assert len(eps) == 1 and eps[0]["wait_reason"] == "complete" and eps[0]["wait_ms"] == 32
     assert e.asr.finishes[-1] == 10 * 2 * WIN  # no se pierde voz
 
 

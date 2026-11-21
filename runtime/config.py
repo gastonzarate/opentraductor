@@ -211,7 +211,10 @@ class PipelineConfig:
     # Env OPENTRADUCTOR_MT_SIMUL_MIN_WORDS / OPENTRADUCTOR_MT_SIMUL_CUES mandan. Defaults = reglas de 02512a5.
     mt_simul_min_words: int = 5
     mt_simul_extra_cues: str = ""
-    endpoint_short_ms: float = 64.0  # T-67 (19/11): 64 (antes 96); cortes falsos iguales al control en t67-asrfin
+    # T-67 (19/11): 64 (antes 96). T-81 (21/11): 32. A/B intercalado artifacts/t81 (5 rondas x 8 clips, n=40/brazo):
+    # p50 335 vs 372 ms, pareado -37 ms, p95 625 vs 604; cortes falsos en charlas 99 vs 100 (114 turnos); no cambia la
+    # MT (términos ctx200 iguales). Volver: OPENTRADUCTOR_ENDPOINT_SHORT_MS=64.
+    endpoint_short_ms: float = 32.0
     endpoint_long_ms: float = 480.0
     # T-67 sonda c): en los casos "base" (parcial que puede cerrar pero ASR atrasado, o vacío) se consulta una vez
     # por pausa al detector de fin de turno por audio (SmartTurn, smart-turn v3 ONNX) a los endpoint_turn_silence_ms

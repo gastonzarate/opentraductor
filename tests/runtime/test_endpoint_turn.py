@@ -54,9 +54,9 @@ def test_off_by_default():
 def test_base_becomes_turn_once_per_pause(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_TURN", "1")
     e, st = _engine(0.9), _state()
-    assert e._endpoint_wait_ms(st) == 64.0 and st.ep_wait == (64.0, "turn")
+    assert e._endpoint_wait_ms(st) == 32.0 and st.ep_wait == (32.0, "turn")
     st.silence_ms += 32
-    assert e._endpoint_wait_ms(st) == 64.0
+    assert e._endpoint_wait_ms(st) == 32.0
     assert len(e.turn.calls) == 1 and e.turn_stats["calls"] == 1 and e.turn_stats["turn"] == 1
 
 
@@ -67,14 +67,14 @@ def test_low_prob_keeps_base_and_threshold_env(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_TURN_P", "0.3")
     st = _state()
     st.last_speech_end_s = 2.0  # pausa nueva
-    assert e._endpoint_wait_ms(st) == 64.0
+    assert e._endpoint_wait_ms(st) == 32.0
 
 
 def test_continue_and_complete_untouched(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_ENDPOINT_TURN", "1")
     e = _engine(0.99)
     assert e._endpoint_wait_ms(_state(partial="fuimos al centro y")) == 480.0
-    assert e._endpoint_wait_ms(_state(caught_up=True)) == 64.0
+    assert e._endpoint_wait_ms(_state(caught_up=True)) == 32.0
     assert e.turn.calls == []  # solo se consulta en "base"
 
 
@@ -121,7 +121,7 @@ def _ct_env(monkeypatch):
 def test_complete_turn_off_by_default(_ct_env):
     assert PipelineConfig().endpoint_complete_turn is False
     e = _engine(0.1)
-    assert e._endpoint_wait_ms(_state(caught_up=True)) == 64.0 and e.turn.calls == []
+    assert e._endpoint_wait_ms(_state(caught_up=True)) == 32.0 and e.turn.calls == []
 
 
 def test_complete_turn_low_prob_waits_base(_ct_env):
@@ -134,13 +134,13 @@ def test_complete_turn_low_prob_waits_base(_ct_env):
 def test_complete_turn_high_prob_keeps_short(_ct_env):
     _ct_env.setenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", "1")
     e, st = _engine(0.9), _state(caught_up=True)
-    assert e._endpoint_wait_ms(st) == 64.0 and st.ep_wait == (64.0, "complete")
+    assert e._endpoint_wait_ms(st) == 32.0 and st.ep_wait == (32.0, "complete")
 
 
 def test_complete_turn_without_model_is_today(_ct_env):
     _ct_env.setenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", "1")
     e = _engine(None)
-    assert e._endpoint_wait_ms(_state(caught_up=True)) == 64.0
+    assert e._endpoint_wait_ms(_state(caught_up=True)) == 32.0
 
 
 def test_complete_turn_does_not_touch_base(_ct_env):
