@@ -156,7 +156,8 @@ class RuntimeService:
         self._pending_es: dict[str, str] = {}
         self._pending_raw: dict[str, str | None] = {}  # salida cruda del ASR por segmento
         self._shown_es: dict[str, str] = {}  # T-55: último texto ES publicado por fila (para `discarded`)
-        self._endpoint_t: dict[str, float] = {}
+        self._endpoint_t: dict[str, tuple[float, str | None]] = {}
+        self._last_plan: dict[str, str | None] = {}  # planned_text_en del último tts_chunk por seg_id
         self._first_chunk_seen: set[str] = set()
         self._m = {"overflow_count": 0, "input_dropped_ms": 0.0, "engine_dropped_ms": 0.0,
                    "last_endpoint_to_audio_ms": None, "audio_status": None}
@@ -489,6 +490,7 @@ class RuntimeService:
             self._shown_es.clear()
             self._endpoint_t.clear()  # mapeos por segmento: solo viven durante una sesión
             self._first_chunk_seen.clear()
+            self._last_plan.clear()
             self._audio_clock_s = 0.0
             # Primero se invalida el micrófono anterior y después se instala la cola nueva:
             # un callback viejo durante start_stream (await) ya no puede entrar en la cola nueva.
@@ -677,6 +679,7 @@ class RuntimeService:
         self._stream_id = None
         self._endpoint_t.clear()
         self._first_chunk_seen.clear()
+        self._last_plan.clear()
         self._pending_raw.clear()
         self._shown_es.clear()
 
@@ -694,7 +697,11 @@ class RuntimeService:
                 self._publish({"type": "partial", "seg_id": key, "text_es": text})
         elif kind == "endpoint":
             if key is not None:
-                self._endpoint_t[key] = time.monotonic()
+                # Con cláusulas simultáneas puede haber sonado audio antes del endpoint: se guarda la cláusula
+                # que sonaba y se mide hasta el primer audio de una cláusula nueva (lo que falta oír).
+                self._endpoint_t[key] = (time.monotonic(), self._last_plan.get(key))
+                if len(self._endpoint_t) > 1000:
+                    self._endpoint_t.clear()
         elif kind == "asr_final":
             text = f.get("text") or ""
             src = f.get("from_seg_id")
@@ -740,13 +747,17 @@ class RuntimeService:
                 except queue.Full:
                     self._publish({"type": "error", "message": "Cola de escritura de historial llena."})
         elif kind == "tts_chunk":
+            plan = f.get("planned_text_en")
+            ep = self._endpoint_t.get(key)
+            if ep is not None and (key not in self._first_chunk_seen or plan != ep[1]):
+                del self._endpoint_t[key]
+                self._m["last_endpoint_to_audio_ms"] = round((time.monotonic() - ep[0]) * 1000)
             if key not in self._first_chunk_seen:
                 self._first_chunk_seen.add(key)
-                t0 = self._endpoint_t.pop(key, None)
-                if t0 is not None:
-                    self._m["last_endpoint_to_audio_ms"] = round((time.monotonic() - t0) * 1000)
                 if len(self._first_chunk_seen) > 1000:
                     self._first_chunk_seen.clear()
+                    self._last_plan.clear()
+            self._last_plan[key] = plan
             for p in (self._player, self._monitor):
                 if p is not None:
                     before = p.dropped_s
