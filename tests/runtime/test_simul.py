@@ -104,9 +104,22 @@ async def _run_simul(words, final=None, **kw):
 SENT = "ayer fuimos al centro con mi hermana pero no encontramos nada que valga la pena".split()
 
 
-def test_simul_off_by_default(monkeypatch):
+def test_simul_on_by_default(monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL", raising=False)
     e, ev = asyncio.run(_run_simul(SENT))
+    assert e.mt.calls == ["ayer fuimos al centro con mi hermana", "pero no encontramos nada que valga la pena"]
+
+
+def test_simul_env_0_turns_off(monkeypatch):
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL", "0")
+    e, ev = asyncio.run(_run_simul(SENT))
+    assert e.mt.calls == [" ".join(SENT)]
+    assert not [k for k, _ in ev if k.startswith("simul_")]
+
+
+def test_simul_cfg_off(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL", raising=False)
+    e, ev = asyncio.run(_run_simul(SENT, mt_simul_clauses=False))
     assert e.mt.calls == [" ".join(SENT)]
     assert not [k for k, _ in ev if k.startswith("simul_")]
 

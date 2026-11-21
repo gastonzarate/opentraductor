@@ -202,8 +202,11 @@ class PipelineConfig:
     endpoint_adaptive: bool = True
     # T-67 paso 2: traducción simultánea por cláusulas (runtime/simul.py). Una cláusula confirmada por dos parciales
     # seguidos del ASR y cerrada por coma/"pero"/"porque"/"o sea"... (mín. 5 palabras) se traduce y se habla antes del
-    # fin de frase; en el endpoint solo se traduce el resto. Env OPENTRADUCTOR_MT_SIMUL=1/0 manda. Off = camino de hoy.
-    mt_simul_clauses: bool = False
+    # fin de frase; en el endpoint solo se traduce el resto. Env OPENTRADUCTOR_MT_SIMUL=1/0 manda.
+    # T-80 (21/11): encendido por defecto. A/B intercalado artifacts/t80 (4806494, 8 rondas x 8 clips, n=64/brazo):
+    # p50 562 vs 599, pareado -224 ms, p95 673 vs 763; 1.er audio en clips >5 s 4,3 vs 6,3 s; cortes 100 vs 99 (114
+    # turnos); términos ctx200 90/96 (93,8 %) vs 91/96. Apagar: OPENTRADUCTOR_MT_SIMUL=0.
+    mt_simul_clauses: bool = True
     # Mínimo de palabras por cláusula y palabras extra que abren cláusula (separadas por coma, p. ej. "y,que").
     # Env OPENTRADUCTOR_MT_SIMUL_MIN_WORDS / OPENTRADUCTOR_MT_SIMUL_CUES mandan. Defaults = reglas de 02512a5.
     mt_simul_min_words: int = 5
