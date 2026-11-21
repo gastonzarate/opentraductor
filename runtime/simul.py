@@ -60,6 +60,7 @@ into of on to with without after before about we we're we'll we've we'd you you'
 it'll they they're they'll he he's she she's this that that's these those there there's here what which who
 how why where my our your their his her its me us them let let's just also still even only not no yes well
 look listen okay ok please do does did is are was were will would can could should have has had
+what's where's who's how's half about around like maybe otherwise meanwhile instead plus once every each some any
 """.split())
 
 

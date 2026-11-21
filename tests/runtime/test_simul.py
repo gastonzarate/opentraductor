@@ -181,6 +181,11 @@ def test_join_pieces_fixes_mid_sentence_case_and_period():
         "If it's not credited within 48 hours, we'll do a chargeback."
     assert join_pieces([("A más tardar el viernes 20,", "At the latest by Friday the 20th."),
                         ("a las 18.", "by 6 PM.")]) == "At the latest by Friday the 20th, by 6 PM."
+    # casos reales de artifacts/t80/terminos (simul, ctx200)
+    assert join_pieces([("Me tengo que ir en cinco minutos,", "I gotta go in five minutes,"),
+                        ("¿qué falta?", "What's missing?")]) == "I gotta go in five minutes, what's missing?"
+    assert join_pieces([("Si querés, pagamos en dos cuotas,", "If you'd like, we can pay in two installments,"),
+                        ("mitad hoy.", "Half today.")]) == "If you'd like, we can pay in two installments, half today."
 
 
 def test_join_pieces_keeps_names_sentences_and_empty():
