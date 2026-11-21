@@ -5,7 +5,7 @@ You speak Spanish, and your Mac says it in English a moment later. Nothing leave
 
 It is built for meetings: the English voice goes to a virtual microphone, so Google Meet or Discord can pick it up.
 
-> **Status: experimental.** It works on the author's Mac, and the numbers below are honest but small samples. There is no 300 ms promise: today the delay between the end of your sentence and the first English audio is about 0.6 seconds (median, p95 about 0.7 s).
+> **Status: experimental.** It works on the author's Mac, and the numbers below are honest but small samples. There is no 300 ms promise: today the delay between the end of your sentence and the first English audio is about 0.57 seconds (median). With the Mac busy, peaks reach about 1 second.
 > Spanish version: [README.es.md](README.es.md).
 
 ## What it does
@@ -69,9 +69,9 @@ Source: internal benchmark by the project, 2026-11-16 to 2026-11-18. Same Mac, n
 
 | Measure | Value | Sample |
 |---|---|---|
-| Delay from end of speech to first English audio, median (Moonshine tiny + Qwen3-4B + Kokoro, wait after a complete sentence 64 ms) | 562 ms (p95 673 ms) | 64 runs: 8 clips x 8 rounds |
-| Same, with translation by clauses turned off (`OPENTRADUCTOR_MT_SIMUL=0`) | 599 ms (p95 763 ms) | same 64 runs, interleaved A/B |
-| Same, with the end-of-sentence wait at 32 ms (current default) | 558 ms (p95 730 ms) | 64 runs, 8 clips x 8 rounds, separate interleaved run |
+| Delay from end of speech to first English audio, median, current code (Moonshine tiny + Qwen3-4B + Kokoro, translation by clauses, wait 32 ms, 96 ms of trailing audio kept for recognition) | 572 ms (p95 1039 ms with the Mac loaded, load average up to 5.9) | 64 runs: 8 clips x 8 rounds |
+| Earlier code (commit `4806494`, wait 64 ms): median with translation by clauses | 562 ms | 64 runs: 8 clips x 8 rounds, other benchmark |
+| Earlier code, same benchmark, with translation by clauses turned off (`OPENTRADUCTOR_MT_SIMUL=0`) | 599 ms | same 64 runs, interleaved A/B |
 | Speech recognition error rate (WER), Moonshine tiny | 0.047 | 3 clips |
 | Technical terms translated correctly in conversations, no earlier context | 82.3 % (79 of 96 terms) | 7 short scripted conversations |
 | Same, with about 200 tokens of earlier talk | 93.8 % (90 of 96 terms) | same conversations |
@@ -79,11 +79,11 @@ Source: internal benchmark by the project, 2026-11-16 to 2026-11-18. Same Mac, n
 
 Where the time goes in the median run (ms after the end of speech): about 150 waiting for end of speech, 180 final recognition, 335 translation. The first audio starts before the translation ends (streaming), so synthesis adds no extra step at the median.
 
-The 562 and 599 ms rows come from an interleaved A/B (the arms alternate every round, so the Mac's background load hits both), with load average between 1.7 and 5.3. The median difference is -37 ms (599 to 562) and the p95 difference is -90 ms (763 to 673). Details and the raw per-round numbers: [`docs/latency-final.md`](docs/latency-final.md). The terms set is small and was written by the project; it is not a public benchmark.
+The 572 ms row is the code in this repository, measured in an interleaved run of the same 8 clips (arms alternate every round), load average median 3.6, up to 5.9. In that run the same 8 clips gave 556 ms with a 64 ms wait and no trailing audio kept, and 558 ms with a 32 ms wait and no trailing audio kept. The 572 ms arm is 14 to 16 ms above them at the median (paired by round +66 ms over 8 rounds) and its p95 was 1039 ms, against 827 and 730 ms in the other two arms. The median of one round varies from 293 to 643 ms in that arm, so a difference of a few tens of ms is within the noise of a busy Mac, but the cost is not zero. We keep the trailing audio because recognition was dropping the last syllable of soft endings ("policial" came out as "policia" in an offline test); `OPENTRADUCTOR_ASR_TAIL_KEEP_MS=0` turns it off. The 562 and 599 ms rows are from a different interleaved A/B (arms alternate every round) with load average between 1.7 and 5.3. Their median difference is -37 ms (599 to 562). Details and the raw per-round numbers: [`docs/latency-final.md`](docs/latency-final.md). The terms set is small and was written by the project; it is not a public benchmark.
 
 The median is pulled down by long sentences: with translation by clauses, the English voice starts before the end of the annotated sentence in 24 of 64 runs (16 of 64 before). In the 33 runs with the new version that fall between 556 and 752 ms (short sentences), the median is 619 ms; with the old version the 48 non-negative runs have a median of 617 ms. Short sentences did not get faster. For sentences longer than 5 s, the first English audio comes 4.3 s after the speaker starts talking, against 6.3 s before (16 runs per side, 2 clips).
 
-The 562 and 599 ms rows were measured on commit `4806494`, when the wait after a complete sentence was 64 ms. The 558 ms row was measured later on the current code with the default 32 ms wait (`OPENTRADUCTOR_ENDPOINT_SHORT_MS=64` brings the old value back), in a separate interleaved run of the same 8 clips that also had a 64 ms arm: 556 ms (p95 827 ms) with 64 ms against 558 ms (p95 730 ms) with 32 ms. On these 8 clips the shorter wait did not move the median (paired difference +13 ms over 8 rounds); the lower p95 comes from one run set and is not a claim. In a separate bench of short clips it lowered the median by 37 ms (n=40 per arm). The median of a single round varies from 285 to 614 ms in the 32 ms arm, so differences of a few tens of ms are within the noise. Load average in that run: median 3.6, up to 4.9.
+The 562 and 599 ms rows were measured on commit `4806494`, when the wait after a complete sentence was 64 ms and no trailing audio was kept. The 32 ms wait is the current default (`OPENTRADUCTOR_ENDPOINT_SHORT_MS=64` brings the old value back). On these 8 clips the shorter wait did not move the median (556 ms with 64 ms, 558 ms with 32 ms, paired difference +13 ms over 8 rounds). In a separate bench of short clips it lowered the median by 37 ms (n=40 per arm). The technical-terms numbers (93.8 %) were measured at T-80 on commit `4806494` and were not run again for the trailing-audio change, which only changes the audio given to speech recognition.
 
 Not tested: a physical microphone end to end, long sessions, and Meet or Discord with real participants.
 

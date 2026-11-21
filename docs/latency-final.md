@@ -1,4 +1,4 @@
-# Final latency and terms measurement (2026-11-20, updated 2026-11-21 with T-80)
+# Final latency and terms measurement (2026-11-20, updated 2026-11-21 with T-80 and T-83)
 
 Measured by the project on one Mac, not idle (load average 2.0 to 5.5). Commit `e8bfbdb` (the defaults of the later commit `69fac8d` are the winning arm). The raw `artifacts/` folder is not in this repository; the numbers below are what it contained.
 
@@ -62,13 +62,25 @@ False cuts in conversations (114 turns, synthetic audio): 99 without clauses, 10
 
 #### Re-measured on the 8-clip set (T-82)
 
-Measured 2026-11-21 on the code in this repository (32 ms wait, translation by clauses on). Same 8 clips, 8 interleaved rounds, 64 runs per arm, load average median 3.6, up to 4.9. The two arms differ only in `OPENTRADUCTOR_ENDPOINT_SHORT_MS`. The source commit also had an option to keep the first 96 ms of trailing silence for recognition (not in this repository); it was turned off in both arms, which is the behaviour of this code.
+Measured 2026-11-21 on code with a 32 ms wait and translation by clauses on, before the trailing-audio option of T-83 was in this repository. Same 8 clips, 8 interleaved rounds, 64 runs per arm, load average median 3.6, up to 4.9. The two arms differ only in `OPENTRADUCTOR_ENDPOINT_SHORT_MS`. The option to keep the first 96 ms of trailing silence for recognition (`OPENTRADUCTOR_ASR_TAIL_KEEP_MS`, T-83) was turned off in both arms. It is on by default now; see the next section.
 
 | Arm | n | Median | p95 | Wait for end of speech (median) | Final recognition | Translation |
 |---|---|---|---|---|---|---|
 | wait 64 ms | 64 | 556 ms | 827 ms | 154 ms | 193 ms | 320 ms |
-| wait 32 ms (**current default**) | 64 | **558 ms** | **730 ms** | 152 ms | 187 ms | 324 ms |
+| wait 32 ms | 64 | 558 ms | 730 ms | 152 ms | 187 ms | 324 ms |
 
 Paired by round, the median difference is +13 ms (n=8 rounds), that is, no gain at the median on these clips; p95 is 97 ms lower with 32 ms in this run. The median of one round goes from 285 to 614 ms in the 32 ms arm (it is 286 to 590 ms with 64 ms), so the 2 ms and 97 ms differences are inside the noise of a Mac that was running other work. The raw `artifacts/` folder is not in this repository.
 
-The T-67 table above stays as history: it measured the arm before clauses were turned on.
+### Trailing audio for recognition (T-83, `asr_tail_keep_ms` 96 by default)
+
+When a phrase closes, the recognizer now gets the first 96 ms of the silent tail instead of none. The voice detector reports silence on soft endings, and Moonshine lost the last syllable ("policial" came out as "policia"). In an offline repro with moonshine-tiny + qwen, clip 1584 came out complete 0 of 4 times when the tail was discarded and 3 of 3 times when it was kept; clip 1516 came out complete in both cases (4 of 4 and 3 of 3). Two clips and a handful of runs: an indication, not a rate. To go back: `OPENTRADUCTOR_ASR_TAIL_KEEP_MS=0`.
+
+Latency cost, measured 2026-11-21 on commit `5794853` (the code in this repository), same interleaved run as the T-82 table: same 8 clips, 8 rounds, 64 runs per arm, load average median 3.6, up to 5.9. Three arms ran one after the other in each round.
+
+| Arm | n | Median | p95 | Wait for end of speech | Final recognition | Translation | Median paired by round |
+|---|---|---|---|---|---|---|---|
+| wait 64 ms, no trailing audio | 64 | 556 ms | 827 ms | 154 ms | 193 ms | 320 ms | reference |
+| wait 32 ms, no trailing audio | 64 | 558 ms | 730 ms | 152 ms | 187 ms | 324 ms | +13 ms (n=8) |
+| wait 32 ms + 96 ms of trailing audio (**current default**) | 64 | **572 ms** | 1039 ms | 153 ms | 190 ms | 344 ms | +66 ms (n=8) |
+
+The 572 ms arm is 16 ms above the reference (14 ms above the 32 ms arm) at the median and 212 ms above at p95. The p95 of 1039 ms comes from a Mac with load average up to 5.9 and 64 runs, so the tail is a few runs: do not read it as a stable figure. The median of one round in that arm goes from 293 to 643 ms (rounds 5, 6 and 8 are above 580 ms and had load 3.5 to 5.9). The translation median is 20 to 24 ms higher in this arm; the cause was not investigated and it may be load. The raw `artifacts/` folder is not in this repository.

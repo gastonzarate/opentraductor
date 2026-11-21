@@ -2,7 +2,7 @@
 
 Traductor de voz **local** de español argentino a inglés de EE. UU. para macOS con Apple Silicon. Hablás en español y la Mac lo dice en inglés un instante después. Todo corre en tu equipo: reconocimiento de voz, traducción y síntesis.
 
-> **Estado: experimental.** Hoy la demora entre el fin de tu frase y el primer audio en inglés es de unos 0,6 segundos (mediana). No hay promesa de 300 ms. Documentación completa en inglés: [README.md](README.md).
+> **Estado: experimental.** Hoy la demora entre el fin de tu frase y el primer audio en inglés es de unos 0,57 segundos (mediana). No hay promesa de 300 ms. Documentación completa en inglés: [README.md](README.md).
 
 ## Qué hace
 
@@ -31,7 +31,7 @@ El perfil más rápido (Moonshine + Qwen3) y el micrófono virtual están explic
 
 ## Resultados medidos
 
-Mediana desde el fin de habla hasta el primer audio: 562 ms (p95 673 ms), 64 corridas (8 audios x 8 rondas, A/B intercalado), en una Mac con otras tareas abiertas. La versión anterior, en la misma prueba, dio 599 ms (p95 763). Esas cifras se midieron con espera de 64 ms al cerrar una frase completa; con la espera actual de 32 ms, en otra corrida intercalada de los mismos 8 audios, la mediana fue 558 ms (p95 730) y con 64 ms 556 ms (p95 827): en esos 8 audios la espera más corta no movió la mediana. WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 82,3 % sin contexto y 93,8 % con unos 200 tokens de charla previa (96 términos). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones largas ni Meet o Discord con personas reales.
+Mediana desde el fin de habla hasta el primer audio con el código de este repositorio: 572 ms, 64 corridas (8 audios x 8 rondas, A/B intercalado), en una Mac con otras tareas abiertas (carga media 3,6, hasta 5,9). Con la Mac ocupada hay picos de cerca de 1 segundo (p95 1039 ms en esa corrida). En la misma corrida, sin conservar audio de cola y con espera de 64 ms dio 556 ms y con espera de 32 ms 558 ms: la versión actual está entre 14 y 16 ms por encima en la mediana, dentro del ruido de una Mac ocupada pero no gratis. Se conserva ese audio de cola porque el reconocimiento perdía la última sílaba en finales suaves («policial» salía «policia»); `OPENTRADUCTOR_ASR_TAIL_KEEP_MS=0` lo apaga. Medición anterior con otro código (commit `4806494`, espera de 64 ms): 562 ms con traducción por cláusulas y 599 ms sin ella. WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 82,3 % sin contexto y 93,8 % con unos 200 tokens de charla previa (96 términos, medidos en T-80 sobre `4806494`; el audio de cola solo cambia lo que recibe el reconocimiento). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones largas ni Meet o Discord con personas reales.
 
 ## Cómo contribuir
 
