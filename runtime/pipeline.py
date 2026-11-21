@@ -71,6 +71,15 @@ def endpoint_short_ms(cfg: PipelineConfig) -> float:
     return cfg.endpoint_short_ms
 
 
+def asr_tail_keep_ms(cfg: PipelineConfig) -> float:
+    """T-83: ms de la cola silenciosa que igual se pasan al ASR al endpoint. $OPENTRADUCTOR_ASR_TAIL_KEEP_MS=N lo
+    fuerza (0 = descartar toda la cola, como T-58), para el A/B de @bench. Sin env (o inválido) = cfg."""
+    v = os.environ.get("OPENTRADUCTOR_ASR_TAIL_KEEP_MS", "").strip()
+    if v.isdigit():
+        return float(v)
+    return cfg.asr_tail_keep_ms
+
+
 _TURN_MAX_BYTES = 8 * SR * 2  # smart-turn mira los últimos 8 s
 
 
@@ -694,10 +703,15 @@ class Engine:
             if (
                 self.cfg.asr_skip_silent_tail
                 and not forced
-                and tail_start_s >= st.last_speech_end_s
+                and tail_start_s >= st.last_speech_end_s - 1e-6  # T-83: tolerancia de redondeo (0.31999 vs 0.32)
             ):
-                st.skipped_tail_ms += len(st.asr_buf) / 2 / SR * 1000
-                st.asr_buf.clear()
+                # T-83: se conservan los primeros asr_tail_keep_ms tras la voz (final suave que el VAD no ve).
+                keep_s = max(0.0, st.last_speech_end_s + asr_tail_keep_ms(self.cfg) / 1000 - tail_start_s)
+                keep_b = min(len(st.asr_buf), int(keep_s * SR) * 2)
+                st.skipped_tail_ms += (len(st.asr_buf) - keep_b) / 2 / SR * 1000
+                del st.asr_buf[keep_b:]
+                if st.asr_buf:
+                    await self._queue_audio(st, tail_start_s + keep_b / 2 / SR)
             else:
                 await self._queue_audio(st, pos_s)
         await st.asr_q.put(("end", seg))

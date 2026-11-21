@@ -245,6 +245,10 @@ class PipelineConfig:
     asr_context: tuple[int, int] = (256, 256)  # (izq, der) en frames de 80 ms; derecho pequeño degrada el texto
     # Al endpoint, no pasar al ASR la cola de audio que es solo silencio (toda la voz ya se procesó).
     asr_skip_silent_tail: bool = True  # T-58: default activo (WER sin cambio en el A/B)
+    # T-83: de esa cola sí se pasan al ASR los primeros ms tras el último frame con voz. El VAD da silencio en
+    # finales suaves («policia(l)», «nazi(smo)») y sin ese audio Moonshine pierde la última sílaba.
+    # 0 = descartar toda la cola (comportamiento T-58). $OPENTRADUCTOR_ASR_TAIL_KEEP_MS manda (A/B de bench).
+    asr_tail_keep_ms: float = 96.0
     # TTS
     voice: str = "af_heart"
     speed: float = 1.0
