@@ -217,6 +217,11 @@ class PipelineConfig:
     endpoint_turn: bool = False
     endpoint_turn_threshold: float = 0.5
     endpoint_turn_silence_ms: float = 32.0
+    # T-80: con endpoint_adaptive, la espera corta del caso "complete" (parcial que cierra frase y ASR al día) solo
+    # se aplica si smart-turn también da p >= endpoint_turn_threshold; si no, endpoint_silence_ms (motivo
+    # "complete_noturn"). Evita los cortes a mitad de frase vistos en la app (QA 21/11: 3/15 frases cortas partidas).
+    # Carga smart-turn aunque endpoint_turn esté apagado. Env OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN=1/0 manda.
+    endpoint_complete_turn: bool = False
     vad_threshold: float = 0.5
     min_speech_ms: float = 120.0
     max_segment_s: float = 20.0  # corte forzado de seguridad

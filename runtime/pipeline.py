@@ -370,7 +370,7 @@ class Engine:
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)
-        if self._endpoint_turn:
+        if self._turn_model_on:
             self.turn = timed("turn", K.SmartTurn)
         self._out_q = asyncio.Queue(maxsize=max(1, c.max_pending_segments))
         self._out_task = asyncio.ensure_future(self._speaker_loop())
@@ -505,7 +505,7 @@ class Engine:
         chunk_end_s = (base + len(pcm) // 2) / SR + st.t_base_s
         st.buf_end_s = chunk_end_s
         appended = False  # ¿ya se añadió este chunk al buffer del ASR?
-        turn_on = self.turn is not None and self._endpoint_turn
+        turn_on = self.turn is not None and self._turn_model_on
         if st.in_speech:
             st.asr_buf.extend(pcm)
             if turn_on:
@@ -599,9 +599,19 @@ class Engine:
         if kind == "continue":
             st.ep_wait = (max(c.endpoint_long_ms, c.endpoint_silence_ms), "continue")
         elif kind == "complete" and caught_up:
-            st.ep_wait = (min(endpoint_short_ms(c), c.endpoint_silence_ms), "complete")
+            short = (min(endpoint_short_ms(c), c.endpoint_silence_ms), "complete")
+            if self._endpoint_complete_turn and self.turn is not None:
+                # T-80: el parcial "parece" frase completa pero el hablante puede seguir ("toda la plantación" ...
+                # "de lechuga"). La espera corta solo si smart-turn también dice fin de turno; si no, la base.
+                p = self._turn_prob(st)
+                if p is not None and p >= endpoint_turn_threshold(c):
+                    st.ep_wait = short
+                else:
+                    st.ep_wait = (c.endpoint_silence_ms, "complete_noturn")
+            else:
+                st.ep_wait = short
         else:
-            p = self._turn_prob(st)
+            p = self._turn_prob(st) if self._endpoint_turn else None
             if p is not None and p >= endpoint_turn_threshold(c):
                 st.ep_wait = (min(endpoint_short_ms(c), c.endpoint_silence_ms), "turn")
             else:
@@ -621,10 +631,20 @@ class Engine:
         v = os.environ.get("OPENTRADUCTOR_ENDPOINT_TURN")
         return (v == "1") if v in ("0", "1") else self.cfg.endpoint_turn
 
+    @property
+    def _endpoint_complete_turn(self) -> bool:
+        """T-80: la espera corta de una frase "completa" exige también fin de turno de smart-turn."""
+        v = os.environ.get("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN")
+        return (v == "1") if v in ("0", "1") else self.cfg.endpoint_complete_turn
+
+    @property
+    def _turn_model_on(self) -> bool:
+        return self._endpoint_turn or self._endpoint_complete_turn
+
     def _turn_prob(self, st: StreamState) -> float | None:
         """T-67 sonda c): una consulta por pausa al detector de fin de turno, al llegar a endpoint_turn_silence_ms.
         Corre en el event loop (~10-20 ms de CPU, medido en turn_stats['cost_ms']). None si no aplica."""
-        if self.turn is None or not self._endpoint_turn or st.seg is None:
+        if self.turn is None or not self._turn_model_on or st.seg is None:
             return None
         if st.silence_ms < self.cfg.endpoint_turn_silence_ms:
             return None

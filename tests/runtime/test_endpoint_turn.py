@@ -109,3 +109,41 @@ def test_asr_tail_stats_counts():
     e._asr_tail_count(Segment(1, 0.0, ep_partial="hola que tal", ep_caught_up=True, text_es_raw="Hola que tal."))
     e._asr_tail_count(Segment(2, 0.0, ep_partial="hola que", ep_caught_up=False, text_es_raw="hola que tal"))
     assert e.asr_tail_stats == {"n": 2, "caught_up": 1, "eq": 1, "eq_caught_up": 1}
+
+
+# ---------------------------------------------------------------- T-80: "complete" exige fin de turno (flag)
+@pytest.fixture
+def _ct_env(monkeypatch):
+    monkeypatch.delenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", raising=False)
+    return monkeypatch
+
+
+def test_complete_turn_off_by_default(_ct_env):
+    assert PipelineConfig().endpoint_complete_turn is False
+    e = _engine(0.1)
+    assert e._endpoint_wait_ms(_state(caught_up=True)) == 64.0 and e.turn.calls == []
+
+
+def test_complete_turn_low_prob_waits_base(_ct_env):
+    _ct_env.setenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", "1")
+    e, st = _engine(0.2), _state(caught_up=True)
+    assert e._endpoint_wait_ms(st) == 160.0 and st.ep_wait == (160.0, "complete_noturn")
+    assert len(e.turn.calls) == 1
+
+
+def test_complete_turn_high_prob_keeps_short(_ct_env):
+    _ct_env.setenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", "1")
+    e, st = _engine(0.9), _state(caught_up=True)
+    assert e._endpoint_wait_ms(st) == 64.0 and st.ep_wait == (64.0, "complete")
+
+
+def test_complete_turn_without_model_is_today(_ct_env):
+    _ct_env.setenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", "1")
+    e = _engine(None)
+    assert e._endpoint_wait_ms(_state(caught_up=True)) == 64.0
+
+
+def test_complete_turn_does_not_touch_base(_ct_env):
+    _ct_env.setenv("OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN", "1")
+    e = _engine(0.99)  # ENDPOINT_TURN apagado: la base sigue en 160 sin consultar
+    assert e._endpoint_wait_ms(_state(caught_up=False)) == 160.0 and e.turn.calls == []
