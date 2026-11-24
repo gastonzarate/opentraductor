@@ -234,16 +234,16 @@ def test_cut_current_caps_seconds_and_fraction():
     assert r.skipped_s == 0.0 and list(r._tags) == ["a", "b"]
 
 
-def test_cut_caps_default_off_and_env(monkeypatch):
+def test_cut_caps_default_3s_half_and_env(monkeypatch):
     from types import SimpleNamespace
     from runtime.service import RuntimeService
     fake = SimpleNamespace(_pcfg=PipelineConfig())
     for k in ("OPENTRADUCTOR_PLAYER_CUT_MAX_S", "OPENTRADUCTOR_PLAYER_CUT_MAX_FRAC"):
         monkeypatch.delenv(k, raising=False)
-    assert RuntimeService._cut_caps(fake) == (None, None)
-    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_MAX_S", "3")
-    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_MAX_FRAC", "0.5")
     assert RuntimeService._cut_caps(fake) == (3.0, 0.5)
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_MAX_S", "")
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_MAX_FRAC", "-1")
+    assert RuntimeService._cut_caps(fake) == (None, None)
 
 
 def test_cut_current_default_5_env_and_master_flag(monkeypatch):

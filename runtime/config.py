@@ -276,10 +276,10 @@ class PipelineConfig:
     # apagado).
     player_cut_cur_s: float | None = 5.0
     # T-93: topes del recorte (None = sin tope): nunca más de N s ni de esta fracción de la frase entera (charla 3:
-    # 4 recortes de 5-7 s = frases enteras sin voz). $OPENTRADUCTOR_PLAYER_CUT_MAX_S / _CUT_MAX_FRAC (vacío o < 0 =
-    # sin tope).
-    player_cut_max_s: float | None = None
-    player_cut_max_frac: float | None = None
+    # 4 recortes de 5-7 s = frases enteras sin voz). T-95 (lead): 3 s y 50 %. $OPENTRADUCTOR_PLAYER_CUT_MAX_S /
+    # _CUT_MAX_FRAC (vacío o < 0 = sin tope).
+    player_cut_max_s: float | None = 3.0
+    player_cut_max_frac: float | None = 0.5
     # T-93: silencio máximo (ms) al inicio y al final de cada chunk de Kokoro (en la charla 1 había 68 s de silencio
     # inicial en 433 chunks). $OPENTRADUCTOR_TTS_TRIM_KEEP_MS (vacío o < 0 = sin recorte).
     tts_trim_keep_ms: float | None = 80.0
