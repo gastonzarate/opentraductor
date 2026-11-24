@@ -199,6 +199,12 @@ class MoonshineStreamer:
                 self.provider_error = f"{type(exc).__name__}: {exc}"
                 self.ort_provider = "cpu"
                 self.tr = Transcriber(**kw, options=base) if base else Transcriber(**kw)
+        # T-96: sesgo de vocabulario con el glosario de la app y corrección post-ASR (runtime/asr_glossary.py).
+        # Env OPENTRADUCTOR_ASR_KEYTERMS=0 / OPENTRADUCTOR_ASR_GLOSSARY_FIX=0 los apagan.
+        from . import asr_glossary as G
+        self.keyterms_n = G.apply_keyterms(self.tr)
+        self._fix_terms = G.load_terms() if G.fix_enabled() else ()
+        self._fix_memo: dict[str, str] = {}
         self._stream = None
         self._lines: dict[int, str] = {}
         self.last_latency_ms = 0
@@ -211,7 +217,14 @@ class MoonshineStreamer:
         self.last_latency_ms = getattr(line, "last_transcription_latency_ms", 0)
 
     def _text(self) -> str:
-        return " ".join(t.strip() for _, t in sorted(self._lines.items()) if t.strip())
+        parts = [t.strip() for _, t in sorted(self._lines.items()) if t.strip()]
+        if self._fix_terms:  # por línea y con memo: las líneas ya cerradas no se vuelven a corregir en cada parcial
+            from .asr_glossary import glossary_fix
+            memo = self._fix_memo
+            if len(memo) > 256:
+                memo.clear()
+            parts = [memo.get(t) or memo.setdefault(t, glossary_fix(t, self._fix_terms)) for t in parts]
+        return " ".join(parts)
 
     def start(self) -> None:
         self.finish()

@@ -1,0 +1,33 @@
+tests de aceptación
+test de aceptación
+criterios de aceptación
+criterio de aceptación
+ATDD
+TDD
+BDD
+DevOps
+pipeline
+framework
+Lean
+Scrum
+Kanban
+management 3.0
+integración continua
+despliegue continuo
+entrega continua
+historias de usuario
+historia de usuario
+metodologías ágiles
+desarrollo dirigido por tests
+tests unitarios
+tests de integración
+refactoring
+backlog
+sprint
+build
+deploy
+machine learning
+inteligencia artificial
+stakeholders
+ticket
+waterfall
