@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 HERE = pathlib.Path(__file__).resolve().parent
 out = pathlib.Path(sys.argv[1])
-ORDEN = ["ref", "ct", "simul", "ctsimul"]
+ORDEN = ["ref", "ct", "simul", "ctsimul", "k5", "k5ti32", "k5ti16"]
 pct = lambda v, q: sorted(v)[min(len(v) - 1, round(q * (len(v) - 1)))]
 
 
@@ -138,7 +138,7 @@ print("\n## 4. Términos con contexto (96 términos, 7 charlas, MT sola)\n")
 print("ct no cambia el texto de la MT (solo la espera del endpoint), así que ct = ref y ctsimul = simul en este eval.\n")
 print("| brazo | ctx0 | ctx200 | MT p50 ctx200 |")
 print("|---|---|---|---|")
-for a, d in (("ref (= ct si se corrió)", "ref"), ("simul (= ctsimul si se corrió)", "simul")):
+for a, d in (("ref (= ct si se corrió)", "ref"), ("simul (= ctsimul si se corrió)", "simul"), ("k5", "k5")):
     p = out / "terminos" / d / "summary.json"
     if p.exists():
         s = json.loads(p.read_text())["arms"]
