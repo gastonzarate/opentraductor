@@ -169,3 +169,64 @@ def test_speed_ramp_default_2_to_5_cap_130(monkeypatch):
     assert K.adaptive_speed(3.5, 1.0, *p) == pytest.approx(1.15)
     assert K.adaptive_speed(5.0, 1.0, *p) == pytest.approx(1.30)
     assert K.adaptive_speed(1.5, 1.0, *p) == 1.0
+
+
+def _cut_player(skip_old_s=None, cut_cur_s=3.0):
+    d = audio_io.Device("out", "Out", 0, 0, 1, 1000.0, True, True)
+    return audio_io.Player(d, skip_old_s=skip_old_s, cut_cur_s=cut_cur_s)
+
+
+def test_cut_current_keeps_playing_clause_and_new_segment():
+    """T-93: frase en curso de 3 cláusulas + llega seg nuevo con cola > cut_cur_s: quedan la cláusula que suena
+    y el seg nuevo; las cláusulas no empezadas de la frase en curso se cuentan como saltadas."""
+    p = _cut_player()
+    for _ in range(3):
+        p.write(_pcm(2), 1000, "a")
+    _play(p, 100)  # suena la 1.ª cláusula de "a"
+    p.write(_pcm(1), 1000, "b")
+    assert p.skipped_s == pytest.approx(4.0) and p.cut_cur_s_total == pytest.approx(4.0)
+    assert list(p._tags) == ["b"]
+    assert p._cur is not None and p._cur.size == 1900  # la cláusula que suena termina entera
+    assert p.queued_s == pytest.approx(2.9)
+
+
+def test_cut_current_small_queue_or_same_seg_untouched():
+    p = _cut_player()
+    p.write(_pcm(1), 1000, "a")
+    p.write(_pcm(1), 1000, "a")
+    _play(p, 100)
+    p.write(_pcm(1), 1000, "b")  # cola 1,9 s <= 3: nada
+    assert p.skipped_s == 0.0 and list(p._tags) == ["a", "b"]
+    q = _cut_player()
+    q.write(_pcm(2), 1000, "a")
+    _play(q, 100)
+    for _ in range(3):
+        q.write(_pcm(2), 1000, "a")  # más cláusulas de la frase que suena: nunca se recortan
+    assert q.skipped_s == 0.0
+    q.write(_pcm(1), 1000, "b")
+    q.write(_pcm(1), 1000, "b")  # 2.ª cláusula del seg nuevo: no vuelve a recortar
+    assert list(q._tags) == ["b", "b"] and q.skipped_s == pytest.approx(6.0)
+
+
+def test_cut_current_off_by_default_env_and_master_flag(monkeypatch):
+    from types import SimpleNamespace
+    from runtime.service import RuntimeService
+    fake = SimpleNamespace(_pcfg=PipelineConfig())
+    for k in ("OPENTRADUCTOR_TTS_CATCHUP", "OPENTRADUCTOR_PLAYER_CUT_CUR_S", "OPENTRADUCTOR_PLAYER_SKIP_OLD_S"):
+        monkeypatch.delenv(k, raising=False)
+    assert RuntimeService._cut_cur_s(fake) is None
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_CUR_S", "3")
+    assert RuntimeService._cut_cur_s(fake) == 3.0
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_CUR_S", "")
+    assert RuntimeService._cut_cur_s(fake) is None
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_CUR_S", "-1")
+    assert RuntimeService._cut_cur_s(fake) is None
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", "")
+    assert RuntimeService._skip_old_s(fake) is None
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", "4")
+    assert RuntimeService._skip_old_s(fake) == 4.0
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_CUR_S", "3")
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_CATCHUP", "0")
+    assert RuntimeService._cut_cur_s(fake) is None
+    d = audio_io.Device("out", "Out", 0, 0, 1, 1000.0, True, True)
+    assert audio_io.Player(d).cut_cur_s is None

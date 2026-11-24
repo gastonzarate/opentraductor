@@ -312,6 +312,8 @@ class RuntimeService:
             "playback_dropped_ms": pl_dropped,
             # T-92: voz vieja saltada (frases enteras sin reproducir) cuando la cola pasó de 20 s.
             "playback_skipped_s": round(getattr(pl, "skipped_s", 0.0), 2) if pl is not None else None,
+            # T-93: parte de playback_skipped_s que salió de recortar la frase en curso (player_cut_cur_s).
+            "playback_cut_cur_s": round(getattr(pl, "cut_cur_s_total", 0.0), 2) if pl is not None else None,
             "playback_partial_blocks": pl.partial_blocks if pl is not None else None,
             "playback_status_events": pl.status_events if pl is not None else None,
             "last_first_audio_ms": None,  # el fin real de habla no se conoce en vivo
@@ -475,6 +477,7 @@ class RuntimeService:
                 dev_out = self._audio.find_device(cfg["output_id"], "out")
                 self._player = self._audio.Player(dev_out, latency=self._latency_arg)
                 self._player.skip_old_s = self._skip_old_s()
+                self._player.cut_cur_s = self._cut_cur_s()
                 self._player.start()
                 self._audio_info["output"] = _stream_info(self._player.latency_s, self._player.blocksize)
             if cfg.get("monitor_id"):
@@ -572,12 +575,20 @@ class RuntimeService:
         """T-92/T-93: umbral de cola (s) a partir del cual el Player salta frases viejas; None = política vieja."""
         if not C.tts_catchup_on(self._pcfg):
             return None
-        return C._env_float("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", float(self._pcfg.player_skip_old_s))
+        return C.env_opt_seconds("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", float(self._pcfg.player_skip_old_s))
+
+    def _cut_cur_s(self) -> float | None:
+        """T-93: cola (s) a partir de la cual una frase nueva recorta lo no empezado de la que suena; None = no."""
+        if not C.tts_catchup_on(self._pcfg):
+            return None
+        d = getattr(self._pcfg, "player_cut_cur_s", None)
+        return C.env_opt_seconds("OPENTRADUCTOR_PLAYER_CUT_CUR_S", None if d is None else float(d))
 
     async def _open_monitor(self, dev_id: str) -> None:
         dev = self._audio.find_device(dev_id, "out")
         m = self._audio.Player(dev, volume=self._cfg["monitor_volume"])
         m.skip_old_s = self._skip_old_s()
+        m.cut_cur_s = self._cut_cur_s()
         m.start()
         self._monitor = m
 

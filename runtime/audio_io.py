@@ -353,12 +353,18 @@ class Player:
     Cola acotada en segundos. T-92: si pasa de ``skip_old_s``, ``write`` salta frases VIEJAS enteras aún no
     reproducidas (por ``seg``; nunca la que suena ni la que llega) y lo cuenta en ``skipped_s``. Tope duro: si aun así
     se excede ``max_queue_s`` (una sola frase enorme) se descarta lo nuevo y se cuenta en ``dropped_s``.
+    T-93: con ``cut_cur_s`` (None = apagado), cuando llega la PRIMERA cláusula de una frase nueva y tras el salto la
+    cola sigue > ``cut_cur_s``, se sacan las cláusulas aún no empezadas de la frase que suena (la cláusula que suena
+    termina entera; corte en límite de cláusula, donde la onda ya está en silencio). También suma a ``skipped_s``.
     """
 
     def __init__(self, dev: Device, volume: float = 1.0, max_queue_s: float = 60.0,
-                 latency: str | None = None, skip_old_s: float | None = 6.0) -> None:
+                 latency: str | None = None, skip_old_s: float | None = 6.0,
+                 cut_cur_s: float | None = None) -> None:
         self.dev = dev
         self.skip_old_s = skip_old_s
+        self.cut_cur_s = cut_cur_s
+        self.cut_cur_s_total = 0.0  # parte de skipped_s que vino de recortar la frase en curso
         self.skipped_s = 0.0
         self.skipped_segments = 0
         self._tags: collections.deque = collections.deque()  # seg de cada bloque de _buf (alineado)
@@ -426,8 +432,12 @@ class Player:
         x = np.frombuffer(pcm_s16, dtype="<i2").astype(np.float32) / 32768.0
         x = resample(x, sample_rate, self.sr)
         with self._lock:
+            new_seg = seg is not None and seg != self._cur_tag and seg not in self._tags
             if self.skip_old_s is not None and (self._queued + x.size) / self.sr > self.skip_old_s:
                 self._skip_old(seg, x.size)
+            if (new_seg and self.cut_cur_s is not None and self._cur_tag is not None
+                    and self._queued / self.sr > self.cut_cur_s):
+                self._cut_current()
             if (self._queued + x.size) / self.sr > self.max_queue_s:
                 self.dropped_s += x.size / self.sr
                 return
@@ -457,6 +467,24 @@ class Player:
             self._queued -= n
             self.skipped_s += n / self.sr
             self.skipped_segments += 1
+
+    def _cut_current(self) -> None:
+        """Con el lock tomado: saca de la cola los bloques de la frase que suena que todavía no empezaron."""
+        cur = self._cur_tag
+        keep_b: collections.deque[np.ndarray] = collections.deque()
+        keep_t: collections.deque = collections.deque()
+        n = 0
+        for b, t in zip(self._buf, self._tags):
+            if t == cur:
+                n += b.size
+            else:
+                keep_b.append(b)
+                keep_t.append(t)
+        if n:
+            self._buf, self._tags = keep_b, keep_t
+            self._queued -= n
+            self.skipped_s += n / self.sr
+            self.cut_cur_s_total += n / self.sr
 
     def _cb(self, outdata, frames, t, status) -> None:
         if status:

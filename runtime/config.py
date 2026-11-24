@@ -269,6 +269,10 @@ class PipelineConfig:
     # T-93: 6 s = mínimo con p95 fin de habla->voz <= 5 s en la charla 1 (simulación QA: salta ~10 % de la voz,
     # que sigue en subtítulos). $OPENTRADUCTOR_PLAYER_SKIP_OLD_S lo cambia para A/B.
     player_skip_old_s: float = 6.0
+    # T-93: al llegar una frase nueva con cola > este valor, se cortan las cláusulas no empezadas de la frase en
+    # curso (la que suena termina). Apagado por defecto: el lead fijó voz saltada <= 5 % y la sim da 17,6 % con
+    # skip 4 + recorte 3. $OPENTRADUCTOR_PLAYER_CUT_CUR_S lo prende para A/B (vacío o < 0 = apagado).
+    player_cut_cur_s: float | None = None
     # T-92 (BUG-9): velocidad adaptativa por cláusula según la voz encolada sin reproducir: speed con <= lo_s,
     # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
     tts_speed_adaptive: bool = True
@@ -399,6 +403,20 @@ def _env_float(name: str, default: float) -> float:
         return float(os.environ[name])
     except (KeyError, ValueError):
         return default
+
+
+def env_opt_seconds(name: str, default: float | None) -> float | None:
+    """T-93: segundos opcionales por env. Sin env = default; vacío o < 0 = apagado (None); basura = default."""
+    if name not in os.environ:
+        return default
+    v = os.environ[name].strip()
+    if not v:
+        return None
+    try:
+        f = float(v)
+    except ValueError:
+        return default
+    return None if f < 0 else f
 
 
 def tts_catchup_on(cfg) -> bool:
