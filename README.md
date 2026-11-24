@@ -85,7 +85,35 @@ The median is pulled down by long sentences: with translation by clauses, the En
 
 The 562 and 599 ms rows were measured on commit `4806494`, when the wait after a complete sentence was 64 ms and no trailing audio was kept. The 32 ms wait is the current default (`OPENTRADUCTOR_ENDPOINT_SHORT_MS=64` brings the old value back). On these 8 clips the shorter wait did not move the median (556 ms with 64 ms, 558 ms with 32 ms, paired difference +13 ms over 8 rounds). In a separate bench of short clips it lowered the median by 37 ms (n=40 per arm). The technical-terms numbers (93.8 %) were measured at T-80 on commit `4806494` and were not run again for the trailing-audio change, which only changes the audio given to speech recognition.
 
-Not tested: a physical microphone end to end, long sessions, and Meet or Discord with real participants.
+### Tested on real talks
+
+The sentence-by-sentence numbers above say little about a long talk, where the speaker rarely stops and the English voice can fall behind and stay behind. We played 11-minute (660 s) cuts of three real Spanish talks through the packaged app, by the same path a microphone takes (BlackHole input, output to the Mac speakers), and measured every sentence from the end of speech to the moment its English voice starts. The audio is not in this repository. Sources, all licensed CC BY 3.0:
+
+1. T3chFest 2018, Daniel Jiménez, "Cómo se desarrolla software en el siglo XXI" ([video](https://www.youtube.com/watch?v=JoBv8sCuM3I))
+2. T3chFest 2018, David Bonilla, "¿Cobras poco? Carreras profesionales en software" ([video](https://www.youtube.com/watch?v=d2_CUOeCgVE))
+3. PyAr 2019, Hernán Wilkinson, "El desarrollo de software como debería ser" ([video](https://www.youtube.com/watch?v=lV9ozQbYEnc))
+
+**Delay of the voice (end of speech to English audio).** The English voice queues up when the speaker talks faster than Kokoro can speak. `tts_catchup` (on by default, `OPENTRADUCTOR_TTS_CATCHUP=0` turns it off) speeds Kokoro up to 1.30x as the queue grows, trims the silence Kokoro adds around each chunk to 80 ms, skips whole old sentences when the queue passes 8 s, and cuts the unstarted clauses of the sentence being spoken when a new one arrives with more than 5 s queued (never more than 3 s or half of the sentence). Sentences with digits or proper names are never skipped or cut. A skipped sentence still appears in the subtitles.
+
+| Talk | Delay p50 | Delay p95 | Drift | Voice skipped |
+|---|---|---|---|---|
+| 1 (two runs, current runtime) | 2.9 and 3.0 s | 5.6 and 6.1 s | none (-0.02 and 0.00 s/min) | about 2.8 s of 660 s |
+| 2 (one run, commit `ff71322`) | 4.0 s | 7.8 s | none (+0.03 s/min) | 13.8 s (2.1 %) |
+| 3 (one run, commit `ff71322`) | 3.8 s | 7.1 s | none (-0.10 s/min) | 11.7 s (1.8 %) |
+
+The delay stays stable over the 11 minutes (no drift), and nothing was dropped (no audio overflow, no output device errors). It is not short: about 3 to 4 s at the median and 6 to 8 s in the worst sentences. Our own target was a p95 of 6 s or less. Talk 1 is at the edge of it and talks 2 and 3 miss it. This is a delay of seconds, not the sub-second delay of the table above, and we do not claim a shorter one. The sub-second figure is for isolated sentences, when the voice is not behind.
+
+**Technical terms in a real talk.** For talk 1 we counted 47 technical terms ("tests de aceptación", "management 3.0", "pipeline", and so on) with regular expressions written by the project, over two runs of the app before and after the vocabulary change: 22.5 of 47 (48 %) before, 28 of 47 (60 %) after. The change has two parts: the recognizer receives a glossary (`runtime/data/asr_keyterms.txt`) as hints, and its partial results are corrected against that glossary by fuzzy matching. Both are on by default (`OPENTRADUCTOR_ASR_KEYTERMS=0` and `OPENTRADUCTOR_ASR_GLOSSARY_FIX=0` turn them off).
+
+Limits of this number:
+- It is one talk, played once or twice per setting. Two runs of the same code differ by 3 to 4 terms, so read the gain as 60 % plus or minus about 4 points.
+- The regular expressions are ours and were not reviewed by anyone else.
+- The glossary was written by the project with the vocabulary of this kind of talk (agile, testing, DevOps), and talk 1 is on that subject. Expect less on other topics. In an offline rescore of talk 2, with another subject, the count did not change (25 of 35 terms).
+- In the real-time runs the gain came from the glossary correction. Turning the recognizer hints off (`OPENTRADUCTOR_ASR_KEYTERMS=0`) gave 29 of 47 in a single run, the same as with them on.
+- Acronyms and English words said inside Spanish (ATDD, waterfall, lean, DevOps) are still mistranslated.
+- The Mac was busy during the runs (load average between 4 and 12).
+
+Not tested: a physical microphone end to end, sessions longer than 11 minutes, and Meet or Discord with real participants.
 
 ## Run the tests
 
@@ -115,6 +143,7 @@ Other tests that need model weights or the local `artifacts/` folder are describ
 ## Limitations
 
 - Latency is about 0.6 s at the median, not the 300 ms the project first aimed for. Three of the 8 test clips (24 of 64 runs with translation by clauses; two clips, 16 of 64, without) start speaking before the end of the sentence or are split in two: two long clips are split into two segments in both arms, and a third starts speaking before the end of the sentence only with translation by clauses.
+- In a continuous talk the English voice trails the speaker by about 3 to 4 s at the median and 6 to 8 s at the p95 (see "Tested on real talks"). It does not drift, but it is not the sub-second delay of single sentences.
 - Only Argentine Spanish to US English. Rioplatense Spanish has no complete dedicated evaluation yet.
 - Output goes to one device. No echo cancellation, no mixing of several voices.
 - Mac only, Apple Silicon only. No Windows or Linux.
