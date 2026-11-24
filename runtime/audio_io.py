@@ -350,13 +350,19 @@ class MicCapture:
 class Player:
     """Reproduce PCM mono (cualquier tasa) en un dispositivo de salida.
 
-    Cola acotada en segundos: ``write`` descarta lo MÁS NUEVO si se excede
-    ``max_queue_s`` y lo cuenta (``dropped_s``), nunca corta lo ya encolado.
+    Cola acotada en segundos. T-92: si pasa de ``skip_old_s``, ``write`` salta frases VIEJAS enteras aún no
+    reproducidas (por ``seg``; nunca la que suena ni la que llega) y lo cuenta en ``skipped_s``. Tope duro: si aun así
+    se excede ``max_queue_s`` (una sola frase enorme) se descarta lo nuevo y se cuenta en ``dropped_s``.
     """
 
     def __init__(self, dev: Device, volume: float = 1.0, max_queue_s: float = 60.0,
-                 latency: str | None = None) -> None:
+                 latency: str | None = None, skip_old_s: float | None = 20.0) -> None:
         self.dev = dev
+        self.skip_old_s = skip_old_s
+        self.skipped_s = 0.0
+        self.skipped_segments = 0
+        self._tags: collections.deque = collections.deque()  # seg de cada bloque de _buf (alineado)
+        self._cur_tag = None
         self.volume = float(volume)
         self.max_queue_s = max_queue_s
         self.latency = latency  # None = por defecto de sounddevice; 'low' | 'high'
@@ -416,15 +422,41 @@ class Player:
     def set_volume(self, v: float) -> None:
         self.volume = max(0.0, min(1.0, float(v)))
 
-    def write(self, pcm_s16: bytes, sample_rate: int) -> None:
+    def write(self, pcm_s16: bytes, sample_rate: int, seg=None) -> None:
         x = np.frombuffer(pcm_s16, dtype="<i2").astype(np.float32) / 32768.0
         x = resample(x, sample_rate, self.sr)
         with self._lock:
+            if self.skip_old_s is not None and (self._queued + x.size) / self.sr > self.skip_old_s:
+                self._skip_old(seg, x.size)
             if (self._queued + x.size) / self.sr > self.max_queue_s:
                 self.dropped_s += x.size / self.sr
                 return
             self._buf.append(x)
+            self._tags.append(seg)
             self._queued += x.size
+
+    def _skip_old(self, incoming, extra: int) -> None:
+        """Con el lock tomado: saca frases enteras de la cola, de la más vieja a la más nueva, hasta bajar de
+        ``skip_old_s``. Nunca la frase que suena (``_cur_tag``), la que llega ni bloques sin seg. Entre frases la
+        onda ya está en silencio (cola de Kokoro), así que no hace falta fundido."""
+        limit = self.skip_old_s * self.sr
+        while self._queued + extra > limit:
+            victim = next((t for t in self._tags if t is not None and t != self._cur_tag and t != incoming), None)
+            if victim is None:
+                return
+            keep_b: collections.deque[np.ndarray] = collections.deque()
+            keep_t: collections.deque = collections.deque()
+            n = 0
+            for b, t in zip(self._buf, self._tags):
+                if t == victim:
+                    n += b.size
+                else:
+                    keep_b.append(b)
+                    keep_t.append(t)
+            self._buf, self._tags = keep_b, keep_t
+            self._queued -= n
+            self.skipped_s += n / self.sr
+            self.skipped_segments += 1
 
     def _cb(self, outdata, frames, t, status) -> None:
         if status:
@@ -445,6 +477,7 @@ class Player:
                     if not self._buf:
                         break
                     self._cur = self._buf.popleft()
+                    self._cur_tag = self._tags.popleft() if self._tags else None
                 take = min(frames - filled, self._cur.size)
                 out[filled:filled + take] = self._cur[:take]
                 self._cur = self._cur[take:]
@@ -481,7 +514,9 @@ class Player:
                 tail *= np.linspace(1.0, 0.0, tail.size, endpoint=True, dtype=np.float32)
                 self._tail = tail
             self._buf.clear()
+            self._tags.clear()
             self._cur = None
+            self._cur_tag = None
             self._queued = 0
 
     def stop(self) -> None:

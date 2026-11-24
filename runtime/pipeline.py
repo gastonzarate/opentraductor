@@ -256,6 +256,12 @@ class Engine:
         self.asr: K.ParakeetStreamer | K.MoonshineStreamer | None = None
         self.tts: K.KokoroTTS | None = None
         self.mt: K.MarianCT2 | None = None
+        # T-92: cola de voz sin reproducir. playback_queue_fn (la pone el servicio: Player.queued_s real); sin ella,
+        # estimación propia: cada tts_chunk emitido suena a tiempo real detrás del anterior (benchmark, sin Player).
+        self.playback_queue_fn = None
+        self._play_end = 0.0
+        self.filler_skipped = 0
+        self.speed_stats = {"clauses_fast": 0, "max_speed": 1.0, "max_queue_s": 0.0}
         self.vad_proto: K.SileroVAD | None = None
         self._streams: dict[str, StreamState] = {}
         self._out_q: asyncio.Queue | None = None
@@ -368,6 +374,8 @@ class Engine:
                                                    tts_first_words(c), c.tts_bind_conjunctions,
                                                    c.tts_trim_tail, c.tts_trim_lead_all_clauses)))
         self.tts.clause_pause_ms = tts_clause_pause_ms(c)
+        if self._speed_adaptive:
+            self.tts.speed_fn = self._tts_speed
         if c.mt_engine == "qwen":  # T-51: Qwen MLX comparte el hilo GPU con Kokoro
             from .config import qwen_model_dir
 
@@ -1349,6 +1357,8 @@ class Engine:
         def put(item) -> None:
             loop.call_soon_threadsafe(q.put_nowait, item)
 
+        filler = self._is_filler(getattr(seg, "text_es", None))  # T-92: solo muletilla: se traduce (subtítulo) pero no se dice
+
         def produce():
             head: str | None = None
             head_t = None
@@ -1356,7 +1366,7 @@ class Engine:
 
             def on_text(prefix: str) -> None:
                 nonlocal head, head_t, tts_ms
-                if head is not None or not self._is_live(stream_id, seg.gen):
+                if filler or head is not None or not self._is_live(stream_id, seg.gen):
                     return
                 h = self.tts.first_clause_final(prefix)
                 if h is None:
@@ -1376,6 +1386,9 @@ class Engine:
                 t_end = time.perf_counter()
                 put(("mt", text_en, (t_end - tm) * 1000 - tts_ms))
                 clauses = self.tts.plan(text_en) if text_en else []
+                if head is None and (filler or self._is_filler(text_en)):
+                    self.filler_skipped = getattr(self, "filler_skipped", 0) + 1
+                    clauses = []
                 if head is None:
                     gen = self.tts.synth_clauses(clauses, True)
                 else:
@@ -1418,9 +1431,11 @@ class Engine:
                     await self.emit("mt_final", ev)
                     self._mt_remember(stream_id, seg.text_es, v)
                 else:
+                    pcm = hold.feed(v.pcm) if hold else v.pcm
+                    self._note_tts(pcm, v.sample_rate)
                     await self.emit(
                         "tts_chunk",
-                        {"stream_id": stream_id, "pcm": hold.feed(v.pcm) if hold else v.pcm, "sample_rate": v.sample_rate,
+                        {"stream_id": stream_id, "pcm": pcm, "sample_rate": v.sample_rate,
                          "planned_text_en": extra, "source_span_s": span, "seg_id": seg.seg_id},
                     )
             await fut
@@ -1429,6 +1444,10 @@ class Engine:
                 fut.cancel()
 
     async def _speak(self, stream_id, seg, text_en, span, entry: SpecEntry | None = None) -> None:
+        # T-92: frase solo muletilla: queda en subtítulos (mt_final ya salió), no se dice.
+        if self._is_filler(text_en, getattr(seg, "text_es", None) if getattr(seg, "clause", 0) == 0 else None):
+            self.filler_skipped = getattr(self, "filler_skipped", 0) + 1
+            return
         loop = asyncio.get_running_loop()
         q: asyncio.Queue = asyncio.Queue()
         pre = entry.first_chunks if entry is not None and entry.first_chunks else None
@@ -1459,6 +1478,44 @@ class Engine:
             if not fut.done():
                 fut.cancel()
 
+    # ------------------------------------------------- T-92 retraso de la voz en charla continua
+    @property
+    def _speed_adaptive(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_TTS_SPEED_ADAPTIVE")
+        return (v == "1") if v in ("0", "1") else self.cfg.tts_speed_adaptive
+
+    @property
+    def _skip_fillers(self) -> bool:
+        v = os.environ.get("OPENTRADUCTOR_TTS_SKIP_FILLERS")
+        return (v == "1") if v in ("0", "1") else self.cfg.tts_skip_fillers
+
+    def playback_queue_s(self) -> float:
+        fn = getattr(self, "playback_queue_fn", None)
+        if fn is not None:
+            try:
+                return max(0.0, float(fn()))
+            except Exception:  # noqa: BLE001
+                pass
+        return max(0.0, getattr(self, "_play_end", 0.0) - time.monotonic())
+
+    def _note_tts(self, pcm: bytes, sr: int) -> None:
+        now = time.monotonic()
+        self._play_end = max(getattr(self, "_play_end", 0.0), now) + len(pcm) / 2 / sr
+
+    def _tts_speed(self) -> float:
+        c = self.cfg
+        q = self.playback_queue_s()
+        v = K.adaptive_speed(q, c.speed, c.tts_speed_queue_lo_s, c.tts_speed_queue_hi_s, c.tts_speed_max)
+        st = self.speed_stats
+        if v > c.speed:
+            st["clauses_fast"] += 1
+        st["max_speed"] = round(max(st["max_speed"], v), 3)
+        st["max_queue_s"] = round(max(st["max_queue_s"], q), 2)
+        return v
+
+    def _is_filler(self, *texts) -> bool:
+        return self._skip_fillers and any(K.is_filler_only(t) for t in texts if t)
+
     def _tail_hold(self):
         """T-47: TailHold por frase si el tail trim está activo (solo la cola de la frase; ver K.TailHold)."""
         return K.TailHold(K.KokoroTTS.SAMPLE_RATE) if getattr(self.tts, "trim_tail", False) else None
@@ -1483,8 +1540,10 @@ class Engine:
                     {"stream_id": stream_id, "error_kind": f"{type(v).__name__}: {v}"},
                 )
                 continue
+            pcm = hold.feed(v.pcm) if hold else v.pcm
+            self._note_tts(pcm, v.sample_rate)
             await self.emit(
                 "tts_chunk",
-                {"stream_id": stream_id, "pcm": hold.feed(v.pcm) if hold else v.pcm, "sample_rate": v.sample_rate,
+                {"stream_id": stream_id, "pcm": pcm, "sample_rate": v.sample_rate,
                  "planned_text_en": text_en, "source_span_s": span, "seg_id": seg.seg_id},
             )

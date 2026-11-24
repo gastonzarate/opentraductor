@@ -310,6 +310,8 @@ class RuntimeService:
             "overflow_count": self._m["overflow_count"],
             "playback_queue_s": round(pl.queued_s, 3) if pl is not None else None,
             "playback_dropped_ms": pl_dropped,
+            # T-92: voz vieja saltada (frases enteras sin reproducir) cuando la cola pasó de 20 s.
+            "playback_skipped_s": round(getattr(pl, "skipped_s", 0.0), 2) if pl is not None else None,
             "playback_partial_blocks": pl.partial_blocks if pl is not None else None,
             "playback_status_events": pl.status_events if pl is not None else None,
             "last_first_audio_ms": None,  # el fin real de habla no se conoce en vivo
@@ -558,6 +560,8 @@ class RuntimeService:
             raise
         self._engine = eng
         self._engine_voice = self._pcfg.voice
+        if hasattr(eng, "playback_queue_fn"):  # T-92: velocidad de la voz según la cola REAL del Player
+            eng.playback_queue_fn = lambda: self._player.queued_s if self._player is not None else 0.0
         load = getattr(eng, "load_ms", {}) or {}
         for k in self._models:
             ms = load.get(k)
@@ -761,7 +765,7 @@ class RuntimeService:
             for p in (self._player, self._monitor):
                 if p is not None:
                     before = p.dropped_s
-                    p.write(f["pcm"], f["sample_rate"])
+                    p.write(f["pcm"], f["sample_rate"], key)
                     lost = p.dropped_s - before
                     if lost > 0:
                         self._m["overflow_count"] += 1

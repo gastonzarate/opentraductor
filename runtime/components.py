@@ -1083,6 +1083,40 @@ def clause_pause_keep_ms(clause: str, cap_ms: float, lead_margin_ms: float) -> f
     return max(0.0, pause - lead_margin_ms)
 
 
+def adaptive_speed(queued_s: float, base: float = 1.0, lo_s: float = 2.0, hi_s: float = 8.0,
+                   max_speed: float = 1.30) -> float:
+    """T-92: velocidad de Kokoro según los segundos de voz encolados sin reproducir. ``<= lo_s`` -> ``base``;
+    sube lineal hasta ``max_speed`` con ``>= hi_s``. Nunca baja de ``base``."""
+    top = max(base, max_speed)
+    if queued_s <= lo_s:
+        return base
+    if queued_s >= hi_s or hi_s <= lo_s:
+        return top
+    return base + (top - base) * (queued_s - lo_s) / (hi_s - lo_s)
+
+
+# T-92: frases que son solo muletilla no se dicen (siguen en subtítulos). Conservador: la frase ENTERA tiene que ser
+# muletilla; nunca se sacan palabras de una oración. Sin «no», «sí», «ok», «right»: solos pueden ser una respuesta.
+_FILLER_TOKENS = frozenset("eh ehh ehm em emm mm mmm hm hmm ah aah uh uhh um umm uhm".split())
+_FILLER_PHRASES = frozenset({
+    "este", "bueno", "o sea", "se entiende", "me explico", "me seguís", "me siguen",
+    "got it", "you know", "you see", "i mean", "well", "so", "understood", "is that clear",
+    "does that make sense", "do you understand", "you follow",
+})
+
+
+def is_filler_only(text: str | None) -> bool:
+    """True si ``text`` (es o en) es solo muletilla: todas sus palabras son sonidos de duda (eh, em, um...) o, sin
+    ellos, la frase completa está en la lista corta. Texto vacío o sin letras -> False (no decide)."""
+    if not text:
+        return False
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    if not words:
+        return False
+    rest = [w for w in words if w not in _FILLER_TOKENS]
+    return not rest or " ".join(rest) in _FILLER_PHRASES
+
+
 class KokoroTTS:
     SAMPLE_RATE = 24000
 
@@ -1114,6 +1148,21 @@ class KokoroTTS:
         self.tail_trimmed_ms_total = 0.0
         # T-58: recorte inicial también en el 1.er chunk de cada cláusula (no solo de la frase). False = sin cambio.
         self.trim_lead_all_clauses = trim_lead_all_clauses
+        # T-92: velocidad por cláusula (p. ej. según la cola de reproducción). None = siempre self.speed.
+        self.speed_fn = None
+        self.last_speed = speed
+
+    def _clause_speed(self) -> float:
+        fn = getattr(self, "speed_fn", None)
+        if fn is None:
+            v = self.speed
+        else:
+            try:
+                v = float(fn())
+            except Exception:  # noqa: BLE001
+                v = self.speed
+        self.last_speed = v
+        return v
 
     def plan(self, text_en: str) -> list[str]:
         """Cláusulas que se sintetizarán (determinista para un mismo texto y config)."""
@@ -1146,7 +1195,7 @@ class KokoroTTS:
         for clause in clauses:
             head = True  # 1.er chunk con audio de esta cláusula
             for r in self.pipe(
-                clause, voice=self.voice, speed=self.speed, split_pattern=None
+                clause, voice=self.voice, speed=self._clause_speed(), split_pattern=None
             ):
                 a = r.audio
                 if a is None:
@@ -1190,7 +1239,7 @@ class KokoroTTS:
         for clause in clauses:
             keep_ms = clause_pause_keep_ms(clause, cap_ms, margin)
             held = None  # último chunk de la cláusula: se emite al saber que no viene otro
-            for r in self.pipe(clause, voice=self.voice, speed=self.speed, split_pattern=None):
+            for r in self.pipe(clause, voice=self.voice, speed=self._clause_speed(), split_pattern=None):
                 a = r.audio
                 if a is None:
                     continue

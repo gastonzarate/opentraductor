@@ -65,7 +65,7 @@ class FakePlayer:
         FakePlayer.order.append(("player", time.monotonic()))
     def stop(self): self.stopped = True
     def set_volume(self, v): self.volume = v
-    def write(self, pcm, sr):
+    def write(self, pcm, sr, seg=None):
         self.writes.append((len(pcm), sr))
         self.dropped_s += FakePlayer.lose_s
 

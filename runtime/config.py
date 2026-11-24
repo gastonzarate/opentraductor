@@ -261,6 +261,15 @@ class PipelineConfig:
     # TTS
     voice: str = "af_heart"
     speed: float = 1.0
+    # T-92 (BUG-9): velocidad adaptativa por cláusula según la voz encolada sin reproducir: speed con <= lo_s,
+    # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
+    tts_speed_adaptive: bool = True
+    tts_speed_queue_lo_s: float = 2.0
+    tts_speed_queue_hi_s: float = 8.0
+    tts_speed_max: float = 1.30
+    # T-92: frases que son solo muletilla (eh, em, ¿se entiende?, got it?) no se sintetizan; siguen en subtítulos.
+    # $OPENTRADUCTOR_TTS_SKIP_FILLERS=0 = se dicen como hoy.
+    tts_skip_fillers: bool = True
     # Recorte del silencio inicial del TTS; None = desactivado. Valor = margen (ms) que se conserva antes del primer sonido.
     tts_trim_lead_margin_ms: float | None = 30.0  # T-58: default 30 ms (antes None)
     # T-47: recorte del silencio FINAL de cada chunk TTS (-60 dBFS, bloques de 5 ms, conserva 80 ms; prefijo PCM exacto).
