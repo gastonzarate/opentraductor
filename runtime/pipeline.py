@@ -1431,7 +1431,8 @@ class Engine:
                     await self.emit("mt_final", ev)
                     self._mt_remember(stream_id, seg.text_es, v)
                 else:
-                    pcm = hold.feed(v.pcm) if hold else v.pcm
+                    pcm = self._trim_chunk(v.pcm, v.sample_rate)
+                    pcm = hold.feed(pcm) if hold else pcm
                     self._note_tts(pcm, v.sample_rate)
                     await self.emit(
                         "tts_chunk",
@@ -1500,6 +1501,23 @@ class Engine:
                 pass
         return max(0.0, getattr(self, "_play_end", 0.0) - time.monotonic())
 
+    def _trim_chunk(self, pcm: bytes, sr: int) -> bytes:
+        """T-93: deja <= tts_trim_keep_ms de silencio al inicio y al final de cada chunk (bajo tts_catchup)."""
+        from .config import env_opt_seconds, tts_catchup_on
+        cfg = getattr(self, "cfg", None)
+        if cfg is None or not tts_catchup_on(cfg):
+            return pcm
+        keep = env_opt_seconds("OPENTRADUCTOR_TTS_TRIM_KEEP_MS", getattr(cfg, "tts_trim_keep_ms", None))
+        if keep is None:
+            return pcm
+        from .audio_io import trim_silence_pcm
+        out, n = trim_silence_pcm(pcm, sr, keep)
+        if n:
+            st = getattr(self, "speed_stats", None)
+            if st is not None:
+                st["trimmed_silence_s"] = round(st.get("trimmed_silence_s", 0.0) + n / sr, 3)
+        return out
+
     def _note_tts(self, pcm: bytes, sr: int) -> None:
         now = time.monotonic()
         self._play_end = max(getattr(self, "_play_end", 0.0), now) + len(pcm) / 2 / sr
@@ -1543,7 +1561,8 @@ class Engine:
                     {"stream_id": stream_id, "error_kind": f"{type(v).__name__}: {v}"},
                 )
                 continue
-            pcm = hold.feed(v.pcm) if hold else v.pcm
+            pcm = self._trim_chunk(v.pcm, v.sample_rate)
+            pcm = hold.feed(pcm) if hold else pcm
             self._note_tts(pcm, v.sample_rate)
             await self.emit(
                 "tts_chunk",

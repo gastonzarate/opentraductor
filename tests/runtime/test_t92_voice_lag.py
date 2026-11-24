@@ -98,7 +98,7 @@ def test_engine_speed_follows_estimated_queue(monkeypatch):
     e._note_tts(_pcm(10, sr=24000), 24000)  # 10 s encolados -> tope
     assert e.playback_queue_s() == pytest.approx(10.0, abs=0.1)
     assert e._tts_speed() == pytest.approx(1.30)
-    e.playback_queue_fn = lambda: 3.5  # la cola real del Player manda (rampa 2->5 s)
+    e.playback_queue_fn = lambda: 2.0  # la cola real del Player manda (rampa 1->3 s, T-93)
     assert e._tts_speed() == pytest.approx(1.15)
     assert e.speed_stats["clauses_fast"] == 2
 
@@ -139,36 +139,36 @@ def test_speed_params_env_override(monkeypatch):
     from runtime import config as C
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "6")
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_MAX", "1.25")
-    assert C.tts_speed_params(PipelineConfig()) == (2.0, 6.0, 1.25)
+    assert C.tts_speed_params(PipelineConfig()) == (1.0, 6.0, 1.25)
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "x")
-    assert C.tts_speed_params(PipelineConfig())[1] == 5.0
+    assert C.tts_speed_params(PipelineConfig())[1] == 3.0
 
 
-def test_skip_old_default_6_env_and_master_flag(monkeypatch):
-    """T-93: default 6 s (elegido por p95 <= 5 s en la charla 1); env lo cambia; CATCHUP=0 lo apaga."""
+def test_skip_old_default_8_env_and_master_flag(monkeypatch):
+    """T-93: default 8 s (criterio del lead: voz saltada <= 5 %); env lo cambia; CATCHUP=0 lo apaga."""
     from types import SimpleNamespace
     from runtime.service import RuntimeService
     fake = SimpleNamespace(_pcfg=PipelineConfig())
-    assert PipelineConfig().player_skip_old_s == 6.0
+    assert PipelineConfig().player_skip_old_s == 8.0
     monkeypatch.delenv("OPENTRADUCTOR_TTS_CATCHUP", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", raising=False)
-    assert RuntimeService._skip_old_s(fake) == 6.0
+    assert RuntimeService._skip_old_s(fake) == 8.0
     monkeypatch.setenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", "10")
     assert RuntimeService._skip_old_s(fake) == 10.0
     monkeypatch.setenv("OPENTRADUCTOR_TTS_CATCHUP", "0")
     assert RuntimeService._skip_old_s(fake) is None
 
 
-def test_speed_ramp_default_2_to_5_cap_130(monkeypatch):
-    """T-93: rampa por defecto 2->5 s, tope 1,30 (lo que usa el Engine vía tts_speed_params)."""
+def test_speed_ramp_default_1_to_3_cap_130(monkeypatch):
+    """T-93: rampa por defecto 1->3 s, tope 1,30 (lo que usa el Engine vía tts_speed_params)."""
     from runtime import config as C
     for k in ("OPENTRADUCTOR_TTS_SPEED_LO_S", "OPENTRADUCTOR_TTS_SPEED_HI_S", "OPENTRADUCTOR_TTS_SPEED_MAX"):
         monkeypatch.delenv(k, raising=False)
     p = C.tts_speed_params(PipelineConfig())
-    assert p == (2.0, 5.0, 1.30)
-    assert K.adaptive_speed(3.5, 1.0, *p) == pytest.approx(1.15)
-    assert K.adaptive_speed(5.0, 1.0, *p) == pytest.approx(1.30)
-    assert K.adaptive_speed(1.5, 1.0, *p) == 1.0
+    assert p == (1.0, 3.0, 1.30)
+    assert K.adaptive_speed(2.0, 1.0, *p) == pytest.approx(1.15)
+    assert K.adaptive_speed(3.0, 1.0, *p) == pytest.approx(1.30)
+    assert K.adaptive_speed(0.8, 1.0, *p) == 1.0
 
 
 def _cut_player(skip_old_s=None, cut_cur_s=3.0):
@@ -208,13 +208,13 @@ def test_cut_current_small_queue_or_same_seg_untouched():
     assert list(q._tags) == ["b", "b"] and q.skipped_s == pytest.approx(6.0)
 
 
-def test_cut_current_off_by_default_env_and_master_flag(monkeypatch):
+def test_cut_current_default_5_env_and_master_flag(monkeypatch):
     from types import SimpleNamespace
     from runtime.service import RuntimeService
     fake = SimpleNamespace(_pcfg=PipelineConfig())
     for k in ("OPENTRADUCTOR_TTS_CATCHUP", "OPENTRADUCTOR_PLAYER_CUT_CUR_S", "OPENTRADUCTOR_PLAYER_SKIP_OLD_S"):
         monkeypatch.delenv(k, raising=False)
-    assert RuntimeService._cut_cur_s(fake) is None
+    assert RuntimeService._cut_cur_s(fake) == 5.0
     monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_CUR_S", "3")
     assert RuntimeService._cut_cur_s(fake) == 3.0
     monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_CUR_S", "")
@@ -230,3 +230,42 @@ def test_cut_current_off_by_default_env_and_master_flag(monkeypatch):
     assert RuntimeService._cut_cur_s(fake) is None
     d = audio_io.Device("out", "Out", 0, 0, 1, 1000.0, True, True)
     assert audio_io.Player(d).cut_cur_s is None
+
+
+@pytest.mark.parametrize("t,want", [
+    ("Revenue grew 30 percent.", True), ("Then Maria joined the call.", True), ("Thanks, I agree.", False),
+    ("So we start. Next we move on.", False), ("We use Kubernetes here.", True), ("", False),
+])
+def test_protected_text(t, want):
+    assert audio_io.protected_text(t) is want
+
+
+def test_skip_and_cut_never_touch_protected_and_are_logged():
+    p = _cut_player(skip_old_s=2.0, cut_cur_s=1.0)
+    p.write(_pcm(1), 1000, "a", text_en="We met Maria today.")
+    _play(p, 10)
+    p.write(_pcm(2), 1000, "a", text_en="We met Maria today.")
+    p.write(_pcm(2), 1000, "b", text_en="It grew 30 percent.")
+    p.write(_pcm(2), 1000, "c", text_en="that is the plan")
+    p.write(_pcm(1), 1000, "d", text_en="right")
+    assert p.skipped_s == pytest.approx(2.0)  # solo c (sin cifras ni nombres); a (en curso) y b protegidas
+    assert [r["seg_id"] for r in p.skipped_segs] == ["c"]
+    r = p.skipped_segs[0]
+    assert r["reason"] == "skip_old" and r["text_en"] == "that is the plan" and r["s"] == pytest.approx(2.0)
+    q = _cut_player(cut_cur_s=1.0)
+    q.write(_pcm(1), 1000, "a", text_en="so we go")
+    _play(q, 10)
+    q.write(_pcm(2), 1000, "a")
+    q.write(_pcm(1), 1000, "b", text_en="ok")
+    assert q.skipped_segs[-1]["reason"] == "cut_cur" and q.skipped_segs[-1]["text_en"] == "so we go"
+
+
+def test_trim_silence_pcm_keeps_80ms():
+    sr = 1000
+    x = np.concatenate([np.zeros(500), np.full(200, 3000), np.zeros(300)]).astype("<i2")
+    out, n = audio_io.trim_silence_pcm(x.tobytes(), sr, 80)
+    y = np.frombuffer(out, dtype="<i2")
+    assert y.size == 80 + 200 + 80 and n == 640
+    silent = np.zeros(100, dtype="<i2").tobytes()
+    assert audio_io.trim_silence_pcm(silent, sr, 80) == (silent, 0)
+    assert audio_io.trim_silence_pcm(b"\x00", sr, 80) == (b"\x00", 0)

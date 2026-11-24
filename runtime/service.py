@@ -314,6 +314,8 @@ class RuntimeService:
             "playback_skipped_s": round(getattr(pl, "skipped_s", 0.0), 2) if pl is not None else None,
             # T-93: parte de playback_skipped_s que salió de recortar la frase en curso (player_cut_cur_s).
             "playback_cut_cur_s": round(getattr(pl, "cut_cur_s_total", 0.0), 2) if pl is not None else None,
+            # T-93: un registro por salto o recorte (seg_id = id del historial, text_en, s, reason, queue_s, t).
+            "playback_skipped_segs": list(getattr(pl, "skipped_segs", ())) if pl is not None else None,
             "playback_partial_blocks": pl.partial_blocks if pl is not None else None,
             "playback_status_events": pl.status_events if pl is not None else None,
             "last_first_audio_ms": None,  # el fin real de habla no se conoce en vivo
@@ -784,7 +786,7 @@ class RuntimeService:
             for p in (self._player, self._monitor):
                 if p is not None:
                     before = p.dropped_s
-                    p.write(f["pcm"], f["sample_rate"], key)
+                    p.write(f["pcm"], f["sample_rate"], key, text_en=plan)
                     lost = p.dropped_s - before
                     if lost > 0:
                         self._m["overflow_count"] += 1

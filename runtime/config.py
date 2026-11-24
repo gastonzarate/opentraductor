@@ -268,16 +268,21 @@ class PipelineConfig:
     tts_catchup: bool = True
     # T-93: 6 s = mínimo con p95 fin de habla->voz <= 5 s en la charla 1 (simulación QA: salta ~10 % de la voz,
     # que sigue en subtítulos). $OPENTRADUCTOR_PLAYER_SKIP_OLD_S lo cambia para A/B.
-    player_skip_old_s: float = 6.0
+    # T-93 (criterio del lead: voz saltada <= 5 %, nunca frases con cifras o nombres): 8 s. Sim charla 1 con
+    # recorte 5 + rampa 1->3 + silencio <= 80 ms: p95 5,6 s, voz no oída 3,6 %.
+    player_skip_old_s: float = 8.0
     # T-93: al llegar una frase nueva con cola > este valor, se cortan las cláusulas no empezadas de la frase en
-    # curso (la que suena termina). Apagado por defecto: el lead fijó voz saltada <= 5 % y la sim da 17,6 % con
-    # skip 4 + recorte 3. $OPENTRADUCTOR_PLAYER_CUT_CUR_S lo prende para A/B (vacío o < 0 = apagado).
-    player_cut_cur_s: float | None = None
+    # curso (la que suena termina; nunca si tiene cifras o nombres). $OPENTRADUCTOR_PLAYER_CUT_CUR_S (vacío o < 0 =
+    # apagado).
+    player_cut_cur_s: float | None = 5.0
+    # T-93: silencio máximo (ms) al inicio y al final de cada chunk de Kokoro (en la charla 1 había 68 s de silencio
+    # inicial en 433 chunks). $OPENTRADUCTOR_TTS_TRIM_KEEP_MS (vacío o < 0 = sin recorte).
+    tts_trim_keep_ms: float | None = 80.0
     # T-92 (BUG-9): velocidad adaptativa por cláusula según la voz encolada sin reproducir: speed con <= lo_s,
     # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
     tts_speed_adaptive: bool = True
-    tts_speed_queue_lo_s: float = 2.0
-    tts_speed_queue_hi_s: float = 5.0  # T-93: era 8; con skip 6 salta 107 s en vez de 137 s en la charla 1 (p95 4,9 s)
+    tts_speed_queue_lo_s: float = 1.0  # T-93: era 2
+    tts_speed_queue_hi_s: float = 3.0  # T-93: era 5 (antes 8); acelera antes para no tener que saltar
     tts_speed_max: float = 1.30
     # T-92: frases que son solo muletilla (eh, em, ¿se entiende?, got it?) no se sintetizan; siguen en subtítulos.
     # $OPENTRADUCTOR_TTS_SKIP_FILLERS=0 = se dicen como hoy.

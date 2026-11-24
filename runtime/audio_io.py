@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import collections
+import logging
 import inspect
 import math
 import re
@@ -347,6 +348,49 @@ class MicCapture:
                 _close_confirmed(s)
 
 
+_log = logging.getLogger("opentraductor.player")
+
+_NUM_RE = re.compile(r"\d")
+_WORD_RE = re.compile(r"[A-Za-z][\w'’-]*")
+_NOT_NAMES = {"I", "I'm", "I've", "I'll", "I'd", "OK", "Okay"}
+
+
+def protected_text(text: str | None) -> bool:
+    """T-93: frase en inglés con cifras o nombres propios (palabra con mayúscula que no abre oración). Esas
+    frases no se saltan ni se recortan en el Player."""
+    if not text:
+        return False
+    if _NUM_RE.search(text):
+        return True
+    start = True
+    for m in re.finditer(r"[A-Za-z][\w'’-]*|[.!?:;]", text):
+        w = m.group(0)
+        if w in ".!?:;":
+            start = True
+            continue
+        if not start and w[0].isupper() and w not in _NOT_NAMES:
+            return True
+        start = False
+    return False
+
+
+def trim_silence_pcm(pcm: bytes, sr: int, keep_ms: float, thr: int = 100) -> tuple[bytes, int]:
+    """T-93: deja como mucho ``keep_ms`` de silencio al inicio y al final de un chunk PCM s16 (|x| < thr, ~-50 dBFS:
+    el corte cae en silencio, sin clic). Devuelve (pcm, muestras quitadas). Todo silencio: sin cambios."""
+    if len(pcm) < 2 or len(pcm) % 2:
+        return pcm, 0
+    x = np.frombuffer(pcm, dtype="<i2")
+    loud = np.flatnonzero(np.abs(x.astype(np.int32)) >= thr)
+    if loud.size == 0:
+        return pcm, 0
+    k = int(sr * keep_ms / 1000)
+    a = max(0, int(loud[0]) - k)
+    b = min(x.size, int(loud[-1]) + 1 + k)
+    if a == 0 and b == x.size:
+        return pcm, 0
+    return x[a:b].tobytes(), x.size - (b - a)
+
+
 class Player:
     """Reproduce PCM mono (cualquier tasa) en un dispositivo de salida.
 
@@ -365,6 +409,8 @@ class Player:
         self.skip_old_s = skip_old_s
         self.cut_cur_s = cut_cur_s
         self.cut_cur_s_total = 0.0  # parte de skipped_s que vino de recortar la frase en curso
+        self._seg_info: dict = {}  # seg -> {"text_en", "protect"} (acotado)
+        self.skipped_segs: collections.deque = collections.deque(maxlen=500)  # T-93: un registro por salto/recorte
         self.skipped_s = 0.0
         self.skipped_segments = 0
         self._tags: collections.deque = collections.deque()  # seg de cada bloque de _buf (alineado)
@@ -428,10 +474,21 @@ class Player:
     def set_volume(self, v: float) -> None:
         self.volume = max(0.0, min(1.0, float(v)))
 
-    def write(self, pcm_s16: bytes, sample_rate: int, seg=None) -> None:
+    def write(self, pcm_s16: bytes, sample_rate: int, seg=None, text_en: str | None = None,
+              protect: bool | None = None) -> None:
         x = np.frombuffer(pcm_s16, dtype="<i2").astype(np.float32) / 32768.0
         x = resample(x, sample_rate, self.sr)
         with self._lock:
+            if seg is not None and (text_en is not None or protect is not None):
+                info = self._seg_info.get(seg)
+                if info is None:
+                    if len(self._seg_info) > 1000:
+                        live = set(self._tags) | {self._cur_tag}
+                        self._seg_info = {k: v for k, v in self._seg_info.items() if k in live}
+                    info = self._seg_info[seg] = {"text_en": None, "protect": False}
+                if text_en:
+                    info["text_en"] = text_en
+                info["protect"] = bool(info["protect"] or protect or protected_text(text_en))
             new_seg = seg is not None and seg != self._cur_tag and seg not in self._tags
             if self.skip_old_s is not None and (self._queued + x.size) / self.sr > self.skip_old_s:
                 self._skip_old(seg, x.size)
@@ -451,7 +508,8 @@ class Player:
         onda ya está en silencio (cola de Kokoro), así que no hace falta fundido."""
         limit = self.skip_old_s * self.sr
         while self._queued + extra > limit:
-            victim = next((t for t in self._tags if t is not None and t != self._cur_tag and t != incoming), None)
+            victim = next((t for t in self._tags if t is not None and t != self._cur_tag and t != incoming
+                           and not self._protected(t)), None)
             if victim is None:
                 return
             keep_b: collections.deque[np.ndarray] = collections.deque()
@@ -467,10 +525,25 @@ class Player:
             self._queued -= n
             self.skipped_s += n / self.sr
             self.skipped_segments += 1
+            self._note_skip(victim, n, "skip_old")
+
+    def _protected(self, seg) -> bool:
+        info = self._seg_info.get(seg)
+        return bool(info and info["protect"])
+
+    def _note_skip(self, seg, n: int, reason: str) -> None:
+        info = self._seg_info.get(seg) or {}
+        rec = {"seg_id": seg, "text_en": info.get("text_en"), "s": round(n / self.sr, 3), "reason": reason,
+               "queue_s": round(self._queued / self.sr, 3), "t": time.time()}
+        self.skipped_segs.append(rec)
+        _log.info("player skip reason=%s seg=%s s=%.2f queue_s=%.2f t=%.3f text_en=%r", reason, seg, rec["s"],
+                  rec["queue_s"], rec["t"], rec["text_en"])
 
     def _cut_current(self) -> None:
         """Con el lock tomado: saca de la cola los bloques de la frase que suena que todavía no empezaron."""
         cur = self._cur_tag
+        if self._protected(cur):
+            return
         keep_b: collections.deque[np.ndarray] = collections.deque()
         keep_t: collections.deque = collections.deque()
         n = 0
@@ -485,6 +558,7 @@ class Player:
             self._queued -= n
             self.skipped_s += n / self.sr
             self.cut_cur_s_total += n / self.sr
+            self._note_skip(cur, n, "cut_cur")
 
     def _cb(self, outdata, frames, t, status) -> None:
         if status:
