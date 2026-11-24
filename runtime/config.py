@@ -273,7 +273,7 @@ class PipelineConfig:
     # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
     tts_speed_adaptive: bool = True
     tts_speed_queue_lo_s: float = 2.0
-    tts_speed_queue_hi_s: float = 8.0
+    tts_speed_queue_hi_s: float = 5.0  # T-93: era 8; con skip 6 salta 107 s en vez de 137 s en la charla 1 (p95 4,9 s)
     tts_speed_max: float = 1.30
     # T-92: frases que son solo muletilla (eh, em, ¿se entiende?, got it?) no se sintetizan; siguen en subtítulos.
     # $OPENTRADUCTOR_TTS_SKIP_FILLERS=0 = se dicen como hoy.

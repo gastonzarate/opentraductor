@@ -98,7 +98,7 @@ def test_engine_speed_follows_estimated_queue(monkeypatch):
     e._note_tts(_pcm(10, sr=24000), 24000)  # 10 s encolados -> tope
     assert e.playback_queue_s() == pytest.approx(10.0, abs=0.1)
     assert e._tts_speed() == pytest.approx(1.30)
-    e.playback_queue_fn = lambda: 5.0  # la cola real del Player manda
+    e.playback_queue_fn = lambda: 3.5  # la cola real del Player manda (rampa 2->5 s)
     assert e._tts_speed() == pytest.approx(1.15)
     assert e.speed_stats["clauses_fast"] == 2
 
@@ -141,7 +141,7 @@ def test_speed_params_env_override(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_MAX", "1.25")
     assert C.tts_speed_params(PipelineConfig()) == (2.0, 6.0, 1.25)
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "x")
-    assert C.tts_speed_params(PipelineConfig())[1] == 8.0
+    assert C.tts_speed_params(PipelineConfig())[1] == 5.0
 
 
 def test_skip_old_default_6_env_and_master_flag(monkeypatch):
@@ -157,3 +157,15 @@ def test_skip_old_default_6_env_and_master_flag(monkeypatch):
     assert RuntimeService._skip_old_s(fake) == 10.0
     monkeypatch.setenv("OPENTRADUCTOR_TTS_CATCHUP", "0")
     assert RuntimeService._skip_old_s(fake) is None
+
+
+def test_speed_ramp_default_2_to_5_cap_130(monkeypatch):
+    """T-93: rampa por defecto 2->5 s, tope 1,30 (lo que usa el Engine vía tts_speed_params)."""
+    from runtime import config as C
+    for k in ("OPENTRADUCTOR_TTS_SPEED_LO_S", "OPENTRADUCTOR_TTS_SPEED_HI_S", "OPENTRADUCTOR_TTS_SPEED_MAX"):
+        monkeypatch.delenv(k, raising=False)
+    p = C.tts_speed_params(PipelineConfig())
+    assert p == (2.0, 5.0, 1.30)
+    assert K.adaptive_speed(3.5, 1.0, *p) == pytest.approx(1.15)
+    assert K.adaptive_speed(5.0, 1.0, *p) == pytest.approx(1.30)
+    assert K.adaptive_speed(1.5, 1.0, *p) == 1.0
