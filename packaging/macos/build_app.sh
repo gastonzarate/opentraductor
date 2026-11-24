@@ -15,6 +15,9 @@ echo "==> limpiando $APP"; rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$RES/a
 echo "==> compilando el shell (Swift)"
 swiftc -O -target arm64-apple-macos15.0 -o "$APP/Contents/MacOS/OpenTraductor" "$HERE"/Sources/OpenTraductor/*.swift
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" "$HERE/Info.plist" > "$APP/Contents/Info.plist"
+# CFBundleVersion tiene que ser numérico: el commit va en una clave propia (con "-dirty" si hay cambios sin commitear).
+COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"; [[ -z "$(git -C "$ROOT" status --porcelain -- runtime ui packaging pyproject.toml uv.lock)" ]] || COMMIT="$COMMIT-dirty"
+/usr/libexec/PlistBuddy -c "Add :OTGitCommit string $COMMIT" "$APP/Contents/Info.plist"
 
 echo "==> copiando runtime y UI"
 rsync -a --exclude '__pycache__' --exclude '*.pyc' "$ROOT/runtime" "$ROOT/ui" "$RES/app/"
