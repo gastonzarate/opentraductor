@@ -120,7 +120,8 @@ def main() -> int:
     # y un brazo "sin flags" medía Qwen sin glosario aunque la config lo encendiera (D1 de 95bea57: 66/96 en vez de 91/96).
     cfg = PipelineConfig()
     q = K.QwenMLX(a.model, normalize=cfg.mt_normalize, sense_prompt=cfg.mt_sense_prompt,
-                  sense_glossary=cfg.mt_sense_glossary, session_kv=cfg.mt_session_kv, draft_dir=cfg.mt_draft_dir)
+                  sense_glossary=cfg.mt_sense_glossary, session_kv=cfg.mt_session_kv, draft_dir=cfg.mt_draft_dir,
+                  concise=getattr(cfg, "mt_concise", False))
     q.translate("hola")  # calentamiento
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

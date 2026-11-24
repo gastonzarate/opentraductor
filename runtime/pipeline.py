@@ -383,7 +383,8 @@ class Engine:
                                                                                          sense_prompt=c.mt_sense_prompt,
                                                                                          sense_glossary=c.mt_sense_glossary,
                                                                                          session_kv=c.mt_session_kv,
-                                                                                         draft_dir=c.mt_draft_dir)))
+                                                                                         draft_dir=c.mt_draft_dir,
+                                                                                         concise=c.mt_concise)))
         else:
             self.mt = await self.cpu.run(lambda: timed("mt", lambda: K.MarianCT2(normalize=c.mt_normalize)))
         self.vad_proto = timed("vad", K.SileroVAD)

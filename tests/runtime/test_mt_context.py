@@ -330,3 +330,30 @@ def test_glossary_dom_not_in_history_turns(monkeypatch):
     p2 = q.prompt("Bajá el release, volvemos a la 1.2.3", ctx)
     assert p2.count("bajar (a deploy") == 1 and p2.rindex("bajar (a deploy") > p2.rindex("|user:")
     assert any("credited, deposited" in g for g in _dom_only("Hoy me acreditaron el sueldo"))
+
+
+def _qwen_init(monkeypatch, env=None, **kw):
+    import sys
+    import types
+
+    fake = types.ModuleType("mlx_lm")
+    fake.load = lambda d: (object(), FakeTok())
+    monkeypatch.setitem(sys.modules, "mlx_lm", fake)
+    monkeypatch.delenv("OPENTRADUCTOR_MT_CONCISE", raising=False)
+    if env is not None:
+        monkeypatch.setenv("OPENTRADUCTOR_MT_CONCISE", env)
+    return K.QwenMLX("x", sense_prompt=True, **kw)
+
+
+def test_concise_off_by_default_keeps_system(monkeypatch):
+    from runtime.config import PipelineConfig
+
+    assert PipelineConfig().mt_concise is False
+    q = _qwen_init(monkeypatch)
+    assert q.system == K.QWEN_SYSTEM + K.QWEN_SENSE and not q.concise
+
+
+def test_concise_flag_and_env_append_to_system(monkeypatch):
+    assert _qwen_init(monkeypatch, concise=True).system == K.QWEN_SYSTEM + K.QWEN_SENSE + K.QWEN_CONCISE
+    assert _qwen_init(monkeypatch, env="1").system.endswith(K.QWEN_CONCISE)
+    assert _qwen_init(monkeypatch, env="0", concise=True).system == K.QWEN_SYSTEM + K.QWEN_SENSE

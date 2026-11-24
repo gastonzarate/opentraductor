@@ -342,6 +342,11 @@ QWEN_SENSE = (" Translate the meaning in the context of the conversation, not wo
               "luca = a thousand pesos, afano = rip-off/theft, al pedo = for nothing/pointless, "
               "fiaca = laziness). "
               "Earlier turns are context only: translate just the last Spanish message.")
+# T-95: modo conciso (env OPENTRADUCTOR_MT_CONCISE=1/0 o mt_concise): menos palabras en inglés por frase, mismo
+# sentido, para que el TTS dure menos y baje el atraso p95. Va al final del system: entra en el prefijo de la caché.
+QWEN_CONCISE = (" Be concise, as a live interpreter would: use the fewest natural English words that keep the full "
+                "meaning. Drop filler words, hesitations, repetitions and false starts (o sea, bueno, digamos, este, "
+                "viste, ¿no?), but never drop numbers, dates, names, negations or technical terms.")
 # T-74 palanca 2 (OPENTRADUCTOR_MT_CTX_ES=1): encabezado del bloque de historia en español, ver QwenMLX.prompt().
 QWEN_CTX_ES = "Earlier in the meeting (Spanish, context only, do not translate):"
 # T-58 opción acotada (17/11): QWEN_SENSE completo bajó el BLEU del gate 72,8 -> 64,6 (perdió «ni... ni», imperativos,
@@ -622,7 +627,7 @@ class QwenMLX:
 
     def __init__(self, model_dir, normalize: bool = False, sense_prompt: bool = False,
                  session_kv: bool = False, sense_glossary: bool = False, draft_dir=None,
-                 num_draft_tokens: int = 3) -> None:
+                 num_draft_tokens: int = 3, concise: bool = False) -> None:
         from mlx_lm import load
 
         self.model, self.tok = load(str(model_dir))
@@ -634,7 +639,9 @@ class QwenMLX:
         self.normalize = normalize
         v = os.environ.get("OPENTRADUCTOR_MT_SENSE")  # 1/0 fuerza el prompt por sentido (A/B y gate sin tocar configs)
         sense_prompt = (v == "1") if v in ("0", "1") else sense_prompt
-        self.system = QWEN_SYSTEM + (QWEN_SENSE if sense_prompt else "")
+        v = os.environ.get("OPENTRADUCTOR_MT_CONCISE")  # T-95: 1/0 fuerza el modo conciso
+        self.concise = (v == "1") if v in ("0", "1") else concise
+        self.system = QWEN_SYSTEM + (QWEN_SENSE if sense_prompt else "") + (QWEN_CONCISE if self.concise else "")
         v = os.environ.get("OPENTRADUCTOR_MT_GLOSSARY")  # 1/0 fuerza el glosario acotado (gate sin tocar configs)
         self.glossary = (v == "1") if v in ("0", "1") else sense_glossary
         self._hybrid = "enable_thinking" in (getattr(self.tok, "chat_template", None) or "")

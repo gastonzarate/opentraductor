@@ -323,6 +323,9 @@ class PipelineConfig:
     # T-77 (18/11): contexto largo por defecto (pedido de la persona: «mucho contexto»). Máximo de frases; el tope
     # real lo pone mt_context_tokens. 0 = sin historia (camino viejo).
     mt_context_turns: int = 200
+    # T-95: traducción más concisa (QWEN_CONCISE, solo Qwen). Apagada hasta medir ctx200 y términos de la charla 1.
+    # Env OPENTRADUCTOR_MT_CONCISE=1/0 manda.
+    mt_concise: bool = False
     # T-58 contexto largo (pedido 17/11): caché KV de Qwen que sobrevive entre frases; cada frase solo hace prefill de
     # sus tokens nuevos. Con mt_context_turns > 0 la historia se recorta en bloque (n -> n/2) para no romper el prefijo.
     # T-77: encendido por defecto (A/B de T-68 en artifacts/t68-kv95: MT p50 −5 ms, 91/96 igual). Env =0 lo apaga.
