@@ -356,7 +356,7 @@ class Player:
     """
 
     def __init__(self, dev: Device, volume: float = 1.0, max_queue_s: float = 60.0,
-                 latency: str | None = None, skip_old_s: float | None = 20.0) -> None:
+                 latency: str | None = None, skip_old_s: float | None = 6.0) -> None:
         self.dev = dev
         self.skip_old_s = skip_old_s
         self.skipped_s = 0.0

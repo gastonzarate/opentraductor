@@ -142,3 +142,18 @@ def test_speed_params_env_override(monkeypatch):
     assert C.tts_speed_params(PipelineConfig()) == (2.0, 6.0, 1.25)
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "x")
     assert C.tts_speed_params(PipelineConfig())[1] == 8.0
+
+
+def test_skip_old_default_6_env_and_master_flag(monkeypatch):
+    """T-93: default 6 s (elegido por p95 <= 5 s en la charla 1); env lo cambia; CATCHUP=0 lo apaga."""
+    from types import SimpleNamespace
+    from runtime.service import RuntimeService
+    fake = SimpleNamespace(_pcfg=PipelineConfig())
+    assert PipelineConfig().player_skip_old_s == 6.0
+    monkeypatch.delenv("OPENTRADUCTOR_TTS_CATCHUP", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", raising=False)
+    assert RuntimeService._skip_old_s(fake) == 6.0
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", "10")
+    assert RuntimeService._skip_old_s(fake) == 10.0
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_CATCHUP", "0")
+    assert RuntimeService._skip_old_s(fake) is None

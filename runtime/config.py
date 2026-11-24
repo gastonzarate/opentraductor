@@ -266,7 +266,9 @@ class PipelineConfig:
     # $OPENTRADUCTOR_TTS_CATCHUP=0 = camino de antes: speed fijo, se dicen las muletillas, el Player descarta lo
     # NUEVO pasados 60 s. Ver tts_catchup_on().
     tts_catchup: bool = True
-    player_skip_old_s: float = 20.0
+    # T-93: 6 s = mínimo con p95 fin de habla->voz <= 5 s en la charla 1 (simulación QA: salta ~10 % de la voz,
+    # que sigue en subtítulos). $OPENTRADUCTOR_PLAYER_SKIP_OLD_S lo cambia para A/B.
+    player_skip_old_s: float = 6.0
     # T-92 (BUG-9): velocidad adaptativa por cláusula según la voz encolada sin reproducir: speed con <= lo_s,
     # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
     tts_speed_adaptive: bool = True
