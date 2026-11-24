@@ -846,3 +846,21 @@ def test_subtitles_only_runs_without_player_and_persists(tmp_path):
         assert s.history(10, 0)["total"] == 1
     finally:
         s.close()
+
+
+def test_status_exposes_trimmed_silence(tmp_path):
+    """T-93: /status muestra el silencio recortado de Kokoro (Pipeline.speed_stats.trimmed_silence_s)."""
+    s = RuntimeService(tmp_path / "t.db", pipeline_cfg=PipelineConfig(), engine_factory=FakeEngine,
+                       audio=FakeAudio, preflight=ok_preflight)
+    try:
+        assert s.status()["metrics"]["tts_trimmed_silence_s"] is None  # sin motor
+        configure_ok(s)
+        s.start()
+        assert wait(lambda: s.status()["state"] == "running")
+        assert s.status()["metrics"]["tts_trimmed_silence_s"] is None  # motor sin speed_stats
+        s._engine.speed_stats = {"clauses_fast": 0}
+        assert s.status()["metrics"]["tts_trimmed_silence_s"] == 0.0  # todavía no recortó nada
+        s._engine.speed_stats["trimmed_silence_s"] = 12.345
+        assert s.status()["metrics"]["tts_trimmed_silence_s"] == 12.35
+    finally:
+        s.close()

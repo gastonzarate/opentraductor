@@ -316,11 +316,20 @@ class RuntimeService:
             "playback_cut_cur_s": round(getattr(pl, "cut_cur_s_total", 0.0), 2) if pl is not None else None,
             # T-93: un registro por salto o recorte (seg_id = id del historial, text_en, s, reason, queue_s, t).
             "playback_skipped_segs": list(getattr(pl, "skipped_segs", ())) if pl is not None else None,
+            # T-93: silencio quitado al inicio/fin de los chunks de Kokoro (Pipeline.speed_stats).
+            "tts_trimmed_silence_s": self._trimmed_silence_s(eng),
             "playback_partial_blocks": pl.partial_blocks if pl is not None else None,
             "playback_status_events": pl.status_events if pl is not None else None,
             "last_first_audio_ms": None,  # el fin real de habla no se conoce en vivo
             "last_endpoint_to_audio_ms": self._m["last_endpoint_to_audio_ms"],
         }
+
+    @staticmethod
+    def _trimmed_silence_s(eng) -> float | None:
+        st = getattr(eng, "speed_stats", None) if eng is not None else None
+        if not isinstance(st, dict):
+            return None
+        return round(float(st.get("trimmed_silence_s", 0.0)), 2)
 
     def engine_config(self) -> dict:
         """Configuración efectiva del motor (sin audio). Se registra en status y en cada sesión."""
