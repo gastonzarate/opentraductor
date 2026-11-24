@@ -570,7 +570,9 @@ class RuntimeService:
 
     def _skip_old_s(self) -> float | None:
         """T-92/T-93: umbral de cola (s) a partir del cual el Player salta frases viejas; None = política vieja."""
-        return float(self._pcfg.player_skip_old_s) if C.tts_catchup_on(self._pcfg) else None
+        if not C.tts_catchup_on(self._pcfg):
+            return None
+        return C._env_float("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", float(self._pcfg.player_skip_old_s))
 
     async def _open_monitor(self, dev_id: str) -> None:
         dev = self._audio.find_device(dev_id, "out")
