@@ -489,6 +489,7 @@ class RuntimeService:
                 self._player = self._audio.Player(dev_out, latency=self._latency_arg)
                 self._player.skip_old_s = self._skip_old_s()
                 self._player.cut_cur_s = self._cut_cur_s()
+                self._player.cut_max_s, self._player.cut_max_frac = self._cut_caps()
                 self._player.start()
                 self._audio_info["output"] = _stream_info(self._player.latency_s, self._player.blocksize)
             if cfg.get("monitor_id"):
@@ -595,11 +596,19 @@ class RuntimeService:
         d = getattr(self._pcfg, "player_cut_cur_s", None)
         return C.env_opt_seconds("OPENTRADUCTOR_PLAYER_CUT_CUR_S", None if d is None else float(d))
 
+    def _cut_caps(self) -> tuple[float | None, float | None]:
+        """T-93: topes del recorte de la frase en curso (segundos, fracción de la frase); None = sin tope."""
+        ms = getattr(self._pcfg, "player_cut_max_s", None)
+        mf = getattr(self._pcfg, "player_cut_max_frac", None)
+        return (C.env_opt_seconds("OPENTRADUCTOR_PLAYER_CUT_MAX_S", None if ms is None else float(ms)),
+                C.env_opt_seconds("OPENTRADUCTOR_PLAYER_CUT_MAX_FRAC", None if mf is None else float(mf)))
+
     async def _open_monitor(self, dev_id: str) -> None:
         dev = self._audio.find_device(dev_id, "out")
         m = self._audio.Player(dev, volume=self._cfg["monitor_volume"])
         m.skip_old_s = self._skip_old_s()
         m.cut_cur_s = self._cut_cur_s()
+        m.cut_max_s, m.cut_max_frac = self._cut_caps()
         m.start()
         self._monitor = m
 

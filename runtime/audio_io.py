@@ -400,14 +400,21 @@ class Player:
     T-93: con ``cut_cur_s`` (None = apagado), cuando llega la PRIMERA cláusula de una frase nueva y tras el salto la
     cola sigue > ``cut_cur_s``, se sacan las cláusulas aún no empezadas de la frase que suena (la cláusula que suena
     termina entera; corte en límite de cláusula, donde la onda ya está en silencio). También suma a ``skipped_s``.
+    Topes opcionales del recorte (None = sin tope): ``cut_max_s`` (segundos) y ``cut_max_frac`` (fracción de la
+    frase entera). Se sacan cláusulas desde el FINAL de la frase mientras quepan en el tope; si ni la última cabe,
+    no se recorta nada.
     """
 
     def __init__(self, dev: Device, volume: float = 1.0, max_queue_s: float = 60.0,
                  latency: str | None = None, skip_old_s: float | None = 6.0,
-                 cut_cur_s: float | None = None) -> None:
+                 cut_cur_s: float | None = None, cut_max_s: float | None = None,
+                 cut_max_frac: float | None = None) -> None:
         self.dev = dev
         self.skip_old_s = skip_old_s
         self.cut_cur_s = cut_cur_s
+        self.cut_max_s = cut_max_s
+        self.cut_max_frac = cut_max_frac
+        self._seg_n: dict = {}  # seg -> muestras escritas (largo de la frase, para cut_max_frac; acotado)
         self.cut_cur_s_total = 0.0  # parte de skipped_s que vino de recortar la frase en curso
         self._seg_info: dict = {}  # seg -> {"text_en", "protect"} (acotado)
         self.skipped_segs: collections.deque = collections.deque(maxlen=500)  # T-93: un registro por salto/recorte
@@ -490,6 +497,11 @@ class Player:
                     info["text_en"] = text_en
                 info["protect"] = bool(info["protect"] or protect or protected_text(text_en))
             new_seg = seg is not None and seg != self._cur_tag and seg not in self._tags
+            if seg is not None:
+                if new_seg and len(self._seg_n) > 1000:
+                    live = set(self._tags) | {self._cur_tag}
+                    self._seg_n = {k: v for k, v in self._seg_n.items() if k in live}
+                self._seg_n[seg] = self._seg_n.get(seg, 0) + x.size
             if self.skip_old_s is not None and (self._queued + x.size) / self.sr > self.skip_old_s:
                 self._skip_old(seg, x.size)
             if (new_seg and self.cut_cur_s is not None and self._cur_tag is not None
@@ -540,25 +552,45 @@ class Player:
                   rec["queue_s"], rec["t"], rec["text_en"])
 
     def _cut_current(self) -> None:
-        """Con el lock tomado: saca de la cola los bloques de la frase que suena que todavía no empezaron."""
+        """Con el lock tomado: saca de la cola los bloques de la frase que suena que todavía no empezaron (desde el
+        final, dentro de ``cut_max_s`` / ``cut_max_frac`` si están puestos)."""
         cur = self._cur_tag
         if self._protected(cur):
             return
+        sizes = [b.size for b, t in zip(self._buf, self._tags) if t == cur]
+        if not sizes:
+            return
+        allowed = float("inf")
+        if self.cut_max_s is not None:
+            allowed = min(allowed, self.cut_max_s * self.sr)
+        if self.cut_max_frac is not None:
+            allowed = min(allowed, self.cut_max_frac * self._seg_n.get(cur, sum(sizes)))
+        k, n = 0, 0  # cuántos bloques de cur se sacan (los últimos) y cuántas muestras
+        for sz in reversed(sizes):
+            if n + sz > allowed:
+                break
+            n += sz
+            k += 1
+        if not k:
+            return
+        drop_from = len(sizes) - k  # índice (entre los bloques de cur) desde el que se descarta
         keep_b: collections.deque[np.ndarray] = collections.deque()
         keep_t: collections.deque = collections.deque()
-        n = 0
+        i = 0
         for b, t in zip(self._buf, self._tags):
             if t == cur:
-                n += b.size
+                if i < drop_from:
+                    keep_b.append(b)
+                    keep_t.append(t)
+                i += 1
             else:
                 keep_b.append(b)
                 keep_t.append(t)
-        if n:
-            self._buf, self._tags = keep_b, keep_t
-            self._queued -= n
-            self.skipped_s += n / self.sr
-            self.cut_cur_s_total += n / self.sr
-            self._note_skip(cur, n, "cut_cur")
+        self._buf, self._tags = keep_b, keep_t
+        self._queued -= n
+        self.skipped_s += n / self.sr
+        self.cut_cur_s_total += n / self.sr
+        self._note_skip(cur, n, "cut_cur")
 
     def _cb(self, outdata, frames, t, status) -> None:
         if status:

@@ -208,6 +208,44 @@ def test_cut_current_small_queue_or_same_seg_untouched():
     assert list(q._tags) == ["b", "b"] and q.skipped_s == pytest.approx(6.0)
 
 
+def test_cut_current_caps_seconds_and_fraction():
+    """T-93: con topes, el recorte saca cláusulas desde el final mientras quepan; si ni la última cabe, nada."""
+    p = _cut_player()
+    p.cut_max_s = 3.0
+    for _ in range(4):
+        p.write(_pcm(1), 1000, "a")  # frase de 4 s en 4 cláusulas de 1 s
+    _play(p, 100)
+    p.write(_pcm(1), 1000, "b")  # cola 3,9 > 3: sin tope saldrían 3 s; con tope 3 s también
+    assert p.cut_cur_s_total == pytest.approx(3.0) and list(p._tags) == ["b"]
+    q = _cut_player()
+    q.cut_max_frac = 0.5
+    for _ in range(4):
+        q.write(_pcm(1), 1000, "a")
+    _play(q, 100)
+    q.write(_pcm(1), 1000, "b")  # 50 % de 4 s = 2 s: se van las 2 últimas, queda la 2.ª
+    assert q.cut_cur_s_total == pytest.approx(2.0) and list(q._tags) == ["a", "b"]
+    assert q.skipped_segs[-1]["s"] == pytest.approx(2.0) and q.skipped_segs[-1]["reason"] == "cut_cur"
+    r = _cut_player()
+    r.cut_max_s = 1.5
+    r.write(_pcm(1), 1000, "a")
+    r.write(_pcm(4), 1000, "a")  # la cláusula pendiente (4 s) no cabe en 1,5 s: no se recorta
+    _play(r, 100)
+    r.write(_pcm(1), 1000, "b")
+    assert r.skipped_s == 0.0 and list(r._tags) == ["a", "b"]
+
+
+def test_cut_caps_default_off_and_env(monkeypatch):
+    from types import SimpleNamespace
+    from runtime.service import RuntimeService
+    fake = SimpleNamespace(_pcfg=PipelineConfig())
+    for k in ("OPENTRADUCTOR_PLAYER_CUT_MAX_S", "OPENTRADUCTOR_PLAYER_CUT_MAX_FRAC"):
+        monkeypatch.delenv(k, raising=False)
+    assert RuntimeService._cut_caps(fake) == (None, None)
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_MAX_S", "3")
+    monkeypatch.setenv("OPENTRADUCTOR_PLAYER_CUT_MAX_FRAC", "0.5")
+    assert RuntimeService._cut_caps(fake) == (3.0, 0.5)
+
+
 def test_cut_current_default_5_env_and_master_flag(monkeypatch):
     from types import SimpleNamespace
     from runtime.service import RuntimeService
