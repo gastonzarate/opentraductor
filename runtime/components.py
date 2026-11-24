@@ -147,6 +147,17 @@ def coreml_cache_dir():
     return p
 
 
+def moonshine_transcription_interval(value: float | None) -> float | None:
+    """T-88: $OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S manda ("off" = default de la librería); si no, ``value``."""
+    v = os.environ.get("OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S")
+    if v is not None:
+        try:
+            return float(v) if float(v) > 0 else None
+        except ValueError:
+            return None
+    return value if value and value > 0 else None
+
+
 class MoonshineStreamer:
     """ASR streaming con Moonshine (CPU/ONNX, ``moonshine-voice``). Misma
     interfaz que ``ParakeetStreamer`` (start/add/finish).
@@ -158,7 +169,8 @@ class MoonshineStreamer:
     y completa las líneas (vaciado final). Solo disco, sin red.
     """
 
-    def __init__(self, model_dir, arch: str, update_interval: float) -> None:
+    def __init__(self, model_dir, arch: str, update_interval: float,
+                 transcription_interval: float | None = None) -> None:
         try:
             from moonshine_voice import ModelArch, Transcriber
         except ImportError as exc:  # noqa: BLE001
@@ -173,16 +185,20 @@ class MoonshineStreamer:
         self.ort_provider = asr_ort_provider()
         self.provider_error: str | None = None
         kw = dict(model_path=str(model_dir), model_arch=getattr(ModelArch, arch), update_interval=update_interval)
+        # T-88: cada cuánto libmoonshine rehace la transcripción del stream (opción "transcription_interval";
+        # sin pasarla, el motor da un parcial cada ~0,64 s). None = default de la librería.
+        self.transcription_interval = moonshine_transcription_interval(transcription_interval)
+        base = {} if self.transcription_interval is None else {"transcription_interval": str(self.transcription_interval)}
         if self.ort_provider == "cpu":
-            self.tr = Transcriber(**kw)
+            self.tr = Transcriber(**kw, options=base) if base else Transcriber(**kw)
         else:
             try:
-                self.tr = Transcriber(**kw, options={"ort_provider": self.ort_provider,
+                self.tr = Transcriber(**kw, options={**base, "ort_provider": self.ort_provider,
                                                      "coreml_cache_dir": str(coreml_cache_dir())})
             except Exception as exc:  # noqa: BLE001
                 self.provider_error = f"{type(exc).__name__}: {exc}"
                 self.ort_provider = "cpu"
-                self.tr = Transcriber(**kw)
+                self.tr = Transcriber(**kw, options=base) if base else Transcriber(**kw)
         self._stream = None
         self._lines: dict[int, str] = {}
         self.last_latency_ms = 0

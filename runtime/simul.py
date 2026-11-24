@@ -32,14 +32,15 @@ def agreed_prefix(prev: str, cur: str) -> list[str]:
 
 
 def next_clause_end(words: list[str], start: int, min_words: int = 5,
-                    extra_cues: frozenset[str] = frozenset()) -> int | None:
+                    extra_cues: frozenset[str] = frozenset(), comma_lookahead: bool = True) -> int | None:
     """Fin (exclusivo) de la próxima cláusula cerrada dentro de ``words[start:]``, o None.
 
     Límites: palabra que termina en ``, ; :`` (corte después) o una palabra/par de ``CLAUSE_CUES`` /
     ``CLAUSE_CUE_PAIRS`` (corte antes). La cláusula debe tener al menos ``min_words`` palabras, para no mandar
     a traducir fragmentos que el traductor no puede resolver solos. El límite debe estar confirmado entero: para
     un par, las dos palabras tienen que estar en ``words``. ``extra_cues`` suma palabras que abren cláusula
-    (p. ej. "y", "que"; config ``mt_simul_extra_cues``)."""
+    (p. ej. "y", "que"; config ``mt_simul_extra_cues``). ``comma_lookahead=False`` (T-88) acepta la coma en la
+    última palabra confirmada sin esperar a que se confirme la palabra siguiente (ahorra un parcial, ~0,64 s)."""
     for i in range(start, len(words)):
         w = _norm(words[i])
         if i - start >= min_words:
@@ -47,8 +48,30 @@ def next_clause_end(words: list[str], start: int, min_words: int = 5,
                 return i
             if i + 1 < len(words) and (w, _norm(words[i + 1])) in CLAUSE_CUE_PAIRS:
                 return i
-        if i + 1 - start >= min_words and words[i][-1:] in ",;:" and i + 1 < len(words):
+        if (i + 1 - start >= min_words and words[i][-1:] in ",;:"
+                and (i + 1 < len(words) or not comma_lookahead)):
             return i + 1
+    return None
+
+
+# T-88: palabras con las que un primer trozo no puede terminar (artículos, preposiciones, nexos, clíticos):
+# "dele al lugar toda la" -> no se corta ahí; se retrocede hasta "dele al lugar".
+_NO_END = frozenset("""
+el la los las lo un una unos unas al del de a en con por para sin sobre entre hasta desde hacia según tras
+y e o u ni que pero porque si como cuando donde mientras aunque se me te le les nos os su sus mi mis tu tus
+nuestro nuestra muy más menos tan toda todo todas todos cada otro otra otros otras este esta estos estas ese
+esa esos esas aquel aquella no ya hay es son fue era está están ha han he hemos va van
+""".split())
+
+
+def first_wait_k_end(words: list[str], k: int) -> int | None:
+    """T-88 (wait-k del primer trozo): fin del primer trozo cuando no hubo límite de cláusula pero ya hay al
+    menos ``k`` palabras confirmadas. Toma el prefijo confirmado más largo que no termine en una palabra de
+    ``_NO_END`` (ni en un número suelto), y que tenga al menos ``k`` palabras. None si no hay."""
+    for j in range(len(words), k - 1, -1):
+        last = _norm(words[j - 1])
+        if last and last not in _NO_END and not last.isdigit():
+            return j
     return None
 
 
@@ -92,9 +115,12 @@ def join_pieces(pieces: list[tuple[str, str]]) -> str:
 class ClauseCommitter:
     """Estado por segmento: último parcial, cuántas palabras ya se confirmaron como cláusulas."""
 
-    def __init__(self, min_words: int = 5, extra_cues: frozenset[str] | set[str] | tuple = ()) -> None:
+    def __init__(self, min_words: int = 5, extra_cues: frozenset[str] | set[str] | tuple = (),
+                 first_max_words: int = 0, comma_lookahead: bool = True) -> None:
         self.min_words = min_words
         self.extra_cues = frozenset(_norm(w.strip()) for w in extra_cues if _norm(w.strip()))
+        self.first_max_words = first_max_words  # T-88: >0 = wait-k para el primer trozo (0 = apagado)
+        self.comma_lookahead = comma_lookahead
         self.prev = ""
         self.committed = 0  # palabras ya entregadas como cláusulas
         self.words: list[str] = []  # esas palabras, tal como se mandaron a traducir
@@ -108,7 +134,9 @@ class ClauseCommitter:
             return []
         out = []
         while True:
-            end = next_clause_end(stable, self.committed, self.min_words, self.extra_cues)
+            end = next_clause_end(stable, self.committed, self.min_words, self.extra_cues, self.comma_lookahead)
+            if end is None and self.committed == 0 and self.first_max_words > 0:
+                end = first_wait_k_end(stable, self.first_max_words)
             if end is None:
                 return out
             out.append(" ".join(stable[self.committed:end]))
@@ -124,3 +152,15 @@ class ClauseCommitter:
         if [_norm(w) for w in words[: self.committed]] != [_norm(w) for w in self.words]:
             return None
         return " ".join(words[self.committed:])
+
+
+def simul_first_opts(cfg) -> dict:
+    """T-88: opciones del primer trozo para ClauseCommitter según config y env (OPENTRADUCTOR_MT_SIMUL_FIRST_K,
+    OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT=1/0). Lo usan el Engine y scripts/eval/t69_charlas_eval.py."""
+    import os
+
+    k = os.environ.get("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "")
+    nw = os.environ.get("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT")
+    first_k = int(k) if k.isdigit() else int(getattr(cfg, "mt_simul_first_k", 0) or 0)
+    nowait = (nw == "1") if nw in ("0", "1") else bool(getattr(cfg, "mt_simul_comma_nowait", False))
+    return {"first_max_words": first_k, "comma_lookahead": not nowait}

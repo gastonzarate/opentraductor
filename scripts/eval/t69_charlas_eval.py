@@ -73,7 +73,8 @@ def simul_split(es: str, min_words: int | None = None, cues: str | None = None) 
         min_words = int(mw) if mw.isdigit() and int(mw) > 0 else cfg.mt_simul_min_words
     if cues is None:
         cues = os.environ.get("OPENTRADUCTOR_MT_SIMUL_CUES", cfg.mt_simul_extra_cues)
-    c = ClauseCommitter(min_words=min_words, extra_cues=cues.split(","))
+    from runtime.simul import simul_first_opts  # noqa: E402
+    c = ClauseCommitter(min_words=min_words, extra_cues=cues.split(","), **simul_first_opts(cfg))
     w = es.split()
     pieces: list[str] = []
     for k in range(1, len(w) + 1):

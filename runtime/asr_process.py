@@ -19,11 +19,11 @@ def asr_process_enabled(cfg_value: bool) -> bool:
     return (v == "1") if v in ("0", "1") else bool(cfg_value)
 
 
-def _serve(conn, model_dir: str, arch: str, update_interval: float) -> None:
+def _serve(conn, model_dir: str, arch: str, update_interval: float, transcription_interval=None) -> None:
     from .components import MoonshineStreamer
 
     try:
-        asr = MoonshineStreamer(model_dir, arch, update_interval)
+        asr = MoonshineStreamer(model_dir, arch, update_interval, transcription_interval)
         conn.send(("ok", {"ort_provider": asr.ort_provider, "provider_error": asr.provider_error}))
     except Exception as exc:  # noqa: BLE001
         conn.send(("err", f"{type(exc).__name__}: {exc}"))
@@ -55,10 +55,10 @@ def _serve(conn, model_dir: str, arch: str, update_interval: float) -> None:
 class ProcessMoonshineStreamer:
     """Proxy de MoonshineStreamer que corre en un proceso hijo (spawn). Llamar desde un solo hilo (asr_worker)."""
 
-    def __init__(self, model_dir, arch: str, update_interval: float) -> None:
+    def __init__(self, model_dir, arch: str, update_interval: float, transcription_interval=None) -> None:
         ctx = mp.get_context("spawn")
         self._conn, child = ctx.Pipe()
-        self._proc = ctx.Process(target=_serve, args=(child, str(model_dir), arch, update_interval),
+        self._proc = ctx.Process(target=_serve, args=(child, str(model_dir), arch, update_interval, transcription_interval),
                                  name="opentraductor-asr", daemon=True)
         self._proc.start()
         child.close()

@@ -199,3 +199,56 @@ def test_join_pieces_keeps_names_sentences_and_empty():
     # cláusula cortada antes de "pero" (sin puntuación en español): se quita el punto de Marian
     assert join_pieces([("Lo hicimos rápido", "We did it fast."), ("pero salió bien.", "But it went well.")]) == \
         "We did it fast but it went well."
+
+
+# ---- T-88: primer trozo antes en frases largas
+def test_first_wait_k_backs_off_function_words():
+    from runtime.simul import first_wait_k_end
+    assert first_wait_k_end("dele al lugar toda la dignidad".split(), 5) == 6
+    assert first_wait_k_end("dele al lugar toda la".split(), 5) is None  # "la", "toda" no cierran; "lugar" < k
+    assert first_wait_k_end("se informó que los saqueos generalizados se".split(), 5) == 6
+    assert first_wait_k_end("hay 3 de".split(), 2) is None
+
+
+def test_committer_first_k_only_first_piece_and_off_by_default():
+    p1 = "se informó que los saqueos generalizados"
+    p2 = "se informó que los saqueos generalizados se extendieron por todo"
+    p3 = "se informó que los saqueos generalizados se extendieron por todo el país"
+    off = ClauseCommitter(min_words=5)
+    assert off.update(p1) == [] and off.update(p2) == [] and off.update(p3) == []
+    on = ClauseCommitter(min_words=5, first_max_words=5)
+    assert on.update(p1) == []
+    assert on.update(p2) == ["se informó que los saqueos generalizados"]
+    assert on.update(p3) == []  # el segundo trozo espera una cláusula de verdad (o el endpoint)
+    assert on.rest(p3 + ".") == "se extendieron por todo el país."
+
+
+def test_comma_nowait_cuts_at_last_confirmed_word():
+    w = "Dele al lugar toda la dignidad,".split()
+    assert next_clause_end(w, 0, 5) is None
+    assert next_clause_end(w, 0, 5, comma_lookahead=False) == 6
+
+
+def test_simul_first_opts_env(monkeypatch):
+    from runtime.config import PipelineConfig
+    from runtime.simul import simul_first_opts
+    monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", raising=False)
+    base = simul_first_opts(PipelineConfig())
+    assert set(base) == {"first_max_words", "comma_lookahead"}
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "0")
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", "0")
+    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 0, "comma_lookahead": True}
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "5")
+    monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", "1")
+    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 5, "comma_lookahead": False}
+
+
+def test_moonshine_transcription_interval_env(monkeypatch):
+    from runtime.components import moonshine_transcription_interval as f
+    monkeypatch.delenv("OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S", raising=False)
+    assert f(None) is None and f(0.32) == 0.32
+    monkeypatch.setenv("OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S", "0.16")
+    assert f(None) == 0.16
+    monkeypatch.setenv("OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S", "0")
+    assert f(0.32) is None

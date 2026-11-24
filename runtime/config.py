@@ -211,6 +211,12 @@ class PipelineConfig:
     # Env OPENTRADUCTOR_MT_SIMUL_MIN_WORDS / OPENTRADUCTOR_MT_SIMUL_CUES mandan. Defaults = reglas de 02512a5.
     mt_simul_min_words: int = 5
     mt_simul_extra_cues: str = ""
+    # T-88: primer trozo antes en frases largas. mt_simul_first_k > 0 = si no hubo coma ni nexo, el primer trozo
+    # sale con k palabras confirmadas (sin terminar en artículo/preposición/nexo). mt_simul_comma_nowait = la coma
+    # en la última palabra confirmada corta sin esperar la palabra siguiente. Env OPENTRADUCTOR_MT_SIMUL_FIRST_K /
+    # OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT=1/0 mandan.
+    mt_simul_first_k: int = 0
+    mt_simul_comma_nowait: bool = False
     # T-67 (19/11): 64 (antes 96). T-81 (21/11): 32. A/B intercalado artifacts/t81 (5 rondas x 8 clips, n=40/brazo):
     # p50 335 vs 372 ms, pareado -37 ms, p95 625 vs 604; cortes falsos en charlas 99 vs 100 (114 turnos); no cambia la
     # MT (términos ctx200 iguales). Volver: OPENTRADUCTOR_ENDPOINT_SHORT_MS=64.
@@ -234,6 +240,9 @@ class PipelineConfig:
     # ASR: "parakeet" (MLX, GPU) | "moonshine-tiny" | "moonshine-small" (CPU, hilo propio)
     asr_backend: str = "parakeet"
     moonshine_update_interval_s: float = 0.1
+    # T-88: opción transcription_interval de libmoonshine (s). None = default de la librería (~0,64 s entre
+    # parciales). Env OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S manda ("0" = default de la librería).
+    moonshine_transcription_interval_s: float | None = None
     asr_chunk_ms: float = 160.0
     # T-67: Moonshine en un proceso aparte (runtime/asr_process.py), fuera del GIL del motor. Default activo desde el
     # A/B final (artifacts/t67-final, junto con tts_first_chunk_max_words=2 y switch_interval_ms=1).

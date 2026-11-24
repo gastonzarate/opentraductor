@@ -31,7 +31,7 @@ from typing import Any, Awaitable, Callable
 
 from . import components as K
 from .config import PipelineConfig
-from .simul import ClauseCommitter, join_pieces
+from .simul import ClauseCommitter, join_pieces, simul_first_opts
 
 SR = 16000
 Emit = Callable[[str, dict], Awaitable[None]]
@@ -395,7 +395,7 @@ class Engine:
         from .asr_process import ProcessMoonshineStreamer, asr_process_enabled
 
         args = (moonshine_model_dir(c.asr_backend), MOONSHINE_MODELS[c.asr_backend][1],
-                c.moonshine_update_interval_s)
+                c.moonshine_update_interval_s, c.moonshine_transcription_interval_s)
         if asr_process_enabled(c.asr_process):
             try:
                 return ProcessMoonshineStreamer(*args)
@@ -1267,7 +1267,8 @@ class Engine:
         cues = os.environ.get("OPENTRADUCTOR_MT_SIMUL_CUES")
         return ClauseCommitter(
             min_words=int(mw) if mw.isdigit() and int(mw) > 0 else self.cfg.mt_simul_min_words,
-            extra_cues=(self.cfg.mt_simul_extra_cues if cues is None else cues).split(","))
+            extra_cues=(self.cfg.mt_simul_extra_cues if cues is None else cues).split(","),
+            **simul_first_opts(self.cfg))
 
     async def _enqueue_clause(self, st: StreamState, cur: Segment, text: str) -> None:
         """Cláusula confirmada por local agreement: a la cola de salida como pieza de la frase ``cur`` (mismo
