@@ -120,3 +120,25 @@ def test_kokoro_clause_speed_uses_fn():
     assert t._clause_speed() == 1.2 and t.last_speed == 1.2
     t.speed_fn = lambda: 1 / 0
     assert t._clause_speed() == 1.0
+
+
+def test_catchup_master_flag_off_restores_old_path(monkeypatch):
+    from runtime import config as C
+    from runtime.service import RuntimeService  # noqa: F401  (import de humo)
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_CATCHUP", "0")
+    e = _engine()
+    assert not e._speed_adaptive and not e._is_filler("eh")
+    assert not C.tts_catchup_on(PipelineConfig())
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_CATCHUP", "1")
+    assert C.tts_catchup_on(PipelineConfig(tts_catchup=False))
+    monkeypatch.delenv("OPENTRADUCTOR_TTS_CATCHUP")
+    assert not C.tts_catchup_on(PipelineConfig(tts_catchup=False))
+
+
+def test_speed_params_env_override(monkeypatch):
+    from runtime import config as C
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "6")
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_MAX", "1.25")
+    assert C.tts_speed_params(PipelineConfig()) == (2.0, 6.0, 1.25)
+    monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "x")
+    assert C.tts_speed_params(PipelineConfig())[1] == 8.0

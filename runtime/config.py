@@ -261,6 +261,12 @@ class PipelineConfig:
     # TTS
     voice: str = "af_heart"
     speed: float = 1.0
+    # T-92/T-93 (BUG-9): interruptor general de las 3 medidas contra el atraso en charla continua (velocidad
+    # adaptativa, muletillas sin voz, Player salta frases viejas con cola > player_skip_old_s). Off o
+    # $OPENTRADUCTOR_TTS_CATCHUP=0 = camino de antes: speed fijo, se dicen las muletillas, el Player descarta lo
+    # NUEVO pasados 60 s. Ver tts_catchup_on().
+    tts_catchup: bool = True
+    player_skip_old_s: float = 20.0
     # T-92 (BUG-9): velocidad adaptativa por cláusula según la voz encolada sin reproducir: speed con <= lo_s,
     # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
     tts_speed_adaptive: bool = True
@@ -384,3 +390,24 @@ class PipelineConfig:
         if "asr_context" in known:
             known["asr_context"] = tuple(known["asr_context"])
         return cls(**known)
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ[name])
+    except (KeyError, ValueError):
+        return default
+
+
+def tts_catchup_on(cfg) -> bool:
+    """T-93: interruptor general (env OPENTRADUCTOR_TTS_CATCHUP=0/1 manda sobre cfg.tts_catchup)."""
+    v = os.environ.get("OPENTRADUCTOR_TTS_CATCHUP")
+    return (v == "1") if v in ("0", "1") else bool(getattr(cfg, "tts_catchup", True))
+
+
+def tts_speed_params(cfg) -> tuple[float, float, float]:
+    """(lo_s, hi_s, max_speed) de la velocidad adaptativa; env OPENTRADUCTOR_TTS_SPEED_LO_S / _HI_S / _MAX mandan
+    (para A/B del banco sin tocar código)."""
+    return (_env_float("OPENTRADUCTOR_TTS_SPEED_LO_S", cfg.tts_speed_queue_lo_s),
+            _env_float("OPENTRADUCTOR_TTS_SPEED_HI_S", cfg.tts_speed_queue_hi_s),
+            _env_float("OPENTRADUCTOR_TTS_SPEED_MAX", cfg.tts_speed_max))

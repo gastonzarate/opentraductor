@@ -474,6 +474,7 @@ class RuntimeService:
             if cfg["output_id"] != NO_OUTPUT:  # solo subtítulos: sin reproductor, el resto del flujo no cambia
                 dev_out = self._audio.find_device(cfg["output_id"], "out")
                 self._player = self._audio.Player(dev_out, latency=self._latency_arg)
+                self._player.skip_old_s = self._skip_old_s()
                 self._player.start()
                 self._audio_info["output"] = _stream_info(self._player.latency_s, self._player.blocksize)
             if cfg.get("monitor_id"):
@@ -567,9 +568,14 @@ class RuntimeService:
             ms = load.get(k)
             self._models[k] = {"state": "ready", "detail": f"carga {round(ms)} ms" if ms else None}
 
+    def _skip_old_s(self) -> float | None:
+        """T-92/T-93: umbral de cola (s) a partir del cual el Player salta frases viejas; None = política vieja."""
+        return float(self._pcfg.player_skip_old_s) if C.tts_catchup_on(self._pcfg) else None
+
     async def _open_monitor(self, dev_id: str) -> None:
         dev = self._audio.find_device(dev_id, "out")
         m = self._audio.Player(dev, volume=self._cfg["monitor_volume"])
+        m.skip_old_s = self._skip_old_s()
         m.start()
         self._monitor = m
 

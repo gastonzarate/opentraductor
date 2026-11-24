@@ -1481,13 +1481,15 @@ class Engine:
     # ------------------------------------------------- T-92 retraso de la voz en charla continua
     @property
     def _speed_adaptive(self) -> bool:
+        from .config import tts_catchup_on
         v = os.environ.get("OPENTRADUCTOR_TTS_SPEED_ADAPTIVE")
-        return (v == "1") if v in ("0", "1") else self.cfg.tts_speed_adaptive
+        return tts_catchup_on(self.cfg) and ((v == "1") if v in ("0", "1") else self.cfg.tts_speed_adaptive)
 
     @property
     def _skip_fillers(self) -> bool:
+        from .config import tts_catchup_on
         v = os.environ.get("OPENTRADUCTOR_TTS_SKIP_FILLERS")
-        return (v == "1") if v in ("0", "1") else self.cfg.tts_skip_fillers
+        return tts_catchup_on(self.cfg) and ((v == "1") if v in ("0", "1") else self.cfg.tts_skip_fillers)
 
     def playback_queue_s(self) -> float:
         fn = getattr(self, "playback_queue_fn", None)
@@ -1503,9 +1505,10 @@ class Engine:
         self._play_end = max(getattr(self, "_play_end", 0.0), now) + len(pcm) / 2 / sr
 
     def _tts_speed(self) -> float:
+        from .config import tts_speed_params
         c = self.cfg
         q = self.playback_queue_s()
-        v = K.adaptive_speed(q, c.speed, c.tts_speed_queue_lo_s, c.tts_speed_queue_hi_s, c.tts_speed_max)
+        v = K.adaptive_speed(q, c.speed, *tts_speed_params(c))
         st = self.speed_stats
         if v > c.speed:
             st["clauses_fast"] += 1
