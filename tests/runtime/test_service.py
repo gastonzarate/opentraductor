@@ -882,6 +882,7 @@ def test_status_exposes_trimmed_silence(tmp_path):
                        audio=FakeAudio, preflight=ok_preflight)
     try:
         assert s.status()["metrics"]["tts_trimmed_silence_s"] is None  # sin motor
+        assert s.status()["metrics"]["tts_max_speed"] is None
         configure_ok(s)
         s.start()
         assert wait(lambda: s.status()["state"] == "running")
@@ -890,5 +891,8 @@ def test_status_exposes_trimmed_silence(tmp_path):
         assert s.status()["metrics"]["tts_trimmed_silence_s"] == 0.0  # todavía no recortó nada
         s._engine.speed_stats["trimmed_silence_s"] = 12.345
         assert s.status()["metrics"]["tts_trimmed_silence_s"] == 12.35
+        assert s.status()["metrics"]["tts_max_speed"] == 1.0  # T-101
+        s._engine.speed_stats["max_speed"] = 1.4237
+        assert s.status()["metrics"]["tts_max_speed"] == 1.424
     finally:
         s.close()

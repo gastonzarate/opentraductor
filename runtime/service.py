@@ -319,6 +319,8 @@ class RuntimeService:
             "playback_skipped_segs": list(getattr(pl, "skipped_segs", ())) if pl is not None else None,
             # T-93: silencio quitado al inicio/fin de los chunks de Kokoro (Pipeline.speed_stats).
             "tts_trimmed_silence_s": self._trimmed_silence_s(eng),
+            # T-101: velocidad máxima de la voz usada en la sesión del motor (1.0 = nunca aceleró; null sin motor).
+            "tts_max_speed": self._max_speed(eng),
             "playback_partial_blocks": pl.partial_blocks if pl is not None else None,
             "playback_status_events": pl.status_events if pl is not None else None,
             "last_first_audio_ms": None,  # el fin real de habla no se conoce en vivo
@@ -331,6 +333,13 @@ class RuntimeService:
         if not isinstance(st, dict):
             return None
         return round(float(st.get("trimmed_silence_s", 0.0)), 2)
+
+    @staticmethod
+    def _max_speed(eng) -> float | None:
+        st = getattr(eng, "speed_stats", None) if eng is not None else None
+        if not isinstance(st, dict):
+            return None
+        return round(float(st.get("max_speed", 1.0)), 3)
 
     def engine_config(self) -> dict:
         """Configuración efectiva del motor (sin audio). Se registra en status y en cada sesión."""
