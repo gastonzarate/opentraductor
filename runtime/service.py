@@ -309,6 +309,11 @@ class RuntimeService:
             "asr_backlog_s": b["asr_backlog_s"],
             "dropped_ms": dropped,
             "overflow_count": self._m["overflow_count"],
+            # T-105 (BUG-10): audio (s) de frases enteras que el ASR saltó sin reconocer porque su backlog pasó de
+            # asr_skip_old_s (Mac saturada), tandas de salto y frases saltadas. 0 con carga normal; null sin motor.
+            "asr_skipped_s": b.get("asr_skipped_s"),
+            "asr_skip_events": b.get("asr_skip_events"),
+            "asr_skip_segs": b.get("asr_skip_segs"),
             "playback_queue_s": round(pl.queued_s, 3) if pl is not None else None,
             "playback_dropped_ms": pl_dropped,
             # T-92: voz vieja saltada (frases enteras sin reproducir) cuando la cola pasó de 20 s.

@@ -217,6 +217,10 @@ class StreamState:
     preroll: collections.deque = field(default_factory=lambda: collections.deque(maxlen=12))
     asr_pending_s: float = 0.0  # audio encolado para el ASR (acotado)
     dropped_s: float = 0.0
+    asr_skipped_s: float = 0.0  # T-105: audio de frases enteras saltadas sin reconocer por backlog del ASR
+    asr_skip_events: int = 0  # T-105: tandas de salto (cada vez que el backlog pasó el umbral)
+    asr_skip_segs: int = 0  # T-105: frases saltadas
+    asr_skipping: bool = False  # T-105: en una tanda de salto (hasta bajar a asr_skip_target_s)
     asr_buf: bytearray = field(default_factory=bytearray)
     asr_buf_start_s: float = 0.0
     asr_q: asyncio.Queue | None = None
@@ -348,6 +352,9 @@ class Engine:
         return {
             "asr_backlog_s": round(sum(st.asr_pending_s for st in self._streams.values()), 3),
             "dropped_ms": round(sum(st.dropped_s for st in self._streams.values()) * 1000),
+            "asr_skipped_s": round(sum(st.asr_skipped_s for st in self._streams.values()), 2),
+            "asr_skip_events": sum(st.asr_skip_events for st in self._streams.values()),
+            "asr_skip_segs": sum(st.asr_skip_segs for st in self._streams.values()),
             "queue_depth": self._out_q.qsize() if self._out_q else 0,
         }
 
@@ -807,12 +814,49 @@ class Engine:
         seg_pcm: list[bytes] = []  # audio del segmento ya pasado al ASR (para re-alimentar si vuelve la voz)
         held: list[bytes] = []  # audio recibido con el stream cerrado por un finish especulativo
         closed: tuple | None = None  # (pausa, texto) del finish especulativo vigente
+        skip_seg: Segment | None = None  # T-105: frase que se está saltando sin reconocer
+        from .config import asr_skip_params
         try:
             while True:
                 kind, payload = await st.asr_q.get()
                 if kind == "stop":
                     return
+                if skip_seg is not None:  # T-105: la frase saltada no pasa por el ASR
+                    if kind == "audio":
+                        _, pos_s, dur = payload
+                        st.asr_pending_s = max(0.0, st.asr_pending_s - dur)
+                        st.asr_done_pos_s = max(st.asr_done_pos_s, pos_s)
+                        st.asr_skipped_s += dur
+                        continue
+                    if kind in ("spec_end", "spec_resume"):
+                        continue
+                    if kind == "end":
+                        self._spec_drop(st.stream_id, skip_seg.seg_id, st.gen)
+                        skip_seg = None
+                        continue
+                    skip_seg = None  # "start" sin "end" (no debería pasar): sigue el camino normal
                 if kind == "start":
+                    sk = asr_skip_params(self.cfg)
+                    if sk is not None:
+                        skipping = getattr(st, "asr_skipping", False)
+                        limit = sk[1] if skipping else sk[0]
+                        if st.asr_pending_s > limit:
+                            if not skipping:
+                                st.asr_skipping = True
+                                st.asr_skip_events += 1
+                                print(f"[asr] T-105 backlog {st.asr_pending_s:.1f} s > {sk[0]:g} s: salto frases "
+                                      f"viejas hasta {sk[1]:g} s (tanda {st.asr_skip_events})", file=sys.stderr)
+                            skip_seg, _ = payload
+                            st.asr_skip_segs += 1
+                            st.last_partial = ""
+                            st.clauser = None
+                            cur, seg_pcm, held, closed = None, [], [], None
+                            continue
+                        if skipping:
+                            st.asr_skipping = False
+                            print(f"[asr] T-105 fin de tanda {st.asr_skip_events}: backlog {st.asr_pending_s:.1f} s, "
+                                  f"saltado en total {st.asr_skipped_s:.1f} s ({st.asr_skip_segs} frases)",
+                                  file=sys.stderr)
                     cur, pre = payload
                     seg_pcm, held, closed = [], [], None
                     await self.asr_worker.run(self.asr.start)

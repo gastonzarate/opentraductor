@@ -414,6 +414,14 @@ class PipelineConfig:
     # Colas / backpressure
     max_pending_segments: int = 8
     max_asr_backlog_s: float = 6.0
+    # T-105 (BUG-10): con la Mac saturada el ASR se atrasa sin cota (T-104: backlog 337 s, atraso oído 730 s). Si al
+    # empezar una frase el audio pendiente del ASR pasa de asr_skip_old_s, esa frase entera se salta sin reconocer (ni
+    # subtítulo ni voz) y se siguen saltando frases viejas hasta bajar a asr_skip_target_s. Nunca corta una frase a
+    # medias. Se cuenta en metrics.asr_skipped_s / asr_skip_events y en el log. Con carga normal el backlog no pasa
+    # de ~1,4 s (charla 1, T-104), así que no salta nada. $OPENTRADUCTOR_ASR_SKIP_OLD_S (vacío, 0 o < 0 = apagado) y
+    # $OPENTRADUCTOR_ASR_SKIP_TARGET_S mandan.
+    asr_skip_old_s: float | None = 20.0
+    asr_skip_target_s: float = 3.0
     warmup_in_open: bool = False
 
     def __post_init__(self) -> None:
@@ -459,6 +467,15 @@ def no_drop_on(cfg) -> bool:
     """T-101: env OPENTRADUCTOR_NO_DROP=0/1 manda sobre cfg.no_drop."""
     v = os.environ.get("OPENTRADUCTOR_NO_DROP")
     return (v == "1") if v in ("0", "1") else bool(getattr(cfg, "no_drop", True))
+
+
+def asr_skip_params(cfg) -> tuple[float, float] | None:
+    """T-105: (umbral, objetivo) en s del salto de frases viejas del ASR, o None si está apagado."""
+    hi = env_opt_seconds("OPENTRADUCTOR_ASR_SKIP_OLD_S", getattr(cfg, "asr_skip_old_s", 20.0))
+    if hi is None or hi <= 0:
+        return None
+    lo = _env_float("OPENTRADUCTOR_ASR_SKIP_TARGET_S", getattr(cfg, "asr_skip_target_s", 3.0))
+    return hi, max(0.0, min(lo, hi))
 
 
 def pace_voice_on(cfg) -> bool:
