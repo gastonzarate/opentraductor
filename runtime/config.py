@@ -301,11 +301,13 @@ class PipelineConfig:
     # compensa solo con la velocidad adaptativa. $OPENTRADUCTOR_NO_DROP=0 = topes y saltos de T-92/T-93.
     no_drop: bool = True
     # T-103: velocidad de la voz por frase según el ritmo del orador: (caracteres a decir / pace_tts_cps) / segundos
-    # de habla de esa frase, entre 1x y pace_max; se usa la mayor entre esta y la adaptativa por atraso. Apagado por
-    # defecto; $OPENTRADUCTOR_PACE_VOICE=1 lo enciende. pace_tts_cps: Kokoro a 1x dice ~11,3-11,4 car/s (c1-c3, T-95).
-    pace_voice: bool = False
+    # de habla de esa frase, entre 1x y pace_max; se usa la mayor entre esta y la adaptativa por atraso. Encendido por
+    # defecto desde el cierre de T-103 (charla 1 en la app: p50 2,67->2,29 s, p95 5,06->4,56 s, términos 30->32/47);
+    # $OPENTRADUCTOR_PACE_VOICE=0 lo apaga. pace_tts_cps: Kokoro a 1x dice ~11,3-11,4 car/s (c1-c3, T-95).
+    # pace_max 1,3 (era 1,5): con 1,5 el simulador daba 71 % del tiempo >1,3x; por encima de 1,3 solo acelera el atraso.
+    pace_voice: bool = True
     pace_tts_cps: float = 11.4
-    pace_max: float = 1.50
+    pace_max: float = 1.30
     # T-92: frases que son solo muletilla (eh, em, ¿se entiende?, got it?) no se sintetizan; siguen en subtítulos.
     # $OPENTRADUCTOR_TTS_SKIP_FILLERS=0 = se dicen como hoy.
     tts_skip_fillers: bool = True
@@ -479,15 +481,15 @@ def asr_skip_params(cfg) -> tuple[float, float] | None:
 
 
 def pace_voice_on(cfg) -> bool:
-    """T-103: env OPENTRADUCTOR_PACE_VOICE=0/1 manda sobre cfg.pace_voice (apagado por defecto)."""
+    """T-103: env OPENTRADUCTOR_PACE_VOICE=0/1 manda sobre cfg.pace_voice (encendido por defecto)."""
     v = os.environ.get("OPENTRADUCTOR_PACE_VOICE")
-    return (v == "1") if v in ("0", "1") else bool(getattr(cfg, "pace_voice", False))
+    return (v == "1") if v in ("0", "1") else bool(getattr(cfg, "pace_voice", True))
 
 
 def pace_params(cfg) -> tuple[float, float]:
     """T-103: (car/s de la voz a 1x, tope); env OPENTRADUCTOR_PACE_CPS / _MAX mandan."""
     return (_env_float("OPENTRADUCTOR_PACE_CPS", getattr(cfg, "pace_tts_cps", 11.4)),
-            _env_float("OPENTRADUCTOR_PACE_MAX", getattr(cfg, "pace_max", 1.5)))
+            _env_float("OPENTRADUCTOR_PACE_MAX", getattr(cfg, "pace_max", 1.3)))
 
 
 def tts_speed_params(cfg) -> tuple[float, float, float]:

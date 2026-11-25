@@ -1,4 +1,4 @@
-"""T-103: velocidad de la voz por ritmo del orador (OPENTRADUCTOR_PACE_VOICE, apagado por defecto)."""
+"""T-103: velocidad de la voz por ritmo del orador (OPENTRADUCTOR_PACE_VOICE, encendido por defecto desde el cierre de T-103, tope 1,3x)."""
 import pytest
 
 from runtime import components as K
@@ -21,9 +21,24 @@ def test_pace_speed_formula():
     assert K.pace_speed(t, 0.1) == 1.0  # duración absurda: sin efecto
 
 
-def test_off_by_default(monkeypatch):
-    monkeypatch.delenv("OPENTRADUCTOR_PACE_VOICE", raising=False)
+def test_on_by_default_tope_13(monkeypatch):
+    for k in ("OPENTRADUCTOR_PACE_VOICE", "OPENTRADUCTOR_PACE_MAX", "OPENTRADUCTOR_TTS_SPEED_ADAPTIVE"):
+        monkeypatch.delenv(k, raising=False)
     e = _engine()
+    assert pace_voice_on(e.cfg)
+    e.playback_queue_fn = lambda: 0.0
+    e._set_pace(Segment(seg_id=1, start_s=0.0, end_s=2.0), "x" * 57)  # pediría 2,5x: tope 1,3x
+    assert e._tts_speed() == pytest.approx(1.3)
+
+
+@pytest.mark.parametrize("how", ["env", "cfg"])
+def test_off(monkeypatch, how):
+    if how == "env":
+        monkeypatch.setenv("OPENTRADUCTOR_PACE_VOICE", "0")
+        e = _engine()
+    else:
+        monkeypatch.delenv("OPENTRADUCTOR_PACE_VOICE", raising=False)
+        e = _engine(pace_voice=False)
     assert not pace_voice_on(e.cfg)
     e._set_pace(Segment(seg_id=1, start_s=0.0, end_s=1.0), "x" * 100)
     assert e._pace_v is None
