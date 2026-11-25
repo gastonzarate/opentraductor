@@ -33,7 +33,7 @@ Always pass `--extra runtime` to `uv run`; without it `uv` removes the runtime d
 uv run --extra runtime python -m pytest tests -q
 ```
 
-Most tests use fakes and need no model weights, no microphone and no network. The few that need the evaluation audio (`data/audio/`, not in the repository for license and size reasons) skip themselves on a fresh clone. The same command runs in CI on every push and pull request (macOS 14, Apple Silicon): [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Most tests use fakes and need no model weights, no microphone and no network. The few that need the evaluation audio (`data/audio/`, not in the repository for license and size reasons) skip themselves on a fresh clone. The same command runs in CI on every push and pull request (macOS 15, Apple Silicon): [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 A pull request needs the test run to pass. If you add behavior, add a test that does not need models or audio.
 
