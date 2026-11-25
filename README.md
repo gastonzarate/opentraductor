@@ -93,15 +93,54 @@ The sentence-by-sentence numbers above say little about a long talk, where the s
 2. T3chFest 2018, David Bonilla, "¿Cobras poco? Carreras profesionales en software" ([video](https://www.youtube.com/watch?v=d2_CUOeCgVE))
 3. PyAr 2019, Hernán Wilkinson, "El desarrollo de software como debería ser" ([video](https://www.youtube.com/watch?v=lV9ozQbYEnc))
 
-**Delay of the voice (end of speech to English audio).** The English voice queues up when the speaker talks faster than Kokoro can speak. `tts_catchup` (on by default, `OPENTRADUCTOR_TTS_CATCHUP=0` turns it off) speeds Kokoro up to 1.30x as the queue grows, trims the silence Kokoro adds around each chunk to 80 ms, skips whole old sentences when the queue passes 8 s, and cuts the unstarted clauses of the sentence being spoken when a new one arrives with more than 5 s queued (never more than 3 s or half of the sentence). Sentences with digits or proper names are never skipped or cut. A skipped sentence still appears in the subtitles.
+**What changed in stage 3.** Four changes, on by default, each with a switch:
+
+- **Nothing is dropped.** The input queue, the recognition backlog and the sentence queue have no cap, and the player no longer skips old sentences or cuts the one being spoken. The delay is absorbed by speeding the English voice up: 1.0x with up to 1 s of queue, up to 1.5x at 4 s or more. `OPENTRADUCTOR_NO_DROP=0` brings back the earlier skip-and-cut behaviour (`tts_catchup`, described in the first measurement below).
+- **Simultaneous voice.** Each chunk of a sentence is spoken as soon as 6 words are confirmed, not only at commas and connectors, so the voice talks while the speaker is still talking. `OPENTRADUCTOR_SIMUL_VOICE=0` turns it off; `OPENTRADUCTOR_SIMUL_VOICE_K` changes the 6.
+- **Voice at the speaker's pace.** The speed of each sentence is set so it lasts about as long as the speech did, between 1.0x and 1.3x; the larger of this and the speed from the delay is used. `OPENTRADUCTOR_PACE_VOICE=0` turns it off; `OPENTRADUCTOR_PACE_MAX` changes the 1.3x.
+- **Cap on the recognition backlog.** If the audio waiting for recognition passes 20 s when a sentence starts, whole sentences are skipped without being recognized (no subtitle, no voice) until it falls to 3 s. This is the only loss that remains. `OPENTRADUCTOR_ASR_SKIP_OLD_S=0` turns it off.
+
+**Delay of the voice (end of speech to English audio), with the stage 3 defaults.** Talk 1 (11 min, 660 s), same method as before, two passes of the packaged app:
+
+| Talk 1 | Delay p50 | Delay p95 | Worst | Drift | Audio lost |
+|---|---|---|---|---|---|
+| Before stage 3 (two runs) | 2.9 and 3.0 s | 5.6 and 6.1 s | not reported | none (-0.02 and 0.00 s/min) | about 2.8 s of voice skipped |
+| Stage 3 pass 1 (commit `e8d9865`, pace 1.3x set by hand; `a54a00a` makes it the default) | 2.3 s | 4.6 s | 7.0 s | none (-0.06 s/min) | 0 (no skip, no drop, no overflow) |
+| Stage 3 defaults, pass 2 (commit `a54a00a`, everything on by default) | 2.2 s | 4.3 s | 7.7 s | none (0.00 s/min) | 0 |
+
+The median fell by about 0.7 s and the p95 by 1 to 1.8 s, with no audio skipped. The price is a faster voice: its speed reached 1.5x in every run, and in pass 1 it was above 1.3x for about 12 % of the voice time (an estimate rebuilt from the monitor log, not a direct measure). Isolating the speaker-pace change in the app (same build, one pass with it off and one with it on): median 2.67 to 2.29 s, p95 5.06 to 4.56 s. The pass with it off ran on a busier Mac (load average up to 9.7 against 7.8), so part of that gain may be noise.
+
+**Audio lost, with a saturated Mac.** A 30-minute session (a mix of the three talks) with 36 processes using the CPU from minute 5 to minute 25, load average up to 126:
+
+| Measure | Value |
+|---|---|
+| Delay p50 / p95 / worst (663 sentences) | 2.6 / 5.1 / 8.4 s |
+| Minutes 15 to 30 (load until minute 25) p50 / p95 / worst | 3.0 / 5.4 / 8.4 s |
+| Drift | +0.04 s/min |
+| Recognition backlog, worst | 0.32 s |
+| Sentences skipped by the cap | 0 of 690 |
+| Audio overflow, dropped audio, output errors | 0 |
+
+An earlier build without the cap, under the same kind of load (load average up to 50, 20 minutes), fell behind without limit: the delay reached 730 s and the recognition backlog 337 s. In this run the backlog never came close to 20 s, so the cap did not act once (0 events). It shows that the problem did not reproduce, not that the cap works: the cap has only tests with a simulated slow recognizer (backlog stayed at 22 s at most over 300 s of speech with recognition at 70 % of real time), and no end-to-end run in the packaged app. We do not know why the app was less affected by the load this time (it used 53 % of the CPU under load against 97 % in the earlier test).
+
+The delay is still seconds, not the sub-second delay of the table above, and we do not promise 1 second. The sub-second figure is for isolated sentences.
+
+The delay of the earlier version, for reference. Before stage 3 the English voice queued up when the speaker talked faster than Kokoro could speak. `tts_catchup` (`OPENTRADUCTOR_TTS_CATCHUP=0` turns it off) sped Kokoro up to 1.30x as the queue grew, trimmed the silence Kokoro adds around each chunk to 80 ms, skipped whole old sentences when the queue passed 8 s and cut the unstarted clauses of the sentence being spoken when a new one arrived with more than 5 s queued. Sentences with digits or proper names were never skipped or cut. That version, on three talks:
 
 | Talk | Delay p50 | Delay p95 | Drift | Voice skipped |
 |---|---|---|---|---|
-| 1 (two runs, current runtime) | 2.9 and 3.0 s | 5.6 and 6.1 s | none (-0.02 and 0.00 s/min) | about 2.8 s of 660 s |
+| 1 (two runs) | 2.9 and 3.0 s | 5.6 and 6.1 s | none (-0.02 and 0.00 s/min) | about 2.8 s of 660 s |
 | 2 (one run, commit `ff71322`) | 4.0 s | 7.8 s | none (+0.03 s/min) | 13.8 s (2.1 %) |
 | 3 (one run, commit `ff71322`) | 3.8 s | 7.1 s | none (-0.10 s/min) | 11.7 s (1.8 %) |
 
-The delay stays stable over the 11 minutes (no drift), and nothing was dropped (no audio overflow, no output device errors). It is not short: about 3 to 4 s at the median and 6 to 8 s in the worst sentences. Our own target was a p95 of 6 s or less. Talk 1 is at the edge of it and talks 2 and 3 miss it. This is a delay of seconds, not the sub-second delay of the table above, and we do not claim a shorter one. The sub-second figure is for isolated sentences, when the voice is not behind.
+Talks 2 and 3 were not run again with the stage 3 defaults.
+
+Limits of the stage 3 numbers:
+- One pass per variant (two for talk 1 with the final defaults, one of them before the cap existed). Two runs of the same code can differ by several tenths of a second at the p95.
+- One Mac (M5 Pro). The talks are recordings played through BlackHole, not a meeting with people.
+- Nobody has judged by listening whether the faster voice sounds natural. We only measured the delay.
+- The saturated-Mac test was one 30-minute run, and the cap was never triggered in it.
+- With the cap on, a very late backlog skips whole sentences; with `OPENTRADUCTOR_ASR_SKIP_OLD_S=0` nothing is skipped but the delay can grow without limit.
 
 **Technical terms in a real talk.** For talk 1 we counted 47 technical terms ("tests de aceptación", "management 3.0", "pipeline", and so on) with regular expressions written by the project, over two runs of the app before and after the vocabulary change: 22.5 of 47 (48 %) before, 28 of 47 (60 %) after. The change has two parts: the recognizer receives a glossary (`runtime/data/asr_keyterms.txt`) as hints, and its partial results are corrected against that glossary by fuzzy matching. Both are on by default (`OPENTRADUCTOR_ASR_KEYTERMS=0` and `OPENTRADUCTOR_ASR_GLOSSARY_FIX=0` turn them off).
 
@@ -110,10 +149,11 @@ Limits of this number:
 - The regular expressions are ours and were not reviewed by anyone else.
 - The glossary was written by the project with the vocabulary of this kind of talk (agile, testing, DevOps), and talk 1 is on that subject. Expect less on other topics. In an offline rescore of talk 2, with another subject, the count did not change (25 of 35 terms).
 - In the real-time runs the gain came from the glossary correction. Turning the recognizer hints off (`OPENTRADUCTOR_ASR_KEYTERMS=0`) gave 29 of 47 in a single run, the same as with them on.
+- With the stage 3 defaults, talk 1 gave 29 and 32 of 47 terms in the two passes, within the same 3 to 4 term noise. Stage 3 does not change the translated text.
 - Acronyms and English words said inside Spanish (ATDD, waterfall, lean, DevOps) are still mistranslated.
 - The Mac was busy during the runs (load average between 4 and 12).
 
-Not tested: a physical microphone end to end, sessions longer than 11 minutes, and Meet or Discord with real participants.
+Not tested: a physical microphone end to end, sessions longer than 30 minutes, and Meet or Discord with real participants.
 
 ## Run the tests
 
@@ -143,7 +183,7 @@ Other tests that need model weights or the local `artifacts/` folder are describ
 ## Limitations
 
 - Latency is about 0.6 s at the median, not the 300 ms the project first aimed for. Three of the 8 test clips (24 of 64 runs with translation by clauses; two clips, 16 of 64, without) start speaking before the end of the sentence or are split in two: two long clips are split into two segments in both arms, and a third starts speaking before the end of the sentence only with translation by clauses.
-- In a continuous talk the English voice trails the speaker by about 3 to 4 s at the median and 6 to 8 s at the p95 (see "Tested on real talks"). It does not drift, but it is not the sub-second delay of single sentences.
+- In a continuous talk the English voice trails the speaker by about 2 to 2.5 s at the median and 4 to 5 s at the p95, measured on one talk with the stage 3 defaults (see "Tested on real talks"). It does not drift and no audio is skipped in normal use, but it is not the sub-second delay of single sentences, and the voice speeds up to 1.5x to keep that delay.
 - Only Argentine Spanish to US English. Rioplatense Spanish has no complete dedicated evaluation yet.
 - Output goes to one device. No echo cancellation, no mixing of several voices.
 - Mac only, Apple Silicon only. No Windows or Linux.
