@@ -1134,7 +1134,11 @@ class Engine:
                 e.clauses = clauses
                 if clauses:
                     t = time.perf_counter()
-                    chunks = await self.gpu.run(lambda: list(self.tts.synth_clauses(clauses[:1], True)))
+                    def spec_synth():
+                        self._set_pace(None, None)  # T-103: parcial sin fin de habla: sin ritmo del orador
+                        return list(self.tts.synth_clauses(clauses[:1], True))
+
+                    chunks = await self.gpu.run(spec_synth)
                     e.tts_ms = (time.perf_counter() - t) * 1000
                     if not e.cancelled:
                         e.first_chunks = chunks
@@ -1367,6 +1371,7 @@ class Engine:
             head: str | None = None
             head_t = None
             tts_ms = 0.0
+            self._set_pace(seg, seg.text_es)  # T-103: hasta tener la traducción, el largo del texto fuente
 
             def on_text(prefix: str) -> None:
                 nonlocal head, head_t, tts_ms
@@ -1390,6 +1395,7 @@ class Engine:
                 t_end = time.perf_counter()
                 put(("mt", text_en, (t_end - tm) * 1000 - tts_ms))
                 clauses = self.tts.plan(text_en) if text_en else []
+                self._set_pace(seg, text_en)
                 if head is None and (filler or self._is_filler(text_en)):
                     self.filler_skipped = getattr(self, "filler_skipped", 0) + 1
                     clauses = []
@@ -1460,6 +1466,7 @@ class Engine:
             q.put_nowait(("chunk", ch))
 
         def produce():
+            self._set_pace(seg, text_en)
             try:
                 if pre:
                     gen = self.tts.synth_clauses(entry.clauses[1:], first=False) if entry.clauses[1:] else ()
@@ -1536,6 +1543,16 @@ class Engine:
                 n += max(0.0, seg.end_s - seg.start_s)
         return n
 
+    def _set_pace(self, seg, text) -> None:
+        """T-103: velocidad por ritmo del orador para la frase que se va a sintetizar (corre en el hilo de TTS, antes
+        de sus cláusulas). Apagado ($OPENTRADUCTOR_PACE_VOICE) o sin duración de habla = None (sin efecto)."""
+        from .config import pace_params, pace_voice_on
+        c = getattr(self, "cfg", None)
+        if seg is None or c is None or not pace_voice_on(c) or seg.end_s is None:
+            self._pace_v = None
+            return
+        self._pace_v = K.pace_speed(text, seg.end_s - seg.start_s, c.speed, *pace_params(c))
+
     def _tts_speed(self) -> float:
         from .config import no_drop_on, tts_speed_params
         c = self.cfg
@@ -1544,6 +1561,12 @@ class Engine:
             q += self.engine_backlog_s()
         v = K.adaptive_speed(q, c.speed, *tts_speed_params(c))
         st = self.speed_stats
+        pace = getattr(self, "_pace_v", None)
+        if pace is not None:  # T-103: se usa la mayor entre ritmo del orador y atraso
+            st["pace_clauses"] = st.get("pace_clauses", 0) + 1
+            if pace > v:
+                st["pace_wins"] = st.get("pace_wins", 0) + 1
+                v = pace
         if v > c.speed:
             st["clauses_fast"] += 1
         st["max_speed"] = round(max(st["max_speed"], v), 3)

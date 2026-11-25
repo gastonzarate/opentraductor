@@ -1115,6 +1115,16 @@ def adaptive_speed(queued_s: float, base: float = 1.0, lo_s: float = 2.0, hi_s: 
     return base + (top - base) * (queued_s - lo_s) / (hi_s - lo_s)
 
 
+def pace_speed(text: str | None, src_s: float | None, base: float = 1.0, cps: float = 11.4,
+               max_speed: float = 1.5) -> float:
+    """T-103: velocidad para que ``text`` dure lo mismo que el habla que traduce (``src_s`` segundos): duración
+    estimada a 1x = caracteres / ``cps``. Entre ``base`` y ``max_speed``; sin texto o sin duración -> ``base``."""
+    if not text or not src_s or src_s <= 0.2 or cps <= 0:
+        return base
+    v = base * (len(text.strip()) / cps) / src_s
+    return min(max(base, max_speed), max(base, v))
+
+
 # T-92: frases que son solo muletilla no se dicen (siguen en subtítulos). Conservador: la frase ENTERA tiene que ser
 # muletilla; nunca se sacan palabras de una oración. Sin «no», «sí», «ok», «right»: solos pueden ser una respuesta.
 _FILLER_TOKENS = frozenset("eh ehh ehm em emm mm mmm hm hmm ah aah uh uhh um umm uhm".split())
