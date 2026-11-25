@@ -248,7 +248,8 @@ def test_saved_endpoint_legacy_250_uses_new_default(tmp_path, saved, expected):
         s.close()
 
 
-def test_input_queue_overflow_is_visible_and_counted(svc):
+def test_input_queue_overflow_is_visible_and_counted(svc, monkeypatch):
+    monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", "0")  # T-101: el tope solo existe con no_drop apagado
     ev = events_of(svc)
     configure_ok(svc)
     svc.start()
@@ -267,6 +268,33 @@ def test_input_queue_overflow_is_visible_and_counted(svc):
     m = svc.status()["metrics"]
     assert m["overflow_count"] > 0 and m["dropped_ms"] > 0
     gate.set()
+    svc.stop()
+    assert wait(lambda: svc.status()["state"] == "idle", 8)
+
+
+def test_no_drop_input_queue_never_overflows(svc, monkeypatch):
+    """T-101: con no_drop (default) un motor atrasado no hace descartar audio de entrada: se encola todo."""
+    monkeypatch.delenv("OPENTRADUCTOR_NO_DROP", raising=False)
+    ev = events_of(svc)
+    configure_ok(svc)
+    svc.start()
+    assert wait(lambda: svc.status()["state"] == "running")
+    gate = threading.Event()
+    got = []
+
+    async def slow_push(_sid, pcm, _t):
+        while not gate.is_set():
+            await asyncio.sleep(0.01)
+        got.append(len(pcm))
+
+    svc._engine.push = slow_push
+    for _ in range(1700):  # > INPUT_QUEUE_MAX (1500)
+        FakeMic.last.on_block(bytes(640))
+    time.sleep(0.3)
+    gate.set()
+    assert wait(lambda: len(got) >= 1700, 8)
+    assert not any(e["type"] == "overflow" for e in ev)
+    assert svc.status()["metrics"]["overflow_count"] == 0
     svc.stop()
     assert wait(lambda: svc.status()["state"] == "idle", 8)
 

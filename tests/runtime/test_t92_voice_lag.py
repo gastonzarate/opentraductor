@@ -97,9 +97,9 @@ def test_engine_speed_follows_estimated_queue(monkeypatch):
     assert e._tts_speed() == 1.0
     e._note_tts(_pcm(10, sr=24000), 24000)  # 10 s encolados -> tope
     assert e.playback_queue_s() == pytest.approx(10.0, abs=0.1)
-    assert e._tts_speed() == pytest.approx(1.30)
-    e.playback_queue_fn = lambda: 2.0  # la cola real del Player manda (rampa 1->3 s, T-93)
-    assert e._tts_speed() == pytest.approx(1.15)
+    assert e._tts_speed() == pytest.approx(1.50)
+    e.playback_queue_fn = lambda: 2.0  # la cola real del Player manda (rampa 1->4 s, T-101)
+    assert e._tts_speed() == pytest.approx(1 + 0.5 / 3)
     assert e.speed_stats["clauses_fast"] == 2
 
 
@@ -141,7 +141,7 @@ def test_speed_params_env_override(monkeypatch):
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_MAX", "1.25")
     assert C.tts_speed_params(PipelineConfig()) == (1.0, 6.0, 1.25)
     monkeypatch.setenv("OPENTRADUCTOR_TTS_SPEED_HI_S", "x")
-    assert C.tts_speed_params(PipelineConfig())[1] == 3.0
+    assert C.tts_speed_params(PipelineConfig())[1] == 4.0
 
 
 def test_skip_old_default_8_env_and_master_flag(monkeypatch):
@@ -150,6 +150,7 @@ def test_skip_old_default_8_env_and_master_flag(monkeypatch):
     from runtime.service import RuntimeService
     fake = SimpleNamespace(_pcfg=PipelineConfig())
     assert PipelineConfig().player_skip_old_s == 8.0
+    monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", "0")  # T-101: el salto solo existe con no_drop apagado
     monkeypatch.delenv("OPENTRADUCTOR_TTS_CATCHUP", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", raising=False)
     assert RuntimeService._skip_old_s(fake) == 8.0
@@ -159,15 +160,16 @@ def test_skip_old_default_8_env_and_master_flag(monkeypatch):
     assert RuntimeService._skip_old_s(fake) is None
 
 
-def test_speed_ramp_default_1_to_3_cap_130(monkeypatch):
-    """T-93: rampa por defecto 1->3 s, tope 1,30 (lo que usa el Engine vía tts_speed_params)."""
+def test_speed_ramp_default_1_to_4_cap_150(monkeypatch):
+    """T-101: rampa por defecto 1->4 s, tope 1,50; nunca más lenta que la de T-93 (1->3 s, 1,30) hasta 1,30."""
     from runtime import config as C
     for k in ("OPENTRADUCTOR_TTS_SPEED_LO_S", "OPENTRADUCTOR_TTS_SPEED_HI_S", "OPENTRADUCTOR_TTS_SPEED_MAX"):
         monkeypatch.delenv(k, raising=False)
     p = C.tts_speed_params(PipelineConfig())
-    assert p == (1.0, 3.0, 1.30)
-    assert K.adaptive_speed(2.0, 1.0, *p) == pytest.approx(1.15)
-    assert K.adaptive_speed(3.0, 1.0, *p) == pytest.approx(1.30)
+    assert p == (1.0, 4.0, 1.50)
+    for q in (1.5, 2.0, 2.5, 3.0, 5.0):
+        assert K.adaptive_speed(q, 1.0, *p) >= min(1.30, K.adaptive_speed(q, 1.0, 1.0, 3.0, 1.30)) - 1e-9
+    assert K.adaptive_speed(4.0, 1.0, *p) == pytest.approx(1.50)
     assert K.adaptive_speed(0.8, 1.0, *p) == 1.0
 
 
@@ -250,6 +252,7 @@ def test_cut_current_default_5_env_and_master_flag(monkeypatch):
     from types import SimpleNamespace
     from runtime.service import RuntimeService
     fake = SimpleNamespace(_pcfg=PipelineConfig())
+    monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", "0")  # T-101: el recorte solo existe con no_drop apagado
     for k in ("OPENTRADUCTOR_TTS_CATCHUP", "OPENTRADUCTOR_PLAYER_CUT_CUR_S", "OPENTRADUCTOR_PLAYER_SKIP_OLD_S"):
         monkeypatch.delenv(k, raising=False)
     assert RuntimeService._cut_cur_s(fake) == 5.0
@@ -307,3 +310,55 @@ def test_trim_silence_pcm_keeps_80ms():
     silent = np.zeros(100, dtype="<i2").tobytes()
     assert audio_io.trim_silence_pcm(silent, sr, 80) == (silent, 0)
     assert audio_io.trim_silence_pcm(b"\x00", sr, 80) == (b"\x00", 0)
+
+
+def test_no_drop_default_turns_off_skip_cut_and_hard_cap(monkeypatch):
+    """T-101: por defecto el Player no salta, no recorta ni tiene tope duro; NO_DROP=0 vuelve a T-93."""
+    from types import SimpleNamespace
+    from runtime.service import RuntimeService
+    for k in ("OPENTRADUCTOR_NO_DROP", "OPENTRADUCTOR_TTS_CATCHUP", "OPENTRADUCTOR_PLAYER_CUT_CUR_S",
+              "OPENTRADUCTOR_PLAYER_SKIP_OLD_S"):
+        monkeypatch.delenv(k, raising=False)
+    fake = SimpleNamespace(_pcfg=PipelineConfig())
+    fake._skip_old_s = lambda: RuntimeService._skip_old_s(fake)
+    fake._cut_cur_s = lambda: RuntimeService._cut_cur_s(fake)
+    fake._cut_caps = lambda: RuntimeService._cut_caps(fake)
+    d = audio_io.Device("out", "Out", 0, 0, 1, 1000.0, True, True)
+    p = audio_io.Player(d)
+    RuntimeService._setup_player(fake, p)
+    assert p.skip_old_s is None and p.cut_cur_s is None and p.max_queue_s == float("inf")
+    for i in range(40):  # 80 s de voz en 40 frases: no se pierde nada
+        p.write(_pcm(2), 1000, f"s{i}")
+    assert p.skipped_s == 0 and p.dropped_s == 0 and p.queued_s == pytest.approx(80.0)
+    monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", "0")
+    p2 = audio_io.Player(d)
+    RuntimeService._setup_player(fake, p2)
+    assert p2.skip_old_s == 8.0 and p2.cut_cur_s == 5.0 and p2.max_queue_s == 60.0
+
+
+def test_no_drop_asr_backlog_keeps_audio(monkeypatch):
+    """T-101: con el ASR atrasado más que max_asr_backlog_s, el audio se encola igual (sin overflow)."""
+    import asyncio
+    from runtime.pipeline import StreamState
+    for flag, expect_drop in (("1", False), ("0", True)):
+        monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", flag)
+        e = _engine()
+        evs = []
+
+        async def emit(kind, payload, _evs=evs):
+            _evs.append(kind)
+
+        e.emit = emit
+
+        async def run():
+            st = StreamState(stream_id="s", vad=None)
+            st.asr_q = asyncio.Queue()
+            for _ in range(20):  # 20 x 0,5 s = 10 s > 6 s de tope
+                st.asr_buf.extend(bytes(16000))
+                await e._queue_audio(st, 0.0)
+            return st
+        st = asyncio.run(run())
+        assert ("overflow" in evs) is expect_drop
+        assert (st.dropped_s > 0) is expect_drop
+        if not expect_drop:
+            assert st.asr_q.qsize() == 20 and st.asr_pending_s == pytest.approx(10.0)

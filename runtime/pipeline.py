@@ -390,7 +390,9 @@ class Engine:
         self.vad_proto = timed("vad", K.SileroVAD)
         if self._turn_model_on:
             self.turn = timed("turn", K.SmartTurn)
-        self._out_q = asyncio.Queue(maxsize=max(1, c.max_pending_segments))
+        from .config import no_drop_on
+        # T-101: sin tope con no_drop (nunca se descarta una frase sin traducir; la voz acelera para alcanzar).
+        self._out_q = asyncio.Queue(maxsize=0 if no_drop_on(c) else max(1, c.max_pending_segments))
         self._out_task = asyncio.ensure_future(self._speaker_loop())
         if c.warmup_in_open:
             await self._warmup()
@@ -587,7 +589,8 @@ class Engine:
         dur = len(st.asr_buf) / 2 / SR
         pcm = bytes(st.asr_buf)
         st.asr_buf.clear()
-        if st.asr_pending_s + dur > self.cfg.max_asr_backlog_s:
+        from .config import no_drop_on
+        if st.asr_pending_s + dur > self.cfg.max_asr_backlog_s and not no_drop_on(self.cfg):  # T-101
             st.dropped_s += dur
             await self.emit(
                 "overflow",

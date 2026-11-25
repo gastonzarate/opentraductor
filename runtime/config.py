@@ -287,8 +287,12 @@ class PipelineConfig:
     # sube lineal hasta tts_speed_max con >= hi_s. Off o $OPENTRADUCTOR_TTS_SPEED_ADAPTIVE=0 = speed fijo.
     tts_speed_adaptive: bool = True
     tts_speed_queue_lo_s: float = 1.0  # T-93: era 2
-    tts_speed_queue_hi_s: float = 3.0  # T-93: era 5 (antes 8); acelera antes para no tener que saltar
-    tts_speed_max: float = 1.30
+    tts_speed_queue_hi_s: float = 4.0  # T-101: era 3 (T-93), con tope 1,3. Pendiente igual (1,33x a 3 s), sigue a 1,5x
+    tts_speed_max: float = 1.50  # T-101: era 1,30. Sin descartes, la cola solo baja acelerando
+    # T-101: nunca se descarta audio ni frases. Cola de entrada, backlog del ASR y cola de frases sin tope; el Player
+    # no salta frases viejas ni recorta la que suena (skip_old/cut_cur apagados) y no tiene tope duro. El atraso se
+    # compensa solo con la velocidad adaptativa. $OPENTRADUCTOR_NO_DROP=0 = topes y saltos de T-92/T-93.
+    no_drop: bool = True
     # T-92: frases que son solo muletilla (eh, em, ¿se entiende?, got it?) no se sintetizan; siguen en subtítulos.
     # $OPENTRADUCTOR_TTS_SKIP_FILLERS=0 = se dicen como hoy.
     tts_skip_fillers: bool = True
@@ -436,6 +440,12 @@ def tts_catchup_on(cfg) -> bool:
     """T-93: interruptor general (env OPENTRADUCTOR_TTS_CATCHUP=0/1 manda sobre cfg.tts_catchup)."""
     v = os.environ.get("OPENTRADUCTOR_TTS_CATCHUP")
     return (v == "1") if v in ("0", "1") else bool(getattr(cfg, "tts_catchup", True))
+
+
+def no_drop_on(cfg) -> bool:
+    """T-101: env OPENTRADUCTOR_NO_DROP=0/1 manda sobre cfg.no_drop."""
+    v = os.environ.get("OPENTRADUCTOR_NO_DROP")
+    return (v == "1") if v in ("0", "1") else bool(getattr(cfg, "no_drop", True))
 
 
 def tts_speed_params(cfg) -> tuple[float, float, float]:

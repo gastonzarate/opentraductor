@@ -487,9 +487,7 @@ class RuntimeService:
             if cfg["output_id"] != NO_OUTPUT:  # solo subtítulos: sin reproductor, el resto del flujo no cambia
                 dev_out = self._audio.find_device(cfg["output_id"], "out")
                 self._player = self._audio.Player(dev_out, latency=self._latency_arg)
-                self._player.skip_old_s = self._skip_old_s()
-                self._player.cut_cur_s = self._cut_cur_s()
-                self._player.cut_max_s, self._player.cut_max_frac = self._cut_caps()
+                self._setup_player(self._player)
                 self._player.start()
                 self._audio_info["output"] = _stream_info(self._player.latency_s, self._player.blocksize)
             if cfg.get("monitor_id"):
@@ -514,7 +512,8 @@ class RuntimeService:
             # un callback viejo durante start_stream (await) ya no puede entrar en la cola nueva.
             self._stream_seq += 1
             seq = self._stream_seq
-            self._in_q = asyncio.Queue(maxsize=INPUT_QUEUE_MAX)
+            # T-101: con no_drop la cola de entrada no tiene tope (11 min de audio = ~21 MB)
+            self._in_q = asyncio.Queue(maxsize=0 if C.no_drop_on(self._pcfg) else INPUT_QUEUE_MAX)
             await self._engine.start_stream(self._stream_id)
             if not self._is_current(gen):
                 return
@@ -583,15 +582,23 @@ class RuntimeService:
             ms = load.get(k)
             self._models[k] = {"state": "ready", "detail": f"carga {round(ms)} ms" if ms else None}
 
+    def _setup_player(self, p) -> None:
+        """Políticas de cola del Player. T-101 (no_drop): sin saltos, sin recortes y sin tope duro."""
+        p.skip_old_s = self._skip_old_s()
+        p.cut_cur_s = self._cut_cur_s()
+        p.cut_max_s, p.cut_max_frac = self._cut_caps()
+        if C.no_drop_on(self._pcfg):
+            p.max_queue_s = float("inf")
+
     def _skip_old_s(self) -> float | None:
         """T-92/T-93: umbral de cola (s) a partir del cual el Player salta frases viejas; None = política vieja."""
-        if not C.tts_catchup_on(self._pcfg):
+        if not C.tts_catchup_on(self._pcfg) or C.no_drop_on(self._pcfg):
             return None
         return C.env_opt_seconds("OPENTRADUCTOR_PLAYER_SKIP_OLD_S", float(self._pcfg.player_skip_old_s))
 
     def _cut_cur_s(self) -> float | None:
         """T-93: cola (s) a partir de la cual una frase nueva recorta lo no empezado de la que suena; None = no."""
-        if not C.tts_catchup_on(self._pcfg):
+        if not C.tts_catchup_on(self._pcfg) or C.no_drop_on(self._pcfg):
             return None
         d = getattr(self._pcfg, "player_cut_cur_s", None)
         return C.env_opt_seconds("OPENTRADUCTOR_PLAYER_CUT_CUR_S", None if d is None else float(d))
@@ -606,9 +613,7 @@ class RuntimeService:
     async def _open_monitor(self, dev_id: str) -> None:
         dev = self._audio.find_device(dev_id, "out")
         m = self._audio.Player(dev, volume=self._cfg["monitor_volume"])
-        m.skip_old_s = self._skip_old_s()
-        m.cut_cur_s = self._cut_cur_s()
-        m.cut_max_s, m.cut_max_frac = self._cut_caps()
+        self._setup_player(m)
         m.start()
         self._monitor = m
 
