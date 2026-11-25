@@ -1,8 +1,15 @@
 # opentraductor (resumen en español)
 
+[![CI](https://github.com/gastonzarate/opentraductor/actions/workflows/ci.yml/badge.svg)](https://github.com/gastonzarate/opentraductor/actions/workflows/ci.yml)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
+
 Traductor de voz **local** de español argentino a inglés de EE. UU. para macOS con Apple Silicon. Hablás en español y la Mac lo dice en inglés un instante después. Todo corre en tu equipo: reconocimiento de voz, traducción y síntesis.
 
 > **Estado: experimental.** Hoy la demora entre el fin de tu frase y el primer audio en inglés es de unos 0,57 segundos (mediana). No hay promesa de 300 ms. Documentación completa en inglés: [README.md](README.md).
+
+![La interfaz local de opentraductor: comprobación del micrófono virtual, botones de sesión y texto en vivo con el original en español y la traducción al inglés lado a lado](docs/img/ui.png)
+
+*La interfaz local en el navegador, antes de iniciar una sesión. Con la sesión en marcha, el panel de texto en vivo muestra el español y el inglés lado a lado.*
 
 ## Qué hace
 
@@ -31,7 +38,7 @@ El perfil más rápido (Moonshine + Qwen3) y el micrófono virtual están explic
 
 ## Resultados medidos
 
-Mediana desde el fin de habla hasta el primer audio con el código de este repositorio: 572 ms, 64 corridas (8 audios x 8 rondas, A/B intercalado), en una Mac con otras tareas abiertas (carga media 3,6, hasta 5,9). Con la Mac ocupada hay picos de cerca de 1 segundo (p95 1039 ms en esa corrida). En la misma corrida, sin conservar audio de cola y con espera de 64 ms dio 556 ms y con espera de 32 ms 558 ms: la versión actual está entre 14 y 16 ms por encima en la mediana, dentro del ruido de una Mac ocupada pero no gratis. Se conserva ese audio de cola porque el reconocimiento perdía la última sílaba en finales suaves («policial» salía «policia»); `OPENTRADUCTOR_ASR_TAIL_KEEP_MS=0` lo apaga. Medición anterior con otro código (commit `4806494`, espera de 64 ms): 562 ms con traducción por cláusulas y 599 ms sin ella. WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 82,3 % sin contexto y 93,8 % con unos 200 tokens de charla previa (96 términos, medidos en T-80 sobre `4806494`; el audio de cola solo cambia lo que recibe el reconocimiento). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones de más de 30 minutos ni Meet o Discord con personas reales.
+Mediana desde el fin de habla hasta el primer audio con el código de este repositorio: 572 ms, 64 corridas (8 audios x 8 rondas, A/B intercalado), en una Mac con otras tareas abiertas (carga media 3,6, hasta 5,9). Con la Mac ocupada hay picos de cerca de 1 segundo (p95 1039 ms en esa corrida). En la misma corrida, sin conservar audio de cola y con espera de 64 ms dio 556 ms y con espera de 32 ms 558 ms: la versión actual está entre 14 y 16 ms por encima en la mediana, dentro del ruido de una Mac ocupada pero no gratis. Se conserva ese audio de cola porque el reconocimiento perdía la última sílaba en finales suaves («policial» salía «policia»); `OPENTRADUCTOR_ASR_TAIL_KEEP_MS=0` lo apaga. Medición anterior con otro código (espera de 64 ms, ver [notas de método](#notas-de-método)): 562 ms con traducción por cláusulas y 599 ms sin ella. WER del reconocimiento: 0,047. Términos bien traducidos en 7 charlas cortas escritas por el proyecto: 82,3 % sin contexto y 93,8 % con unos 200 tokens de charla previa (96 términos, medidos con ese código anterior; el audio de cola solo cambia lo que recibe el reconocimiento). Detalle en [docs/latency-final.md](docs/latency-final.md). Son muestras chicas, no resultados certificados. No se probó con micrófono físico de punta a punta, sesiones de más de 30 minutos ni Meet o Discord con personas reales.
 
 ### Probado en charlas reales
 
@@ -41,20 +48,20 @@ Con frases sueltas no se ve el caso difícil: en una charla el orador casi no pa
 2. T3chFest 2018, David Bonilla, «¿Cobras poco? Carreras profesionales en software» ([video](https://www.youtube.com/watch?v=d2_CUOeCgVE))
 3. PyAr 2019, Hernán Wilkinson, «El desarrollo de software como debería ser» ([video](https://www.youtube.com/watch?v=lV9ozQbYEnc))
 
-**Qué cambió en la etapa 3.** Cuatro cambios, encendidos por defecto, cada uno con su interruptor:
+**Qué cambió para las charlas largas.** Cuatro cambios, encendidos por defecto, cada uno con su interruptor:
 
 - **No se descarta nada.** La cola de entrada, el pendiente del reconocimiento y la cola de frases no tienen tope, y el Player ya no salta frases viejas ni corta la que está sonando. El atraso se absorbe acelerando la voz en inglés: 1,0x con hasta 1 s de cola y hasta 1,5x con 4 s o más. `OPENTRADUCTOR_NO_DROP=0` vuelve al comportamiento anterior de saltar y cortar (`tts_catchup`, descrito en la primera medición más abajo).
 - **Voz simultánea.** Cada trozo de la frase se dice apenas hay 6 palabras confirmadas, no solo en comas y nexos, así la voz habla mientras el orador sigue hablando. `OPENTRADUCTOR_SIMUL_VOICE=0` la apaga; `OPENTRADUCTOR_SIMUL_VOICE_K` cambia el 6.
 - **Voz al ritmo del orador.** La velocidad de cada frase se ajusta para que dure más o menos lo que duró el habla, entre 1,0x y 1,3x; se usa la mayor entre esta y la velocidad por atraso. `OPENTRADUCTOR_PACE_VOICE=0` la apaga; `OPENTRADUCTOR_PACE_MAX` cambia el 1,3x.
 - **Tope al pendiente del reconocimiento.** Si al empezar una frase el audio que espera reconocimiento pasa de 20 s, se saltan frases enteras sin reconocerlas (ni subtítulo ni voz) hasta que baja a 3 s. Es la única pérdida que queda. `OPENTRADUCTOR_ASR_SKIP_OLD_S=0` lo apaga.
 
-**Atraso de la voz (fin de habla hasta el audio en inglés), con los valores por defecto de la etapa 3.** Charla 1 (11 min, 660 s), mismo método que antes, dos pasadas de la app empaquetada:
+**Atraso de la voz (fin de habla hasta el audio en inglés), con los valores por defecto nuevos.** Charla 1 (11 min, 660 s), mismo método que antes, dos pasadas de la app empaquetada:
 
 | Charla 1 | Atraso p50 | Atraso p95 | Peor | Deriva | Audio perdido |
 |---|---|---|---|---|---|
-| Antes de la etapa 3 (dos corridas) | 2,9 y 3,0 s | 5,6 y 6,1 s | sin dato | ninguna (-0,02 y 0,00 s/min) | unos 2,8 s de voz saltada |
-| Etapa 3, pasada 1 (commit `e8d9865`, ritmo 1,3x puesto a mano; `a54a00a` lo deja por defecto) | 2,3 s | 4,6 s | 7,0 s | ninguna (-0,06 s/min) | 0 (sin saltos, sin descartes, sin desborde) |
-| Etapa 3 por defecto, pasada 2 (commit `a54a00a`, todo encendido por defecto) | 2,2 s | 4,3 s | 7,7 s | ninguna (0,00 s/min) | 0 |
+| Antes de estos cambios (dos corridas) | 2,9 y 3,0 s | 5,6 y 6,1 s | sin dato | ninguna (-0,02 y 0,00 s/min) | unos 2,8 s de voz saltada |
+| Después, pasada 1 (voz al ritmo del orador a 1,3x, encendida a mano) | 2,3 s | 4,6 s | 7,0 s | ninguna (-0,06 s/min) | 0 (sin saltos, sin descartes, sin desborde) |
+| Después, pasada 2 (todo encendido por defecto) | 2,2 s | 4,3 s | 7,7 s | ninguna (0,00 s/min) | 0 |
 
 La mediana bajó unos 0,7 s y el p95 entre 1 y 1,8 s, sin saltar audio. El costo es una voz más rápida: su velocidad llegó a 1,5x en todas las corridas, y en la pasada 1 estuvo por encima de 1,3x cerca del 12 % del tiempo de voz (estimación reconstruida del registro del monitor, no una medida directa). Aislando el cambio de ritmo del orador en la app (mismo build, una pasada apagado y una encendido): mediana de 2,67 a 2,29 s, p95 de 5,06 a 4,56 s. La pasada con el ritmo apagado corrió con la Mac más ocupada (carga media hasta 9,7 contra 7,8), así que parte de esa mejora puede ser ruido.
 
@@ -73,17 +80,17 @@ Una versión anterior sin el tope, con el mismo tipo de carga (carga media hasta
 
 El atraso sigue siendo de segundos, no el de menos de un segundo de la tabla de arriba, y no prometemos 1 segundo. La cifra de menos de un segundo vale para frases aisladas.
 
-El atraso de la versión anterior, como referencia. Antes de la etapa 3 la voz en inglés hacía cola cuando el orador hablaba más rápido de lo que Kokoro podía decir. `tts_catchup` (`OPENTRADUCTOR_TTS_CATCHUP=0` lo apaga) aceleraba Kokoro hasta 1,30x cuando crecía la cola, recortaba a 80 ms el silencio que Kokoro agrega en cada trozo, saltaba frases viejas enteras cuando la cola pasaba de 8 s y cortaba las cláusulas todavía no dichas de la frase que sonaba si llegaba una nueva con más de 5 s de cola. Las frases con cifras o nombres propios no se saltaban ni se cortaban. Esa versión, en tres charlas:
+El atraso de la versión anterior, como referencia. Antes de estos cambios la voz en inglés hacía cola cuando el orador hablaba más rápido de lo que Kokoro podía decir. `tts_catchup` (`OPENTRADUCTOR_TTS_CATCHUP=0` lo apaga) aceleraba Kokoro hasta 1,30x cuando crecía la cola, recortaba a 80 ms el silencio que Kokoro agrega en cada trozo, saltaba frases viejas enteras cuando la cola pasaba de 8 s y cortaba las cláusulas todavía no dichas de la frase que sonaba si llegaba una nueva con más de 5 s de cola. Las frases con cifras o nombres propios no se saltaban ni se cortaban. Esa versión, en tres charlas:
 
 | Charla | Atraso p50 | Atraso p95 | Deriva | Voz saltada |
 |---|---|---|---|---|
 | 1 (dos corridas) | 2,9 y 3,0 s | 5,6 y 6,1 s | ninguna (-0,02 y 0,00 s/min) | unos 2,8 s de 660 s |
-| 2 (una corrida, commit `ff71322`) | 4,0 s | 7,8 s | ninguna (+0,03 s/min) | 13,8 s (2,1 %) |
-| 3 (una corrida, commit `ff71322`) | 3,8 s | 7,1 s | ninguna (-0,10 s/min) | 11,7 s (1,8 %) |
+| 2 (una corrida) | 4,0 s | 7,8 s | ninguna (+0,03 s/min) | 13,8 s (2,1 %) |
+| 3 (una corrida) | 3,8 s | 7,1 s | ninguna (-0,10 s/min) | 11,7 s (1,8 %) |
 
-Las charlas 2 y 3 no se volvieron a correr con los valores por defecto de la etapa 3.
+Las charlas 2 y 3 no se volvieron a correr con los valores por defecto nuevos.
 
-Límites de las cifras de la etapa 3:
+Límites de estas cifras:
 - Una pasada por variante (dos para la charla 1 con los valores finales, una de ellas antes de que existiera el tope). Dos corridas del mismo código pueden diferir en varias décimas de segundo en el p95.
 - Una Mac (M5 Pro). Las charlas son grabaciones reproducidas por BlackHole, no una reunión con personas.
 - Nadie juzgó escuchando si la voz más rápida suena natural. Solo medimos el atraso.
@@ -97,12 +104,27 @@ Límites de esta cifra:
 - Las expresiones regulares son nuestras y nadie más las revisó.
 - El glosario lo armó el proyecto con vocabulario de este tipo de charla (ágil, testing, DevOps) y la charla 1 trata ese tema. En otros temas esperá menos. En una nueva puntuación offline de la charla 2, de otro tema, la cuenta no cambió (25 de 35 términos).
 - En las corridas en tiempo real la mejora vino de la corrección por glosario. Con las pistas al reconocedor apagadas (`OPENTRADUCTOR_ASR_KEYTERMS=0`) salieron 29 de 47 en una corrida, igual que con ellas encendidas.
-- Con los valores por defecto de la etapa 3, la charla 1 dio 29 y 32 de 47 términos en las dos pasadas, dentro del mismo ruido de 3 a 4 términos. La etapa 3 no cambia el texto traducido.
+- Con los valores por defecto nuevos, la charla 1 dio 29 y 32 de 47 términos en las dos pasadas, dentro del mismo ruido de 3 a 4 términos. Estos cambios no cambian el texto traducido.
 - Siglas y palabras en inglés dichas dentro del español (ATDD, waterfall, lean, DevOps) siguen mal traducidas.
 - La Mac estaba ocupada durante las corridas (carga media entre 4 y 12).
 
 
+## Notas de método
+
+Las versiones detrás de las cifras de arriba, para quien quiera reproducirlas. Los hashes son commits del historial de este repositorio.
+
+| Fila | Versión |
+|---|---|
+| 562 ms y 599 ms (código anterior, espera de 64 ms) y 93,8 % de términos | `4806494` |
+| Charla 1, «Después, pasada 1» (voz al ritmo del orador a 1,3x encendida a mano) | `e8d9865` |
+| Charla 1, «Después, pasada 2» (voz al ritmo del orador a 1,3x por defecto) | `a54a00a` |
+| Charlas 2 y 3 antes de estos cambios | `ff71322` |
+
+«Antes de estos cambios» es el comportamiento anterior de saltar y cortar (`OPENTRADUCTOR_NO_DROP=0`). Los cambios son los cuatro de «Qué cambió para las charlas largas».
+
 ## Cómo contribuir
+
+Guía completa en [CONTRIBUTING.md](CONTRIBUTING.md) (en inglés). Problemas de seguridad: [SECURITY.md](SECURITY.md).
 
 Abrí un issue o un pull request. Las áreas más útiles son la latencia, la calidad con español rioplatense (un set de prueba más grande, glosario del usuario) y la portabilidad (instalación en una Mac limpia). Corré `uv run --extra runtime python -m pytest tests -q` y contá qué Mac y qué macOS usaste. El audio de evaluación (`data/audio/`) no está en el repositorio: en un clon nuevo los tests que lo leen se saltean con el motivo «data/audio ausente». Para bajarlo, mirá la sección «Run the tests» de [README.md](README.md).
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T-69 (@bench): script único para A/B de latencia por etapa y de aciertos con contexto.
+# T-69: script único para A/B de latencia por etapa y de aciertos con contexto.
 #
 # Uso:  scripts/eval/t69_bench.sh OUTDIR
 #   ARMS="nombre=VAR=1 VAR2=0;nombre2=VAR=0"   brazos en orden; cada uno es nombre=ENV (ENV puede ser vacío: "base=").

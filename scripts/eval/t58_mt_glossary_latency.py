@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""T-58 (@bench): latencia de MT con mt_sense_glossary apagado vs encendido, en serie, mismo proceso y modelo.
+"""T-58: latencia de MT con mt_sense_glossary apagado vs encendido, en serie, mismo proceso y modelo.
 
 Cada (frase, repeticion) mide los dos brazos back-to-back con orden alternado (off,on / on,off) para que la deriva
 termica y de carga caiga igual en ambos. Dos modos:

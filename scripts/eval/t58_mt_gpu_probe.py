@@ -18,7 +18,7 @@ Mide ``translate`` de los 3 textos asr_final en un solo proceso con Qwen + Kokor
   idle_bigtick  como idle_tick con una matmul 2048x2048 (GPU con carga real)
 CONDS=hot,idle,... elige condiciones.
 
-Uso (sin la medición de @bench corriendo):
+Uso (sin otra medición corriendo):
   OPENTRADUCTOR_MLX_CACHE_MB=256 .venv/bin/python scripts/eval/t58_mt_gpu_probe.py OUT.json
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
-"""T-74: set chico de control para GLOSSARY_EXT, armado por @bench (pedido de @lead, 18/11).
+"""T-74: set chico de control para GLOSSARY_EXT, armado por el equipo de medición (18/11).
 
 Escrito sin mirar la salida de Qwen, el set del 17/11 ni el banco v1 y sin abrir QWEN_GLOSSARY_EXT. Solo conocía la
-lista de lemas del mensaje del commit 63488b4. Temas distintos de v1 y del set de @macdev (t74): asado, consultorio,
+lista de lemas del mensaje del commit 63488b4. Temas distintos de v1 y del set t74: asado, consultorio,
 oficina y trámites, cumpleaños familiar.
 Cada término lleva un grupo en el archivo lateral charlas_ctx_ar_t74b.groups.json (el runner no lo lee):
   A = léxico rioplatense general que NO está en la lista de EXT (mide que EXT no estorbe).

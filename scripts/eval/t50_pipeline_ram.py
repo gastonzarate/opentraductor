@@ -6,7 +6,7 @@ Un proceso por tamaño, los tres modelos cargados a la vez, como en la app. Reco
   * swap usado y pageouts del sistema antes y después (vm.swapusage, vm_stat): si crecen, no entra cómodo,
   * p50/p95 de MT y del primer chunk de TTS por frase.
 Envolverlo con /usr/bin/time -l da además el «peak memory footprint», que es la cifra que usa macOS para la presión de memoria.
-Con --session-min 10 repite la carga hasta 10 min (criterio de 8 GB de @lead: footprint pico ≤ 3,5 GB) y guarda
+Con --session-min 10 repite la carga hasta 10 min (criterio de 8 GB: footprint pico ≤ 3,5 GB) y guarda
 el phys_footprint pico del proceso (proc_pid_rusage, igual que `footprint -p`).
 Correr con la máquina sola y en serie (turno en #t-45). Sin red: HF_HUB_OFFLINE=1.
 

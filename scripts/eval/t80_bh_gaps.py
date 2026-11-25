@@ -1,7 +1,7 @@
 """T-80 · ¿la prueba de QA mete huecos en BlackHole?
 
-Reproduce los clips de artifacts/t67-clips por BlackHole 2ch igual que
-deliverables/qa/tests/sesion_tienda.py (sd.play + sd.wait, ganancia 0.7) y, en
+Reproduce los clips de artifacts/t67-clips por BlackHole 2ch igual que la prueba de QA
+de la app (sd.play + sd.wait, ganancia 0.7; ese script no está en este repo) y, en
 otro proceso, graba la entrada de BlackHole. Después alinea cada clip grabado
 con el original y cuenta huecos: tramos de >= 20 ms en cero exacto dentro del
 clip donde el original tiene señal, y cuánto más largo quedó el clip grabado.

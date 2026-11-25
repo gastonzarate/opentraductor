@@ -9,7 +9,7 @@ suena antes del fin de habla y ese total da negativo, y las etapas (mt, tts) se 
   piezas/frase = (cláusulas + resto) por frase ok; final contradice = frases cuyo asr_text_es final no empieza con
                  las cláusulas que ya sonaron (lo hablado no se deshace)
 Origen = t0_ns + segments[0].end_s, igual que end_to_first_ms.
-Métrica del objetivo (decisión de @lead 18/11), por frase desde segment_results.signed_end_to_first_ms:
+Métrica del objetivo (decisión del 18/11), por frase desde segment_results.signed_end_to_first_ms:
   objetivo = max(0, primer audio) si el final del ASR no contradice las cláusulas que ya sonaron; ∞ si las contradice.
   pesimista = la compuesta del benchmark: anticipadas (sin verificar) = ∞.
   IC95 del p50 con bootstrap por cluster (segment_results.cluster, 2000 remuestreos, semilla fija).

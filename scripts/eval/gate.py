@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate de calidad: corre las métricas de memory/decisiones/estandar-de-calidad.md y falla si un umbral se rompe.
+"""Gate de calidad: corre las métricas del estándar de calidad del proyecto y falla si un umbral se rompe.
 
 Uso:  scripts/eval/gate.sh [--out DIR] [--only a,b] [--skip a,b] [--reps 3] [--allow-unmeasured]
 Códigos de salida: 0 todo PASA (las OMITIDAS se listan) · 1 algún umbral FALLA o una métrica NO SE PUDO MEDIR · 2 uso incorrecto.
@@ -37,12 +37,12 @@ ENV = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
        "PYTHONPATH": str(ROOT) + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else "")}
 
 
-# T-45 (16/11, decisión de @lead): la base 409 ms / 0,050 / 51,3 ms es de otra config (Moonshine tiny ep160, 12 clips test, sin Qwen).
+# T-45 (16/11, decisión del proyecto): la base 409 ms / 0,050 / 51,3 ms es de otra config (Moonshine tiny ep160, 12 clips test, sin Qwen).
 # La tienda sale con Moonshine + Qwen (T-49). Hasta fijar la base con esa config (tras T-48 y T-50), estas filas se miden y se
 # muestran, pero no aprueban ni fallan. T-58: se reactivan solas al existir scripts/eval/store_baseline.json (ver STORE_BASE).
 NO_VALID_BASE = ("Latencia motor", "ASR WER", "MT petición→mt_final p95")
 
-# T-58: la base de la config de tienda vive en scripts/eval/store_baseline.json (la escribe @bench tras medir con
+# T-58: la base de la config de tienda vive en scripts/eval/store_baseline.json (la escribe el equipo de medición tras medir con
 # scripts/eval/t58_baseline.sh, retirado en T-70 con el modo incremental). Si existe, las filas con base dejan de salir SIN BASE y se comparan contra su umbral.
 # Formato: {"config": {...adapter-config de la tienda...}, "python": ".venv-inc-llm/bin/python", "latency_reps": 7,
 #           "latency_p50_ms": {"base": N, "threshold": N}, "latency_p95_ms": {...}, "mt_p95_ms": {...}, "asr_wer": {...}}
@@ -67,7 +67,7 @@ class Row:
     metric: str
     value: str
     threshold: str
-    status: str  # PASA | FALLA | CONTENDIDO | SIN BASE | NO MEDIDO | OMITIDO | DE @qa
+    status: str  # PASA | FALLA | CONTENDIDO | SIN BASE | NO MEDIDO | OMITIDO | DE QA
     note: str = ""
 
 
@@ -282,7 +282,7 @@ def check_mt(out: Path, a) -> list[Row]:
     mthr = bm[1] if bm else 70.0
     rows.append(Row(names[0], num(q[1]) + " ms", f"≤ {num(mthr)} ms (base {num(bm[0]) if bm else '51,3'})", "PASA" if q[1] <= mthr else "FALLA", f"ruta: {q[0]}") if q
                 else Row(names[0], "n/d", "≤ 70 ms", "NO MEDIDO", "sin p95 en run.json"))
-    qd = str(mt_cfg.get("qwen_model_dir", "")).lower()  # T-58: piso de calidad según el tamaño de Qwen de la tienda (decisión @lead 16/11)
+    qd = str(mt_cfg.get("qwen_model_dir", "")).lower()  # T-58: piso de calidad según el tamaño de Qwen de la tienda (decisión del 16/11)
     size = "1.7b" if "1.7b" in qd else "4b" if re.search(r"(?<![\d.])4b(?!it)", qd) else None
     bmin = (STORE_BASE.get("bleu_chrf_min") or {}).get(size, [56.0, 71.0]) if store else [56.0, 71.0]
     for name, key, thr in ((names[1], "bleu", float(bmin[0])), (names[2], "chrf", float(bmin[1]))):
@@ -388,8 +388,8 @@ def main() -> int:
         if n not in names:
             rows.append(Row(n, "-", "-", "OMITIDO", "excluido con --only/--skip"))
     rows += [Row("Latencia a BlackHole (mediana)", "-", "≤ 600 ms (base 548)", "OMITIDO", "necesita BlackHole; scripts/eval/device_loopback.py, a mano"),
-             Row("Latencia percibida E2E (QA)", "-", "mediana ≤ 1,5 s, p90 ≤ 2,5 s", "DE @qa", "con la .app"),
-             Row("Estabilidad 60 min (QA)", "-", "sin cortes", "DE @qa", "con la .app")]
+             Row("Latencia percibida E2E (QA)", "-", "mediana ≤ 1,5 s, p90 ≤ 2,5 s", "DE QA", "con la .app"),
+             Row("Estabilidad 60 min (QA)", "-", "sin cortes", "DE QA", "con la .app")]
     md = ["# Gate de calidad", "", *[f"- {x}" for x in environment_note()], f"- salidas: `{out}` · duración {time.time() - t0:.0f} s", "",
           "| Métrica | Valor | Umbral | Estado | Nota |", "|---|---|---|---|---|"]
     md += [f"| {r.metric} | {r.value} | {r.threshold} | **{r.status}** | {r.note} |" for r in rows]

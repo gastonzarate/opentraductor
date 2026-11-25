@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# @audio T-81: costo en calidad de cada palanca hacia 0,3 s. Intercalado (la Mac nunca está libre).
+# T-81: costo en calidad de cada palanca hacia 0,3 s. Intercalado (la Mac nunca está libre).
 # Brazo: nombre|ENV1=a ENV2=b|{"campo_extra_de_PipelineConfig": ...}   (separados por ;)
 # Fases (reanudables, OUT/<fase>.DONE): latencia (t67-clips, ROUNDS rondas) -> terminos (ctx200) -> charlas (cortes).
 # Uso: COMMIT=45eb5b7 ROUNDS=5 bash scripts/eval/t81_bench.sh artifacts/t81

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Subtítulos en pantalla (T-55, memory/decisiones/t55-contrato-eventos-frase.md). Sin UI: se prueba con
+/// Subtítulos en pantalla (T-55, contrato de eventos de frase en docs/api-local.md). Sin UI: se prueba con
 /// packaging/macos/Tests/run_tests.sh. Misma lógica que LiveRows en ui/app.js.
 /// - Una fila por `seg_id`, en orden de llegada; `.segment` cierra solo su fila.
 /// - `from_seg_id` reasigna la fila «live» al id definitivo.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# @bench T-67: A/B de latencia INTERCALADO por repetición, sin esperar reposo (pedido @lead 20/11).
+# T-67: A/B de latencia INTERCALADO por repetición, sin esperar reposo (20/11).
 # Ronda r: off, new, fw2, fw3 (1 repetición de los 3 clips dev cada una, warmup 1). Así la carga de la Mac pega parecido a todos.
 # Uso: scripts/eval/t67_intercalado.sh OUTDIR
 #   COMMIT=da867a6   commit a medir (git archive en /tmp, igual que t69_bench.sh)

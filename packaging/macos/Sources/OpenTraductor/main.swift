@@ -51,7 +51,7 @@ final class RuntimeProcess {
         env["OPENTRADUCTOR_ASR_BACKEND"] = profile.asrBackend
         env["OPENTRADUCTOR_MT_ENGINE"] = profile.mtEngine
         if profile.mtEngine == "qwen", let q = ModelManifest.qwenDir(profile.qwenModel) { env["OPENTRADUCTOR_QWEN_DIR"] = q.path }
-        // BUG-7 (22e7f7a, validado por @qa en texto): normaliza cifras y traduce oración por oración.
+        // BUG-7 (22e7f7a, validado en texto): normaliza cifras y traduce oración por oración.
         env["OPENTRADUCTOR_MT_NORMALIZE"] = "1"
         return env
     }

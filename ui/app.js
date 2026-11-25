@@ -2,7 +2,7 @@
 // Solo habla con el servidor de este equipo (mismo origen). No graba audio.
 // Los textos del servidor se insertan con textContent, nunca como HTML.
 
-// Filas del texto en vivo, sin DOM (T-55, memory/decisiones/t55-contrato-eventos-frase.md).
+// Filas del texto en vivo, sin DOM (T-55, contrato de eventos de frase en docs/api-local.md).
 // Una fila por seg_id, en orden de llegada: "partial" | "final" | "discarded".
 // - from_seg_id reasigna la fila «live» al id definitivo (no crea otra).
 // - Un texto vacío nunca pisa un texto ya mostrado.

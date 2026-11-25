@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""T-69 (@bench): genera scripts/eval/sets/charlas_ctx_ar.jsonl, 5 charlas de 16 turnos en español rioplatense.
+"""T-69: genera scripts/eval/sets/charlas_ctx_ar.jsonl, 5 charlas de 16 turnos en español rioplatense.
 
 Cada charla es una conversación seguida (el MT recibe los turnos anteriores como contexto). Cada turno puede llevar
 ``terms``: términos cuya traducción depende del tema (plata/pila/cola/turno/guardia/sale...). Un término está bien si

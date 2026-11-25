@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""T-69 (@bench): % de términos bien traducidos en charlas con contexto (scripts/eval/sets/charlas_ctx_ar.jsonl).
+"""T-69: % de términos bien traducidos en charlas con contexto (scripts/eval/sets/charlas_ctx_ar.jsonl).
 
 Cada charla se traduce turno a turno con Qwen, como en el pipeline: los últimos N turnos (es, en propio) van de contexto.
 Brazos = valores de N (0 = sin contexto). La MT se arma con PipelineConfig() del commit medido (como la app); el entorno manda:

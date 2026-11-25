@@ -11,7 +11,7 @@ El repo es open source: no hay prueba, clave ni compuerta en `/api/start`, y `ru
 
 ## /events: eventos de frase (T-55)
 
-Contrato completo: `memory/decisiones/t55-contrato-eventos-frase.md`. Un `seg_id` identifica una sola frase.
+Un `seg_id` identifica una sola frase.
 
 | Evento | Campos | Cambio |
 |---|---|---|
@@ -21,7 +21,7 @@ Contrato completo: `memory/decisiones/t55-contrato-eventos-frase.md`. Un `seg_id
 
 Con `mt_stream_first_chunk` (T-58, apagado por defecto, solo Qwen) el audio del 1.er fragmento de una frase puede empezar a sonar antes de que llegue su `segment` (el `text_en` completo llega igual, unos ms después). Ese 1.er `tts_chunk` trae `planned_text_en` nulo; los siguientes traen el texto completo. Las rutas y los campos no cambian. `describe` suma `mt_stream` (segments, head_early, mismatch, lead_ms, tts_in_mt_ms).
 
-Con `spec_on_silence` (T-73, apagado por defecto, env `OPENTRADUCTOR_SPEC_ON_SILENCE=1`) el motor emite un evento interno `spec_result` por frase antes de su `mt_final`: `{stream_id, seg_id, spec: hit|miss|none|error|cancelled, launched, wasted_ms, claim_wait_ms}`. Es para métricas de @bench; la UI puede ignorarlo. `describe.spec` suma replaced, cancel_voice, from_finish, hit_norm, late_ms y on_silence. `mt_stream_tts` / `OPENTRADUCTOR_MT_STREAM_TTS` es alias de `mt_stream_first_chunk`. `OPENTRADUCTOR_TTS_FIRST_WORDS=N` (T-67) fuerza el largo del 1.er fragmento de Kokoro (`tts_first_chunk_max_words`, default 2 desde el A/B final `artifacts/t67-final`; 0 = solo por puntuación). Desde ese A/B también son default `asr_process` (Moonshine en proceso aparte; env `OPENTRADUCTOR_ASR_PROCESS=0` lo apaga) y `switch_interval_ms` 1 (env `OPENTRADUCTOR_SWITCH_INTERVAL_MS=off` lo apaga). La API no cambia.
+Con `spec_on_silence` (T-73, apagado por defecto, env `OPENTRADUCTOR_SPEC_ON_SILENCE=1`) el motor emite un evento interno `spec_result` por frase antes de su `mt_final`: `{stream_id, seg_id, spec: hit|miss|none|error|cancelled, launched, wasted_ms, claim_wait_ms}`. Es para métricas del banco de medición; la UI puede ignorarlo. `describe.spec` suma replaced, cancel_voice, from_finish, hit_norm, late_ms y on_silence. `mt_stream_tts` / `OPENTRADUCTOR_MT_STREAM_TTS` es alias de `mt_stream_first_chunk`. `OPENTRADUCTOR_TTS_FIRST_WORDS=N` (T-67) fuerza el largo del 1.er fragmento de Kokoro (`tts_first_chunk_max_words`, default 2 desde el A/B final `artifacts/t67-final`; 0 = solo por puntuación). Desde ese A/B también son default `asr_process` (Moonshine en proceso aparte; env `OPENTRADUCTOR_ASR_PROCESS=0` lo apaga) y `switch_interval_ms` 1 (env `OPENTRADUCTOR_SWITCH_INTERVAL_MS=off` lo apaga). La API no cambia.
 
 ## Retraso de la voz en charla continua (T-92, BUG-9)
 

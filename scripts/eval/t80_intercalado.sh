@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# @bench T-80: A/B intercalado de ENDPOINT_COMPLETE_TURN (ct) y MT_SIMUL (simul) sobre un commit.
+# T-80: A/B intercalado de ENDPOINT_COMPLETE_TURN (ct) y MT_SIMUL (simul) sobre un commit.
 # Brazos por defecto: ref= ; ct=OPENTRADUCTOR_ENDPOINT_COMPLETE_TURN=1 ; simul=OPENTRADUCTOR_MT_SIMUL=1 ; ctsimul=ambos.
 # Fases (cada una reanudable; escribe OUT/<fase>.DONE):
 #   1 charlas : cortes falsos. 114 turnos de data/audio/synth-charlas en CHUNKS tandas; en cada tanda corren los 4 brazos

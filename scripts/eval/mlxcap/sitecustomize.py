@@ -1,5 +1,5 @@
 # [bench] T-58: aplica mx.set_cache_limit en cada proceso de medición cuando OT_MLX_CACHE_LIMIT_MB está definida.
-# El motor aún no fija el tope (T-51, @audio); esto reproduce la config de la tienda sin tocar runtime/.
+# El motor aún no fija el tope (T-51); esto reproduce la config de la tienda sin tocar runtime/.
 import os
 _mb = os.environ.get("OT_MLX_CACHE_LIMIT_MB")
 if _mb:

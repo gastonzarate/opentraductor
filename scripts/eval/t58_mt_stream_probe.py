@@ -12,7 +12,7 @@ idénticos entre los brazos. El orden normal/stream se alterna por repetición.
 Frases: text_es de data/manifests/t58_asr_final_texts.jsonl + text_meetings_ar_dev.jsonl y es de
 scripts/eval/sets/mt_sentido_ar.jsonl (LIMIT=n recorta).
 
-Uso (sin la medición de @bench corriendo):
+Uso (sin otra medición corriendo):
   OPENTRADUCTOR_MLX_CACHE_MB=256 REPS=3 .venv/bin/python scripts/eval/t58_mt_stream_probe.py OUT.json
 """
 from __future__ import annotations

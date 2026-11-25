@@ -1,6 +1,6 @@
 """T-58: ¿cuánto ahorra hacer el prefill de Qwen con el prefijo estable del parcial durante la espera de endpoint?
 
-Idea (@lead): mientras corre el endpoint (160 ms) + ASR finish (~143 ms), cargar en la caché KV el prompt fijo
+Idea: mientras corre el endpoint (160 ms) + ASR finish (~143 ms), cargar en la caché KV el prompt fijo
 más el parcial SIN su última palabra (la última suele cambiar: "planta" -> "plantación"). Con el final, solo se
 procesan los tokens que faltan y el decode. El prefill también despierta la GPU, así que reemplaza al prewarm.
 
@@ -10,7 +10,7 @@ Brazos, cada repetición después de IDLE_S de GPU ociosa (como en el pipeline):
            y generate solo con la cola. Mide desde que llega el final.
 Reporta p50 por frase, costo del prefill y si la salida es idéntica a translate(final) (greedy).
 
-Uso (con la Mac libre, sin mediciones de @bench corriendo):
+Uso (con la Mac libre, sin otras mediciones corriendo):
   OPENTRADUCTOR_QWEN_DIR=artifacts/analysis/llm-mp4-a/models/qwen3-4b-instruct-2507-4bit \
   .venv-inc-llm/bin/python scripts/eval/t58_mt_kv_prefill_probe.py artifacts/t58-kv-prefill/probe.json
 """

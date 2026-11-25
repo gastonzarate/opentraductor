@@ -54,7 +54,7 @@ def _apply_mlx_cache_limit(cfg: PipelineConfig) -> int | None:
 
 def tts_first_words(cfg: PipelineConfig) -> int | None:
     """T-67 TTS en streaming: palabras del 1.er fragmento de Kokoro. $OPENTRADUCTOR_TTS_FIRST_WORDS=N lo fuerza
-    (0 = solo por puntuación), para que @bench mida N chico con MT_STREAM_TTS=1 sin tocar la config de la app.
+    (0 = solo por puntuación), para medir N chico con MT_STREAM_TTS=1 sin tocar la config de la app.
     Sin env (o valor inválido) = cfg.tts_first_chunk_max_words, el camino de hoy."""
     v = os.environ.get("OPENTRADUCTOR_TTS_FIRST_WORDS", "").strip()
     if v.isdigit():
@@ -64,7 +64,7 @@ def tts_first_words(cfg: PipelineConfig) -> int | None:
 
 def endpoint_short_ms(cfg: PipelineConfig) -> float:
     """T-67 espera corta del fin de frase adaptativo. $OPENTRADUCTOR_ENDPOINT_SHORT_MS=N la fuerza (entero > 0), para
-    que @bench mida otra espera sin tocar la config de la app. Sin env (o valor inválido) = cfg.endpoint_short_ms."""
+    para medir otra espera sin tocar la config de la app. Sin env (o valor inválido) = cfg.endpoint_short_ms."""
     v = os.environ.get("OPENTRADUCTOR_ENDPOINT_SHORT_MS", "").strip()
     if v.isdigit() and int(v) > 0:
         return float(v)
@@ -73,7 +73,7 @@ def endpoint_short_ms(cfg: PipelineConfig) -> float:
 
 def asr_tail_keep_ms(cfg: PipelineConfig) -> float:
     """T-83: ms de la cola silenciosa que igual se pasan al ASR al endpoint. $OPENTRADUCTOR_ASR_TAIL_KEEP_MS=N lo
-    fuerza (0 = descartar toda la cola, como T-58), para el A/B de @bench. Sin env (o inválido) = cfg."""
+    fuerza (0 = descartar toda la cola, como T-58), para el A/B. Sin env (o inválido) = cfg."""
     v = os.environ.get("OPENTRADUCTOR_ASR_TAIL_KEEP_MS", "").strip()
     if v.isdigit():
         return float(v)
@@ -1004,7 +1004,7 @@ class Engine:
         if kv and hasattr(self.mt, "prefill"):
             # Prefill KV: se evalúa en CADA pausa VAD del segmento (no una vez por segmento). En frases
             # largas la 1.ª pausa >= 32 ms llega a mitad de frase, a veces antes del 1.er parcial; si se
-            # gastaba ahí, la pausa final no tenía prefill (dignidad 21 pal., @bench 90a0051).
+            # gastaba ahí, la pausa final no tenía prefill (dignidad 21 pal., 90a0051).
             pause = (seg.seg_id, st.last_speech_end_s)
             if pause == st.kv_pause:
                 return

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""T-69 (@bench): desglose de latencia por etapa que sirve con MT+TTS en streaming (defaults de T-67).
+"""T-69: desglose de latencia por etapa que sirve con MT+TTS en streaming (defaults de T-67).
 
 t58_stage_breakdown.py supone que el 1er tts_chunk llega DESPUES de mt_final; con mt_stream_tts llega antes
 (la etapa TTS da negativa). Aqui las etapas se definen sobre eventos que existen en los dos modos.

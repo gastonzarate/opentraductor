@@ -1,0 +1,26 @@
+name: Idea or feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve
+      description: Describe the situation (for example "in a call, the voice falls behind when...").
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Other options you considered
+  - type: dropdown
+    id: help
+    attributes:
+      label: Would you send a pull request for it?
+      options: ["Yes", "Maybe, with guidance", "No"]

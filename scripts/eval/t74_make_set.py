@@ -1,6 +1,6 @@
 """T-74: set chico NUEVO de charlas es-AR para validar el glosario rioplatense antes de mirar el set oficial del 17/11.
 
-Escrito el 18/11 por @macdev sin mirar la salida de Qwen ni el set del 17/11. Temas distintos del banco v1
+Escrito el 18/11 sin mirar la salida de Qwen ni el set del 17/11. Temas distintos del banco v1
 (mudanza, changas/freelance, cancha y finde). Mezcla términos que están en QWEN_GLOSSARY con otros que no
 (bondi, chorros, birras, garca, calefón, heladera, buena onda, ojo de la cara, hacer precio, mi vieja) para ver
 si el glosario ayuda sin tapar lo demás. Léxico de uso general (fuentes: Diccionario de la lengua de la Argentina,

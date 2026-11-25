@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""@bench T-67: resume la tanda de t67_intercalado.sh (brazos intercalados por ronda).
+"""T-67: resume la tanda de t67_intercalado.sh (brazos intercalados por ronda).
 Uso: python3 scripts/eval/t67_intercalado.py OUTDIR [--ref off]
 Por brazo: p50/p95 de end_to_first (total) y de cada etapa, diferencia contra --ref (p50 agrupado y mediana de las
 diferencias por ronda, que cancela mejor la carga que pega a todos), y carga 1 min de las corridas.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""@bench T-80: resume artifacts/t80 (scripts/eval/t80_intercalado.sh). Imprime Markdown.
+"""T-80: resume artifacts/t80 (scripts/eval/t80_intercalado.sh). Imprime Markdown.
 
 Secciones: (1) cortes falsos en charlas (t67_cuts.py) y motivos de espera por brazo; (2) latencia desde el fin de habla
 (resumen de t67_intercalado.py); (3) 1.er audio desde el INICIO de habla en clips de más de 5 s; (4) términos ctx0/ctx200.

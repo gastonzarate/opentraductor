@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""@bench T-67: regla de decision de la tanda final (pedido @lead 20/11).
+"""T-67: regla de decision de la tanda final (20/11).
 Uso: python3 scripts/eval/t67_decision.py OUTDIR [--ref new] [--min-delta 20] [--min-rondas 8]
 Por brazo != ref: en cada ronda, p50 total del brazo - p50 total de la ref (misma ronda, mismos clips). Cuenta las rondas con
 diferencia <= -min-delta. Gana si cuenta >= min-rondas (de las rondas completas) y ademas 0 cortes falsos y 0 huecos TTS

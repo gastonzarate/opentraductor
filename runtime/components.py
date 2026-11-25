@@ -390,7 +390,7 @@ QWEN_GLOSSARY = (
     (r"\bpate(ar|amos|ás|a|ó|o|emos|émos)\w*", "patear = to push back, postpone"),
     (r"\bpila\b", "con toda la pila = full of energy; una pila de = a lot of"),
     (r"\bafan\w*", "afano = rip-off; afanar = to steal"),
-    # T-68 (18/11, pedido de @lead): modismos rioplatenses generales, de lunfardo de uso común en trabajo y plata.
+    # T-68 (18/11): modismos rioplatenses generales, de lunfardo de uso común en trabajo y plata.
     # La lista NO sale de los fallos del set del 17/11 (inflaría la métrica); el banco v1 controla el sobreajuste.
     # Patrones acotados para no disparar en frases comunes (ver test_glossary_general_no_false_positives).
     (r"\b(un|medio|dos|tres|cuatro|cinco|diez|\d+) palos?\b", "un palo = a million (pesos or dollars)"),
@@ -516,7 +516,7 @@ QWEN_GLOSSARY_EXT = (
 # alcance en sentido de código, deploy o alcance); [fin] glosarios de AFIP (retenciones y percepciones, impuesto a
 # las ganancias), BCRA (CBU/CVU, acreditación) y procesadores de pago (contracargo = chargeback, cuotas sin interés);
 # [lunf] mangos con números en letras (amplía la entrada de 5d6a3b5, Gobello); [fecha] convención AR día/mes.
-# Ninguna sale de copiar frases o traducciones del 17/11; el arreglo se mide en el set sellado de @bench.
+# Ninguna sale de copiar frases o traducciones del 17/11; el arreglo se mide en el set sellado.
 _TECH = (r"(cambios?|commits?|branch\w*|ramas?|base|archivos?|config\w*|c[óo]digo|merge\w*|versi[óo]n\w*|deploy\w*|"
          r"push|PRs?|release\w*|prod\w*|staging|servidor\w*|server|servicios?|build|fix|hotfix|patch|minor|major|"
          r"main|master|tag|\d+\.\d+\.\d+)")

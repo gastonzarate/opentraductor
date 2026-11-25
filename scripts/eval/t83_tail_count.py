@@ -1,4 +1,4 @@
-"""@audio T-83: cuenta finales de ASR con la última palabra cortada en las trazas de t83_tail_ab.sh.
+"""T-83: cuenta finales de ASR con la última palabra cortada en las trazas de t83_tail_ab.sh.
 
 Por brazo y clip: completas (``policial`` en 1584, ``nazismo`` en 1516), cortadas y cortes de frase
 (cantidad de asr_final). Muestra los textos cortados y el motivo del endpoint previo (wait_reason).

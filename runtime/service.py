@@ -758,7 +758,7 @@ class RuntimeService:
     async def _on_engine_event(self, kind: str, f: dict) -> None:
         seg = f.get("seg_id")
         key = str(seg) if seg is not None else None
-        # Contrato T-55 (memory/decisiones/t55-contrato-eventos-frase.md): un seg_id por frase, nunca un
+        # Contrato T-55 (ver docs/api-local.md): un seg_id por frase, nunca un
         # partial con text_es vacío, `from_seg_id` al pasar de la fila live al id de commit y `discarded`
         # en vez de descartes mudos.
         if kind == "asr_partial":

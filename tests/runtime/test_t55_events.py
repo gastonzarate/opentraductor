@@ -1,4 +1,4 @@
-"""T-55: contrato de eventos de frase (memory/decisiones/t55-contrato-eventos-frase.md).
+"""T-55: contrato de eventos de frase (ver docs/api-local.md).
 
 Secuencias que hacían desaparecer frases de la pantalla, del motor a /events (el modo incremental salió en T-70):
 1. ASR final vacío publicaba `partial ""` y la fila quedaba en blanco;
