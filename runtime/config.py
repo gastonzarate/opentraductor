@@ -218,7 +218,7 @@ class PipelineConfig:
     mt_simul_first_k: int = 0
     mt_simul_comma_nowait: bool = False
     # T-102: «voz simultánea» (encendida por defecto desde el cierre de T-102: charla 1, p95 6,3 -> 4,3 s, mismos
-    # términos, 0 voz perdida; deliverables/voz-simultanea-T102.md). Además de comas/nexos, CADA trozo de la frase (no solo el
+    # términos, 0 voz perdida). Además de comas/nexos, CADA trozo de la frase (no solo el
     # primero) sale cuando hay simul_voice_k palabras confirmadas sin cortar en artículo/preposición/nexo, así la
     # voz habla mientras el orador sigue. La voz no acumula atraso por la velocidad adaptativa de T-101 (no_drop).
     # Env OPENTRADUCTOR_SIMUL_VOICE=1/0 y OPENTRADUCTOR_SIMUL_VOICE_K mandan. Requiere mt_simul_clauses.
