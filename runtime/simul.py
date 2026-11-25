@@ -168,7 +168,7 @@ def simul_first_opts(cfg) -> dict:
     first_k = int(k) if k.isdigit() else int(getattr(cfg, "mt_simul_first_k", 0) or 0)
     nowait = (nw == "1") if nw in ("0", "1") else bool(getattr(cfg, "mt_simul_comma_nowait", False))
     sv = os.environ.get("OPENTRADUCTOR_SIMUL_VOICE")
-    on = (sv == "1") if sv in ("0", "1") else bool(getattr(cfg, "simul_voice", False))
+    on = (sv == "1") if sv in ("0", "1") else bool(getattr(cfg, "simul_voice", True))
     vk = os.environ.get("OPENTRADUCTOR_SIMUL_VOICE_K", "")
     cont_k = (int(vk) if vk.isdigit() and int(vk) > 0 else int(getattr(cfg, "simul_voice_k", 6) or 6)) if on else 0
     return {"first_max_words": first_k, "comma_lookahead": not nowait, "cont_k": cont_k}

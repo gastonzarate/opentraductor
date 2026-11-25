@@ -83,6 +83,7 @@ async def _run_simul(words, final=None, **kw):
     async def emit(kind, f):
         events.append((kind, f))
 
+    kw.setdefault("simul_voice", False)  # estos tests miden los cortes en comas/nexos de T-67, sin los de k palabras (T-102)
     cfg = PipelineConfig(asr_backend="moonshine-tiny", speculative_mt_tts=False, endpoint_silence_ms=160,
                          asr_chunk_ms=32, min_speech_ms=0, mt_kv_prefill_on_pause=False, asr_normalize_text=False, **kw)
     e = Engine(cfg, emit)
@@ -238,13 +239,13 @@ def test_simul_first_opts_env(monkeypatch):
     monkeypatch.delenv("OPENTRADUCTOR_SIMUL_VOICE_K", raising=False)
     base = simul_first_opts(PipelineConfig())
     assert set(base) == {"first_max_words", "comma_lookahead", "cont_k"}
-    assert base["cont_k"] == 0  # T-102: voz simultánea apagada por defecto
+    assert base["cont_k"] == 6  # T-102: voz simultánea encendida por defecto, K=6
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "0")
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", "0")
-    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 0, "comma_lookahead": True, "cont_k": 0}
+    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 0, "comma_lookahead": True, "cont_k": 6}
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "5")
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", "1")
-    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 5, "comma_lookahead": False, "cont_k": 0}
+    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 5, "comma_lookahead": False, "cont_k": 6}
 
 
 def test_moonshine_transcription_interval_env(monkeypatch):
