@@ -64,11 +64,12 @@ esa esos esas aquel aquella no ya hay es son fue era está están ha han he hemo
 """.split())
 
 
-def first_wait_k_end(words: list[str], k: int) -> int | None:
+def first_wait_k_end(words: list[str], k: int, start: int = 0) -> int | None:
     """T-88 (wait-k del primer trozo): fin del primer trozo cuando no hubo límite de cláusula pero ya hay al
     menos ``k`` palabras confirmadas. Toma el prefijo confirmado más largo que no termine en una palabra de
-    ``_NO_END`` (ni en un número suelto), y que tenga al menos ``k`` palabras. None si no hay."""
-    for j in range(len(words), k - 1, -1):
+    ``_NO_END`` (ni en un número suelto), y que tenga al menos ``k`` palabras. None si no hay.
+    T-102: ``start`` = palabras ya entregadas; el trozo es ``words[start:fin]`` (wait-k para cualquier trozo)."""
+    for j in range(len(words), start + k - 1, -1):
         last = _norm(words[j - 1])
         if last and last not in _NO_END and not last.isdigit():
             return j
@@ -116,8 +117,9 @@ class ClauseCommitter:
     """Estado por segmento: último parcial, cuántas palabras ya se confirmaron como cláusulas."""
 
     def __init__(self, min_words: int = 5, extra_cues: frozenset[str] | set[str] | tuple = (),
-                 first_max_words: int = 0, comma_lookahead: bool = True) -> None:
+                 first_max_words: int = 0, comma_lookahead: bool = True, cont_k: int = 0) -> None:
         self.min_words = min_words
+        self.cont_k = cont_k  # T-102 voz simultánea: >0 = wait-k para todos los trozos (0 = apagado)
         self.extra_cues = frozenset(_norm(w.strip()) for w in extra_cues if _norm(w.strip()))
         self.first_max_words = first_max_words  # T-88: >0 = wait-k para el primer trozo (0 = apagado)
         self.comma_lookahead = comma_lookahead
@@ -137,6 +139,8 @@ class ClauseCommitter:
             end = next_clause_end(stable, self.committed, self.min_words, self.extra_cues, self.comma_lookahead)
             if end is None and self.committed == 0 and self.first_max_words > 0:
                 end = first_wait_k_end(stable, self.first_max_words)
+            if end is None and self.cont_k > 0:
+                end = first_wait_k_end(stable, self.cont_k, self.committed)
             if end is None:
                 return out
             out.append(" ".join(stable[self.committed:end]))
@@ -163,4 +167,8 @@ def simul_first_opts(cfg) -> dict:
     nw = os.environ.get("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT")
     first_k = int(k) if k.isdigit() else int(getattr(cfg, "mt_simul_first_k", 0) or 0)
     nowait = (nw == "1") if nw in ("0", "1") else bool(getattr(cfg, "mt_simul_comma_nowait", False))
-    return {"first_max_words": first_k, "comma_lookahead": not nowait}
+    sv = os.environ.get("OPENTRADUCTOR_SIMUL_VOICE")
+    on = (sv == "1") if sv in ("0", "1") else bool(getattr(cfg, "simul_voice", False))
+    vk = os.environ.get("OPENTRADUCTOR_SIMUL_VOICE_K", "")
+    cont_k = (int(vk) if vk.isdigit() and int(vk) > 0 else int(getattr(cfg, "simul_voice_k", 6) or 6)) if on else 0
+    return {"first_max_words": first_k, "comma_lookahead": not nowait, "cont_k": cont_k}

@@ -234,14 +234,17 @@ def test_simul_first_opts_env(monkeypatch):
     from runtime.simul import simul_first_opts
     monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", raising=False)
     monkeypatch.delenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_SIMUL_VOICE", raising=False)
+    monkeypatch.delenv("OPENTRADUCTOR_SIMUL_VOICE_K", raising=False)
     base = simul_first_opts(PipelineConfig())
-    assert set(base) == {"first_max_words", "comma_lookahead"}
+    assert set(base) == {"first_max_words", "comma_lookahead", "cont_k"}
+    assert base["cont_k"] == 0  # T-102: voz simultánea apagada por defecto
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "0")
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", "0")
-    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 0, "comma_lookahead": True}
+    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 0, "comma_lookahead": True, "cont_k": 0}
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_FIRST_K", "5")
     monkeypatch.setenv("OPENTRADUCTOR_MT_SIMUL_COMMA_NOWAIT", "1")
-    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 5, "comma_lookahead": False}
+    assert simul_first_opts(PipelineConfig()) == {"first_max_words": 5, "comma_lookahead": False, "cont_k": 0}
 
 
 def test_moonshine_transcription_interval_env(monkeypatch):
@@ -252,3 +255,33 @@ def test_moonshine_transcription_interval_env(monkeypatch):
     assert f(None) == 0.16
     monkeypatch.setenv("OPENTRADUCTOR_ASR_TRANSCRIPTION_INTERVAL_S", "0")
     assert f(0.32) is None
+
+
+def test_simul_voice_env_turns_on_cont_k(monkeypatch):
+    from runtime.config import PipelineConfig
+    from runtime.simul import simul_first_opts
+    monkeypatch.delenv("OPENTRADUCTOR_SIMUL_VOICE_K", raising=False)
+    monkeypatch.setenv("OPENTRADUCTOR_SIMUL_VOICE", "1")
+    assert simul_first_opts(PipelineConfig())["cont_k"] == 6
+    monkeypatch.setenv("OPENTRADUCTOR_SIMUL_VOICE_K", "4")
+    assert simul_first_opts(PipelineConfig())["cont_k"] == 4
+    monkeypatch.setenv("OPENTRADUCTOR_SIMUL_VOICE", "0")
+    assert simul_first_opts(PipelineConfig(simul_voice=True))["cont_k"] == 0
+    monkeypatch.delenv("OPENTRADUCTOR_SIMUL_VOICE")
+    monkeypatch.delenv("OPENTRADUCTOR_SIMUL_VOICE_K")
+    assert simul_first_opts(PipelineConfig(simul_voice=True, simul_voice_k=5))["cont_k"] == 5
+
+
+def test_committer_cont_k_cuts_every_piece_and_rest():
+    """T-102: con cont_k cada trozo sale con k palabras confirmadas, no solo el primero; nunca corta en «el»."""
+    p = ["se informó que los saqueos generalizados",
+         "se informó que los saqueos generalizados se extendieron por todo",
+         "se informó que los saqueos generalizados se extendieron por todo el país y la",
+         "se informó que los saqueos generalizados se extendieron por todo el país y la policía no llegó"]
+    c = ClauseCommitter(min_words=5, cont_k=4)
+    out = []
+    for x in p + [p[-1]]:
+        out += c.update(x)
+    assert out == ["se informó que los saqueos generalizados", "se extendieron por todo el país",
+                   "y la policía no llegó"]
+    assert c.rest(p[-1] + ".") == ""  # todo dicho; el resto vacío solo cierra la frase
