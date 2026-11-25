@@ -1526,10 +1526,22 @@ class Engine:
         now = time.monotonic()
         self._play_end = max(getattr(self, "_play_end", 0.0), now) + len(pcm) / 2 / sr
 
+    def engine_backlog_s(self) -> float:
+        """T-101: atraso del motor antes de la voz: audio esperando al ASR + voz de las frases esperando MT/TTS."""
+        n = sum(st.asr_pending_s for st in self._streams.values())
+        q = self._out_q
+        for item in (list(getattr(q, "_queue", ())) if q is not None else ()):
+            seg = item[1]
+            if seg.end_s is not None:
+                n += max(0.0, seg.end_s - seg.start_s)
+        return n
+
     def _tts_speed(self) -> float:
-        from .config import tts_speed_params
+        from .config import no_drop_on, tts_speed_params
         c = self.cfg
         q = self.playback_queue_s()
+        if no_drop_on(c):  # T-101: sin descartes, el atraso de ASR/MT también se paga con velocidad de voz
+            q += self.engine_backlog_s()
         v = K.adaptive_speed(q, c.speed, *tts_speed_params(c))
         st = self.speed_stats
         if v > c.speed:

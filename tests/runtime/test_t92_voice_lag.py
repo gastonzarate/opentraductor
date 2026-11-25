@@ -362,3 +362,21 @@ def test_no_drop_asr_backlog_keeps_audio(monkeypatch):
         assert (st.dropped_s > 0) is expect_drop
         if not expect_drop:
             assert st.asr_q.qsize() == 20 and st.asr_pending_s == pytest.approx(10.0)
+
+
+def test_no_drop_speed_counts_engine_backlog(monkeypatch):
+    """T-101: con el Player vacío pero el ASR atrasado (caso del soak con carga), la voz acelera igual."""
+    from runtime.pipeline import StreamState
+    monkeypatch.delenv("OPENTRADUCTOR_TTS_SPEED_ADAPTIVE", raising=False)
+    for k in ("OPENTRADUCTOR_TTS_SPEED_LO_S", "OPENTRADUCTOR_TTS_SPEED_HI_S", "OPENTRADUCTOR_TTS_SPEED_MAX"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", "1")
+    e = _engine()
+    e.playback_queue_fn = lambda: 0.0
+    st = StreamState(stream_id="s", vad=None)
+    st.asr_pending_s = 10.0
+    e._streams["s"] = st
+    assert e.engine_backlog_s() == pytest.approx(10.0)
+    assert e._tts_speed() == pytest.approx(1.50)
+    monkeypatch.setenv("OPENTRADUCTOR_NO_DROP", "0")
+    assert e._tts_speed() == 1.0

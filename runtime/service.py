@@ -42,6 +42,7 @@ VOICE_LABELS = {
     "am_adam": "Adam · inglés (EE. UU.)",
 }
 INPUT_QUEUE_MAX = 1500  # bloques de ~20 ms = 30 s
+INPUT_BLOCK_S = 0.02  # T-101: duración aproximada de un bloque de entrada (para estimar el atraso)
 PLAYBACK_DRAIN_MAX_S = 10.0
 # Mismo dispositivo para entrada y salida (p. ej. BlackHole): el captura se abre tras la salida
 # y tras esta pausa. Abiertos casi a la vez, en macOS la captura queda muerta sin excepción.
@@ -576,11 +577,19 @@ class RuntimeService:
         self._engine = eng
         self._engine_voice = self._pcfg.voice
         if hasattr(eng, "playback_queue_fn"):  # T-92: velocidad de la voz según la cola REAL del Player
-            eng.playback_queue_fn = lambda: self._player.queued_s if self._player is not None else 0.0
+            eng.playback_queue_fn = self._voice_lag_s
         load = getattr(eng, "load_ms", {}) or {}
         for k in self._models:
             ms = load.get(k)
             self._models[k] = {"state": "ready", "detail": f"carga {round(ms)} ms" if ms else None}
+
+    def _voice_lag_s(self) -> float:
+        """Voz sin reproducir del Player + (T-101, no_drop) audio de entrada que el motor todavía no tomó."""
+        lag = self._player.queued_s if self._player is not None else 0.0
+        q = self._in_q
+        if q is not None and C.no_drop_on(self._pcfg):
+            lag += q.qsize() * INPUT_BLOCK_S
+        return lag
 
     def _setup_player(self, p) -> None:
         """Políticas de cola del Player. T-101 (no_drop): sin saltos, sin recortes y sin tope duro."""
