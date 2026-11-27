@@ -93,6 +93,7 @@ Las charlas 2 y 3 no se volvieron a correr con los valores por defecto nuevos.
 Límites de estas cifras:
 - Una pasada por variante (dos para la charla 1 con los valores finales, una de ellas antes de que existiera el tope). Dos corridas del mismo código pueden diferir en varias décimas de segundo en el p95.
 - Una Mac (M5 Pro). Las charlas son grabaciones reproducidas por BlackHole, no una reunión con personas.
+- Calidad por frase: pasamos seis tomas de charlas reales por la app (724 frases; cinco tomas con Moonshine tiny, la configuración por defecto, y una con Moonshine small) y nuestro revisor de QA leyó el inglés de salida frase por frase: 179 (25 %, 1 de cada 4) eran aceptables tal como salieron. El resto eran frases cortadas, nombres o términos mal oídos, o mala traducción. La racha más larga de frases aceptables seguidas fue de 14,9 s. Un solo revisor, juzgado sobre el texto, no un panel de hablantes nativos; las notas por frase son internas y no están en este repositorio.
 - Nadie juzgó escuchando si la voz más rápida suena natural. Solo medimos el atraso.
 - La prueba con la Mac saturada fue una sola corrida de 30 minutos, y el tope nunca se activó en ella.
 - Con el tope encendido, un pendiente muy grande salta frases enteras; con `OPENTRADUCTOR_ASR_SKIP_OLD_S=0` no se salta nada pero el atraso puede crecer sin límite.
